@@ -46,7 +46,6 @@ def get_cloud_data():
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # 數值型態強制轉型
         int_cols = [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['last_stock'], COL_MAP['last_purchase'], COL_MAP['usage_qty']]
         float_cols = [COL_MAP['unit_price'], COL_MAP['total_price']]
         for col in df.columns:
@@ -195,12 +194,13 @@ elif st.session_state.step == "export":
             display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['usage_qty'], COL_MAP['this_purchase'], COL_MAP['total_price']]
             st.dataframe(recs[display_headers].rename(columns={COL_MAP['usage_qty']: '上次至今消耗', COL_MAP['total_price']: '本次叫貨金額'}), use_container_width=True)
             
+            # 💡 LINE 格式優化：移除「廠商:」與「(前次消耗:x)」
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n"
             for v in recs[COL_MAP['vendor_name']].unique():
-                output += f"\n廠商：{v}\n"
+                output += f"\n{v}\n" # 💡 僅顯示廠商名稱
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
                     u = str(r.get(COL_MAP['unit'], '')).strip()
-                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u} (前次消耗:{int(r[COL_MAP['usage_qty']])})\n"
+                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
@@ -218,18 +218,15 @@ elif st.session_state.step == "analysis":
         analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] >= start) & (hist_df[COL_MAP['record_date']] <= end)].copy()
         
         if not analysis.empty:
-            # 聚合計算
             summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['unit_price']]).agg({
                 COL_MAP['usage_qty']: 'sum',
                 COL_MAP['total_price']: 'sum'
             }).reset_index()
             
-            # 獲取期末庫存
             last_records = analysis.sort_values(COL_MAP['record_date']).groupby(COL_MAP['item_name']).tail(1)
             stock_map = last_records.set_index(COL_MAP['item_name'])[COL_MAP['this_stock']].to_dict()
             
             summary['期末庫存'] = summary[COL_MAP['item_name']].map(stock_map).fillna(0).astype(int)
-            # 💡 名稱修改：由「期末市值」改為「庫存金額」
             summary['庫存金額'] = summary['期末庫存'] * summary[COL_MAP['unit_price']]
             
             st.subheader(f"📅 期間匯總報表")
@@ -238,7 +235,6 @@ elif st.session_state.step == "analysis":
             st.write("---")
             m1, m2 = st.columns(2)
             m1.metric("採購支出總額", f"${summary[COL_MAP['total_price']].sum():,.0f}")
-            # 💡 名稱修改：由「期末資產市值」改為「庫存金額」
             m2.metric("庫存金額", f"${summary['庫存金額'].sum():,.0f}")
         else: st.info("無數據。")
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
