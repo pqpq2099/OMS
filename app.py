@@ -46,7 +46,7 @@ def get_cloud_data():
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # 💡 自動補齊缺失欄位
+        # 自動補齊缺失欄位
         for col_name in COL_MAP.values():
             if col_name not in df.columns:
                 df[col_name] = ""
@@ -69,25 +69,25 @@ def sync_to_cloud(df_to_save):
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet("Records")
         headers = list(COL_MAP.values())
-        ws.update('A1', [headers]) # 強制重寫標題，確保包含「單位」
+        ws.update('A1', [headers]) 
         ws.append_rows(df_to_save.values.tolist())
         return True
     except Exception as e:
         st.error(f"❌ 雲端寫入失敗: {e}"); return False
 
 # =========================
-# 2. 檔案載入
+# 2. 檔案載入 (強化清洗版)
 # =========================
 CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 
 def load_csv_safe(path):
-    # 💡 增加 utf-8-sig 處理 Excel 匯出的 CSV 可能帶有的 BOM
     for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
         try:
             df = pd.read_csv(path, encoding=enc)
-            # 💡 確保欄位名稱沒有空格
-            df.columns = [c.strip() for c in df.columns]
+            # 💡 戰略清洗：移除欄位名稱的所有空格與不可見字元
+            df.columns = [c.strip().replace('\ufeff', '') for c in df.columns]
+            # 💡 內容清洗
             return df.map(lambda x: x.strip() if isinstance(x, str) else x)
         except: continue
     return None
@@ -149,10 +149,13 @@ elif st.session_state.step == "fill_items":
     with st.form("inventory_form"):
         temp_data = []
         for _, row in items.iterrows():
-            name = row['品項名稱']
-            # 💡 關鍵：明確從 CSV 欄位讀取「單位」
-            unit = row.get('單位', '') 
-            price = float(row.get('單價', 0))
+            name = str(row['品項名稱']).strip()
+            # 💡 關鍵：顯式從 CSV 讀取「單位」並處理空值
+            unit = str(row['單位']).strip() if '單位' in row and pd.notna(row['單位']) else ""
+            try:
+                price = float(row['單價'])
+            except:
+                price = 0.0
             
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
@@ -164,7 +167,7 @@ elif st.session_state.step == "fill_items":
                     prev_p = int(latest.get(COL_MAP['this_purchase'], 0))
             
             st.write(f"---")
-            st.markdown(f"**{name}** ({unit})")
+            st.markdown(f"**{name}** (單位: {unit})")
             c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
                 st.info(f"上次結餘：{int(prev_s + prev_p)}")
@@ -177,7 +180,6 @@ elif st.session_state.step == "fill_items":
             
             total_amt = round(t_p * price, 1)
             if t_s > 0 or t_p > 0:
-                # 💡 按照 COL_MAP 順序準備資料，確保「單位」在第 5 欄 (索引 4)
                 temp_data.append([
                     str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, 
                     name, unit, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)
@@ -212,22 +214,20 @@ elif st.session_state.step == "export":
             st.warning(f"⚠️ {date_str} 目前無叫貨紀錄。")
         else:
             st.subheader("🔍 今日叫貨數據對照表")
-            display_cols = {
-                COL_MAP['vendor_name']: '廠商', COL_MAP['item_name']: '品項名稱', COL_MAP['unit']: '單位',
-                COL_MAP['last_stock']: '上次庫存', COL_MAP['last_purchase']: '上次叫貨', 
-                COL_MAP['this_stock']: '這次剩餘', COL_MAP['usage_qty']: '期間使用量', 
-                COL_MAP['this_purchase']: '本次叫貨量', COL_MAP['total_price']: '總金額'
-            }
-            # 💡 容錯：只顯示存在的欄位
-            existing_cols = [k for k in display_cols.keys() if k in recs.columns]
-            st.table(recs[existing_cols].rename(columns=display_cols).style.format(precision=0))
+            display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], 
+                               COL_MAP['last_stock'], COL_MAP['last_purchase'], 
+                               COL_MAP['this_stock'], COL_MAP['usage_qty'], 
+                               COL_MAP['this_purchase'], COL_MAP['total_price']]
             
+            existing_cols = [c for c in display_headers if c in recs.columns]
+            st.table(recs[existing_cols].style.format(precision=0))
+            
+            # 💡 產生 LINE 格式
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n--------------------\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n廠商：{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
-                    # 💡 確保讀取到單位並顯示
-                    u = r.get(COL_MAP['unit'], '')
+                    u = str(r.get(COL_MAP['unit'], '')).strip()
                     output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
             st.subheader("📱 LINE 複製格式")
             st.text_area("全選複製：", value=output, height=300)
