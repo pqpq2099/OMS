@@ -10,7 +10,6 @@ from pathlib import Path
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
-# 💡 擴充繁體中文標題對照表 (新增單價與總金額)
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
@@ -44,7 +43,13 @@ def get_cloud_data():
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet("Records")
         data = ws.get_all_records()
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        # 💡 強制轉換數值欄位，預防資料異常導致程式崩潰
+        num_cols = [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['unit_price'], COL_MAP['total_price']]
+        for col in num_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        return df
     except: return pd.DataFrame()
 
 def sync_to_cloud(df_to_save):
@@ -57,10 +62,9 @@ def sync_to_cloud(df_to_save):
         except gspread.exceptions.WorksheetNotFound:
             ws = sh.add_worksheet(title="Records", rows="1000", cols="20")
         
-        # 💡 自動更新標題列 (包含新欄位)
         headers = list(COL_MAP.values())
+        # 更新標題並確保寫入
         ws.update('A1', [headers]) 
-            
         ws.append_rows(df_to_save.values.tolist())
         return True
     except Exception as e:
@@ -137,17 +141,25 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         for _, row in items.iterrows():
             name = row['品項名稱']
-            price = float(row.get('單價', 0)) # 💡 獲取單價
+            # 💡 容錯處理：確保單價是數字
+            try:
+                price = float(row.get('單價', 0))
+            except:
+                price = 0.0
             
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
                 past = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['item_name']] == name)]
                 if not past.empty:
                     latest = past.iloc[-1]
-                    prev_s, prev_p = int(latest[COL_MAP['this_stock']]), int(latest[COL_MAP['this_purchase']])
+                    try:
+                        prev_s = int(float(latest[COL_MAP['this_stock']]))
+                        prev_p = int(float(latest[COL_MAP['this_purchase']]))
+                    except:
+                        prev_s, prev_p = 0, 0
             
             st.write(f"---")
-            st.markdown(f"**{name}** (單價: ${price})")
+            st.markdown(f"**{name}** (單價: ${price:,.1f})")
             c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
                 st.info(f"上次結餘：{prev_s + prev_p}")
@@ -158,11 +170,10 @@ elif st.session_state.step == "fill_items":
                 usage = (prev_s + prev_p) - t_s
                 st.success(f"計算消耗：{usage}")
             
-            # 💡 計算總金額
             total_amt = t_p * price
             
             if t_s > 0 or t_p > 0:
-                temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, name, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), price, total_amt])
+                temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, name, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)])
         
         col_save, col_cancel = st.columns(2)
         if col_save.form_submit_button("💾 儲存並同步雲端", use_container_width=True):
@@ -172,7 +183,7 @@ elif st.session_state.step == "fill_items":
                     st.success("✅ 雲端同步成功！")
                     st.session_state.step = "select_vendor"; st.rerun()
             else: st.warning("未填寫任何數據。")
-        if col_cancel.form_submit_button("❌ 不儲存返回", use_container_width=True):
+        if col_cancel.form_submit_button("❌ 返回", use_container_width=True):
             st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "export":
@@ -192,7 +203,8 @@ elif st.session_state.step == "export":
             st.subheader("🔍 叫貨成本對照表")
             st.dataframe(recs, use_container_width=True)
             
-            total_sum = recs[COL_MAP['total_price']].sum()
+            # 💡 強化轉換，避免格式化失敗
+            total_sum = pd.to_numeric(recs[COL_MAP['total_price']], errors='coerce').sum()
             st.metric("今日預估支出總額", f"${total_sum:,.0f}")
             
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n預估總額：${total_sum:,.0f}\n--------------------\n"
@@ -216,6 +228,7 @@ elif st.session_state.step == "analysis":
                            (hist_df[COL_MAP['record_date']] >= start) & 
                            (hist_df[COL_MAP['record_date']] <= end)]
         if not analysis.empty:
+            analysis[COL_MAP['total_price']] = pd.to_numeric(analysis[COL_MAP['total_price']], errors='coerce').fillna(0)
             summary = analysis.groupby([COL_MAP['vendor_name']])[COL_MAP['total_price']].sum().reset_index()
             st.subheader("廠商支出統計")
             st.bar_chart(summary.set_index(COL_MAP['vendor_name']))
