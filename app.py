@@ -133,6 +133,7 @@ elif st.session_state.step == "select_vendor":
 
 elif st.session_state.step == "fill_items":
     st.title(f"📝 {st.session_state.vendor}")
+    st.caption(f"分店：{st.session_state.store} | 日期：{st.session_state.record_date}")
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
@@ -151,7 +152,6 @@ elif st.session_state.step == "fill_items":
                     prev_s = int(latest.get(COL_MAP['this_stock'], 0))
                     prev_p = int(latest.get(COL_MAP['this_purchase'], 0))
             
-            # 手機版垂直卡片佈局
             st.markdown(f"### {name}")
             st.markdown(f"**單位：{unit}** | **上次結餘：{int(prev_s + prev_p)}**")
             
@@ -203,7 +203,9 @@ elif st.session_state.step == "export":
                     output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
     
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+    if st.button("⬅️ 返回", use_container_width=True): 
+        st.session_state.step = "select_vendor"
+        st.rerun()
 
 elif st.session_state.step == "analysis":
     st.title("📊 期間進銷存分析")
@@ -220,11 +222,10 @@ elif st.session_state.step == "analysis":
                            (hist_df[COL_MAP['record_date']] <= end)].copy()
         
         if not analysis.empty:
-            # 1. 核心：獲取每個品項最後一筆紀錄作為「期末庫存」
+            # 獲取期末庫存
             last_records = analysis.sort_values(COL_MAP['record_date']).groupby(COL_MAP['item_name']).tail(1)
             stock_map = last_records.set_index(COL_MAP['item_name'])[COL_MAP['this_stock']].to_dict()
             
-            # 2. 彙整總消耗與叫貨總額
             summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['unit_price']]).agg({
                 COL_MAP['usage_qty']: 'sum',
                 COL_MAP['total_price']: 'sum'
@@ -236,7 +237,6 @@ elif st.session_state.step == "analysis":
             st.subheader(f"📅 彙整報表")
             st.dataframe(summary, use_container_width=True)
             
-            # 💡 財務對帳指標
             st.write("---")
             m1, m2 = st.columns(2)
             total_exp = summary[COL_MAP['total_price']].sum()
@@ -245,4 +245,6 @@ elif st.session_state.step == "analysis":
             m2.metric("期末庫存總資產", f"${total_inv:,.0f}")
             
         else: st.info("期間內無數據。")
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; rerun()
+    if st.button("⬅️ 返回", use_container_width=True): 
+        st.session_state.step = "select_vendor"
+        st.rerun()
