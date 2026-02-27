@@ -9,7 +9,7 @@ from pathlib import Path
 # 1. Google Sheets 核心設定
 # =========================
 # 💡 請務必確認這裡的 ID 是正確的（網址中 d/ 後面那串）
-SHEET_ID = '1X58XpXp_你的試算表ID_請替換此處' 
+SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
 def get_gspread_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -80,19 +80,28 @@ elif st.session_state.step == "select_vendor":
 elif st.session_state.step == "fill_items":
     st.title(f"📝 {st.session_state.vendor}")
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
+    
+    # 建立一個表單，使用者填完後按最下面的按鈕一次送出
     with st.form("my_form"):
         temp_rows = []
         for _, row in items.iterrows():
             name = row['品項名稱']
             st.write(f"**{name}**")
             c1, c2 = st.columns(2)
-            ts = c1.number_input("剩餘量", min_value=0, key=f"s_{name}")
-            tp = c2.number_input("叫貨量", min_value=0, key=f"p_{name}")
+            ts = c1.number_input(f"{name} - 剩餘量", min_value=0, key=f"s_{name}")
+            tp = c2.number_input(f"{name} - 叫貨量", min_value=0, key=f"p_{name}")
+            
+            # 準備存入 Google Sheets 的資料行
             temp_rows.append([str(date.today()), st.session_state.store, st.session_state.vendor, name, 0, 0, ts, tp, 0])
         
-        if st.form_submit_button("💾 儲存並同步"):
-            df_to_save = pd.DataFrame(temp_rows)
+        # 儲存按鈕
+        submit = st.form_submit_button("💾 儲存並同步")
+        if submit:
+            # 定義 9 個欄位名稱
+            cols = ['record_date', 'store_name', 'vendor_name', 'item_name', 'last_stock', 'last_purchase', 'this_stock', 'this_purchase', 'usage_qty']
+            df_to_save = pd.DataFrame(temp_rows, columns=cols)
+            
             if sync_data_to_gs(df_to_save):
-                st.success("同步成功！")
-                st.session_state.step = "select_store"
+                st.success("✅ 同步成功！資料已寫入 Google Sheets")
+                st.session_state.step = "select_store" # 存完自動跳回選店畫面
                 st.rerun()
