@@ -10,7 +10,6 @@ from pathlib import Path
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
-# 💡 嚴格定義中文欄位名稱
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
@@ -47,12 +46,12 @@ def get_cloud_data():
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # 💡 容錯機制：如果雲端資料是舊的，補上缺失的欄位
+        # 💡 自動補齊缺失欄位
         for col_name in COL_MAP.values():
             if col_name not in df.columns:
-                df[col_name] = 0 if "金額" in col_name or "次" in col_name else ""
+                df[col_name] = ""
                 
-        # 數量轉整數，金額轉浮點
+        # 數值型態校準
         int_cols = [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['last_stock'], COL_MAP['last_purchase'], COL_MAP['usage_qty']]
         float_cols = [COL_MAP['unit_price'], COL_MAP['total_price']]
         for col in df.columns:
@@ -68,14 +67,9 @@ def sync_to_cloud(df_to_save):
     if not client: return False
     try:
         sh = client.open_by_key(SHEET_ID)
-        try:
-            ws = sh.worksheet("Records")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = sh.add_worksheet(title="Records", rows="1000", cols="20")
-        
+        ws = sh.worksheet("Records")
         headers = list(COL_MAP.values())
-        # 💡 強制校準標題列，確保「單位」出現在正確位置
-        ws.update('A1', [headers]) 
+        ws.update('A1', [headers]) # 強制重寫標題，確保包含「單位」
         ws.append_rows(df_to_save.values.tolist())
         return True
     except Exception as e:
@@ -88,9 +82,12 @@ CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 
 def load_csv_safe(path):
-    for enc in ['utf-8', 'cp950', 'big5', 'utf-8-sig']:
+    # 💡 增加 utf-8-sig 處理 Excel 匯出的 CSV 可能帶有的 BOM
+    for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
         try:
             df = pd.read_csv(path, encoding=enc)
+            # 💡 確保欄位名稱沒有空格
+            df.columns = [c.strip() for c in df.columns]
             return df.map(lambda x: x.strip() if isinstance(x, str) else x)
         except: continue
     return None
@@ -153,7 +150,8 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         for _, row in items.iterrows():
             name = row['品項名稱']
-            unit = row.get('單位', '')
+            # 💡 關鍵：明確從 CSV 欄位讀取「單位」
+            unit = row.get('單位', '') 
             price = float(row.get('單價', 0))
             
             prev_s, prev_p = 0, 0
@@ -179,6 +177,7 @@ elif st.session_state.step == "fill_items":
             
             total_amt = round(t_p * price, 1)
             if t_s > 0 or t_p > 0:
+                # 💡 按照 COL_MAP 順序準備資料，確保「單位」在第 5 欄 (索引 4)
                 temp_data.append([
                     str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, 
                     name, unit, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)
@@ -213,20 +212,21 @@ elif st.session_state.step == "export":
             st.warning(f"⚠️ {date_str} 目前無叫貨紀錄。")
         else:
             st.subheader("🔍 今日叫貨數據對照表")
-            # 💡 這裡列出我們想要顯示的所有中文標題
-            display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], 
-                               COL_MAP['last_stock'], COL_MAP['last_purchase'], 
-                               COL_MAP['this_stock'], COL_MAP['usage_qty'], 
-                               COL_MAP['this_purchase'], COL_MAP['total_price']]
-            
-            # 只選取存在的欄位，避免 KeyError
-            existing_cols = [c for c in display_headers if c in recs.columns]
-            st.table(recs[existing_cols].style.format({COL_MAP['total_price']: '{:.1f}'}, precision=0))
+            display_cols = {
+                COL_MAP['vendor_name']: '廠商', COL_MAP['item_name']: '品項名稱', COL_MAP['unit']: '單位',
+                COL_MAP['last_stock']: '上次庫存', COL_MAP['last_purchase']: '上次叫貨', 
+                COL_MAP['this_stock']: '這次剩餘', COL_MAP['usage_qty']: '期間使用量', 
+                COL_MAP['this_purchase']: '本次叫貨量', COL_MAP['total_price']: '總金額'
+            }
+            # 💡 容錯：只顯示存在的欄位
+            existing_cols = [k for k in display_cols.keys() if k in recs.columns]
+            st.table(recs[existing_cols].rename(columns=display_cols).style.format(precision=0))
             
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n--------------------\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n廠商：{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
+                    # 💡 確保讀取到單位並顯示
                     u = r.get(COL_MAP['unit'], '')
                     output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
             st.subheader("📱 LINE 複製格式")
@@ -250,6 +250,6 @@ elif st.session_state.step == "analysis":
                 COL_MAP['usage_qty']: 'sum',
                 COL_MAP['total_price']: 'sum'
             }).reset_index()
-            st.table(summary[summary[COL_MAP['usage_qty']] != 0].sort_values(COL_MAP['usage_qty'], ascending=False).style.format({COL_MAP['total_price']: '{:.1f}'}, precision=0))
+            st.table(summary[summary[COL_MAP['usage_qty']] != 0].sort_values(COL_MAP['usage_qty'], ascending=False).style.format(precision=0))
         else: st.info("期間無數據。")
     if st.button("⬅️ 返回"): st.session_state.step = "select_vendor"; st.rerun()
