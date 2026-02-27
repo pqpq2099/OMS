@@ -46,7 +46,6 @@ def get_cloud_data():
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # 數值強制轉換與清洗
         int_cols = [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['last_stock'], COL_MAP['last_purchase'], COL_MAP['usage_qty']]
         float_cols = [COL_MAP['unit_price'], COL_MAP['total_price']]
         for col in df.columns:
@@ -85,7 +84,7 @@ def load_csv_safe(path):
         except: continue
     return None
 
-st.set_page_config(page_title="進銷存管理 (財務手機版)", layout="centered")
+st.set_page_config(page_title="進銷存管理 (數據強化版)", layout="centered")
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -186,64 +185,59 @@ elif st.session_state.step == "export":
     
     if not hist_df.empty:
         hist_df[COL_MAP['record_date']] = hist_df[COL_MAP['record_date']].astype(str)
-        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] == date_str) & (hist_df[COL_MAP['this_purchase']] > 0)].copy()
+        # 💡 篩選當日叫貨
+        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
+                       (hist_df[COL_MAP['record_date']] == date_str) & 
+                       (hist_df[COL_MAP['this_purchase']] > 0)].copy()
         
         if recs.empty:
             st.warning("⚠️ 今日尚無叫貨紀錄。")
         else:
-            st.subheader("當日叫貨明細")
-            display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['this_purchase']]
-            st.dataframe(recs[display_headers], use_container_width=True)
+            st.subheader("🔍 當日叫貨與消耗對照")
+            # 💡 報表顯示欄位優化：明確標註「距離上次消耗」
+            display_cols = {
+                COL_MAP['vendor_name']: '廠商', 
+                COL_MAP['item_name']: '品項', 
+                COL_MAP['usage_qty']: '上次至今消耗', 
+                COL_MAP['this_purchase']: '本次叫貨量',
+                COL_MAP['unit']: '單位'
+            }
+            st.table(recs[list(display_cols.keys())].rename(columns=display_cols).style.format(precision=0))
             
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n廠商：{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
                     u = str(r.get(COL_MAP['unit'], '')).strip()
-                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
-            st.text_area("📱 LINE 複製格式", value=output, height=300)
+                    # 💡 LINE 格式也加入消耗參考
+                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u} (前次消耗:{int(r[COL_MAP['usage_qty']])})\n"
+            
+            st.subheader("📱 LINE 複製格式")
+            st.text_area("全選複製：", value=output, height=300)
     
     if st.button("⬅️ 返回", use_container_width=True): 
         st.session_state.step = "select_vendor"
         st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間進銷存分析")
+    st.title("📊 進銷存分析報表")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
-    
     c1, c2 = st.columns(2)
     start = c1.date_input("起始日期", value=date.today()-timedelta(7))
     end = c2.date_input("結束日期", value=date.today())
     
     if not hist_df.empty:
         hist_df[COL_MAP['record_date']] = pd.to_datetime(hist_df[COL_MAP['record_date']]).dt.date
-        analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
-                           (hist_df[COL_MAP['record_date']] >= start) & 
-                           (hist_df[COL_MAP['record_date']] <= end)].copy()
+        analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] >= start) & (hist_df[COL_MAP['record_date']] <= end)].copy()
         
         if not analysis.empty:
-            # 獲取期末庫存
             last_records = analysis.sort_values(COL_MAP['record_date']).groupby(COL_MAP['item_name']).tail(1)
             stock_map = last_records.set_index(COL_MAP['item_name'])[COL_MAP['this_stock']].to_dict()
-            
-            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['unit_price']]).agg({
-                COL_MAP['usage_qty']: 'sum',
-                COL_MAP['total_price']: 'sum'
-            }).reset_index()
-            
+            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['unit_price']]).agg({COL_MAP['usage_qty']: 'sum', COL_MAP['total_price']: 'sum'}).reset_index()
             summary['期末庫存'] = summary[COL_MAP['item_name']].map(stock_map).fillna(0).astype(int)
-            summary['期末庫存價值'] = summary['期末庫存'] * summary[COL_MAP['unit_price']]
-            
-            st.subheader(f"📅 彙整報表")
+            summary['資產價值'] = summary['期末庫存'] * summary[COL_MAP['unit_price']]
             st.dataframe(summary, use_container_width=True)
-            
-            st.write("---")
-            m1, m2 = st.columns(2)
-            total_exp = summary[COL_MAP['total_price']].sum()
-            total_inv = summary['期末庫存價值'].sum()
-            m1.metric("期間採購總支出", f"${total_exp:,.0f}")
-            m2.metric("期末庫存總資產", f"${total_inv:,.0f}")
-            
+            st.metric("採購總支出", f"${summary[COL_MAP['total_price']].sum():,.0f}")
         else: st.info("期間內無數據。")
     if st.button("⬅️ 返回", use_container_width=True): 
         st.session_state.step = "select_vendor"
