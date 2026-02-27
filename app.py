@@ -8,19 +8,23 @@ from pathlib import Path
 # =========================
 # 1. Google Sheets 核心設定
 # =========================
-# 💡 請務必確認這裡的 ID 是正確的（網址中 d/ 後面那串）
+# 這是你的試算表 ID
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
 def get_gspread_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
-    # 直接從你剛填好的 Secrets 抓取資料
+    # 優先從 Streamlit Secrets 讀取 (雲端版)
     try:
-        creds_info = dict(st.secrets["gcp_service_account"])
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
+        if "gcp_service_account" in st.secrets:
+            creds_info = dict(st.secrets["gcp_service_account"])
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
+        else:
+            # 如果是本地執行，讀取本地 JSON
+            creds = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"金鑰讀取失敗，請檢查 Secrets 設定: {e}")
+        st.error(f"⚠️ 金鑰讀取失敗: {e}")
         return None
 
 def sync_data_to_gs(df_to_save):
@@ -34,14 +38,15 @@ def sync_data_to_gs(df_to_save):
             ws = sh.add_worksheet(title="Records", rows="1000", cols="20")
             ws.append_row(['record_date', 'store_name', 'vendor_name', 'item_name', 'last_stock', 'last_purchase', 'this_stock', 'this_purchase', 'usage_qty'])
         
+        # 將數據轉換成列表並寫入
         ws.append_rows(df_to_save.values.tolist())
         return True
     except Exception as e:
-        st.error(f"寫入 Google 表格失敗: {e}")
+        st.error(f"❌ 寫入 Google 表格失敗: {e}")
         return False
 
 # =========================
-# 2. 檔案載入與介面
+# 2. 檔案載入與安全機制
 # =========================
 CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
@@ -49,59 +54,88 @@ CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 def load_csv_safe(path):
     for enc in ['utf-8', 'cp950', 'big5']:
         try:
-            return pd.read_csv(path, encoding=enc)
+            df = pd.read_csv(path, encoding=enc)
+            # 清除空白字元避免比對出錯
+            return df.map(lambda x: x.strip() if isinstance(x, str) else x)
         except: continue
     return None
 
-st.set_page_config(page_title="雲端進銷存", layout="wide")
+st.set_page_config(page_title="雲端進銷存系統", layout="wide")
+
+# 載入原始資料
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 
+# 初始化步驟狀態
 if "step" not in st.session_state: st.session_state.step = "select_store"
 
-# --- 流程控制 ---
+# =========================
+# 3. 介面流程控制
+# =========================
+
+# --- 步驟 1: 選擇分店 ---
 if st.session_state.step == "select_store":
-    st.title("🏠 選擇分店")
+    st.title("🏠 叫貨系統：選擇分店")
     if df_s is not None:
         for s in df_s['分店名稱'].unique():
             if st.button(f"📍 {s}", use_container_width=True):
                 st.session_state.store = s
                 st.session_state.step = "select_vendor"
                 st.rerun()
+    else:
+        st.error("找不到分店 CSV 檔案，請檢查 GitHub 檔案名稱。")
 
+# --- 步驟 2: 選擇廠商 ---
 elif st.session_state.step == "select_vendor":
-    st.title(f"🏢 {st.session_state.store}")
+    st.title(f"🏢 目前分店：{st.session_state.store}")
+    st.subheader("請選擇廠商")
+    
     vendors = sorted(df_i['廠商名稱'].unique())
     for v in vendors:
         if st.button(f"📦 {v}", use_container_width=True):
             st.session_state.vendor = v
             st.session_state.step = "fill_items"
             st.rerun()
+            
+    st.write("---")
+    # 🔙 返回上一步
+    if st.button("⬅️ 返回選擇分店", use_container_width=True):
+        st.session_state.step = "select_store"
+        st.rerun()
 
+# --- 步驟 3: 填寫數量 ---
 elif st.session_state.step == "fill_items":
-    st.title(f"📝 {st.session_state.vendor}")
+    st.title(f"📝 填寫單據：{st.session_state.vendor}")
+    st.info(f"分店：{st.session_state.store} | 日期：{date.today()}")
+    
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     
-    # 建立一個表單，使用者填完後按最下面的按鈕一次送出
-    with st.form("my_form"):
+    with st.form("inventory_form"):
         temp_rows = []
         for _, row in items.iterrows():
             name = row['品項名稱']
-            st.write(f"**{name}**")
+            st.write(f"**【{name}】**")
             c1, c2 = st.columns(2)
-            ts = c1.number_input(f"{name} - 剩餘量", min_value=0, key=f"s_{name}")
-            tp = c2.number_input(f"{name} - 叫貨量", min_value=0, key=f"p_{name}")
+            ts = c1.number_input(f"剩餘量", min_value=0, step=1, key=f"s_{name}")
+            tp = c2.number_input(f"叫貨量", min_value=0, step=1, key=f"p_{name}")
             
-            # 準備存入 Google Sheets 的資料行
-            temp_rows.append([str(date.today()), st.session_state.store, st.session_state.vendor, name, 0, 0, ts, tp, 0])
+            # 準備存入資料行 (目前暫設上次結餘與消耗為 0)
+            temp_rows.append([str(date.today()), st.session_state.store, st.session_state.vendor, name, 0, 0, int(ts), int(tp), 0])
         
-        # 儲存按鈕
-        submit = st.form_submit_button("💾 儲存並同步")
+        st.write("---")
+        # 儲存與取消按鈕
+        col1, col2 = st.columns(2)
+        submit = col1.form_submit_button("💾 儲存並同步雲端")
+        cancel = col2.form_submit_button("❌ 不叫貨（返回）")
+        
         if submit:
-            # 定義 9 個欄位名稱
             cols = ['record_date', 'store_name', 'vendor_name', 'item_name', 'last_stock', 'last_purchase', 'this_stock', 'this_purchase', 'usage_qty']
             df_to_save = pd.DataFrame(temp_rows, columns=cols)
             
             if sync_data_to_gs(df_to_save):
-                st.success("✅ 同步成功！資料已寫入 Google Sheets")
-                st.session_state.step = "select_store" # 存完自動跳回選店畫面
+                st.success("✅ 同步成功！資料已存入 Google Sheets。")
+                st.session_state.step = "select_store"
                 st.rerun()
+        
+        if cancel:
+            st.session_state.step = "select_vendor"
+            st.rerun()
