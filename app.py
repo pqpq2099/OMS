@@ -10,11 +10,13 @@ from pathlib import Path
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
+# 💡 擴展標題對照表：加入「單位」
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
     'vendor_name': '廠商',
     'item_name': '品項',
+    'unit': '單位',
     'last_stock': '上次剩餘',
     'last_purchase': '上次叫貨',
     'this_stock': '本次剩餘',
@@ -140,6 +142,7 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         for _, row in items.iterrows():
             name = row['品項名稱']
+            unit = row.get('單位', '') # 💡 抓取單位
             price = float(row.get('單價', 0))
             
             prev_s, prev_p = 0, 0
@@ -151,7 +154,7 @@ elif st.session_state.step == "fill_items":
                     prev_p = int(latest.get(COL_MAP['this_purchase'], 0))
             
             st.write(f"---")
-            st.markdown(f"**{name}**")
+            st.markdown(f"**{name}** ({unit})")
             c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
                 st.info(f"上次結餘：{int(prev_s + prev_p)}")
@@ -164,9 +167,11 @@ elif st.session_state.step == "fill_items":
             
             total_amt = round(t_p * price, 1)
             if t_s > 0 or t_p > 0:
-                temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, name, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)])
+                temp_data.append([
+                    str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, 
+                    name, unit, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)
+                ])
         
-        # 💡 這裡將儲存與返回按鈕重新並列顯示
         col_save, col_cancel = st.columns(2)
         submit = col_save.form_submit_button("💾 儲存並返回廠商列表", use_container_width=True)
         cancel = col_cancel.form_submit_button("❌ 不叫貨返回", use_container_width=True)
@@ -177,7 +182,7 @@ elif st.session_state.step == "fill_items":
                 if sync_to_cloud(df_to_save):
                     st.success("✅ 雲端同步成功！")
                     st.session_state.step = "select_vendor"; st.rerun()
-            else: st.warning("未填寫任何數據。")
+            else: st.warning("未填寫數據。")
             
         if cancel:
             st.session_state.step = "select_vendor"
@@ -194,13 +199,23 @@ elif st.session_state.step == "export":
             st.warning(f"{date_str} 目前沒有任何叫貨紀錄。")
         else:
             st.subheader("🔍 今日叫貨數據對照表")
-            display_cols = {COL_MAP['vendor_name']: '廠商', COL_MAP['item_name']: '品項名稱', COL_MAP['last_stock']: '上次庫存', COL_MAP['last_purchase']: '上次叫貨', COL_MAP['this_stock']: '這次剩餘', COL_MAP['usage_qty']: '期間使用量', COL_MAP['this_purchase']: '本次叫貨量', COL_MAP['total_price']: '總金額'}
-            st.table(recs[list(display_cols.keys())].rename(columns=display_cols).style.format({'上次庫存': '{:d}', '上次叫貨': '{:d}', '這次剩餘': '{:d}', '期間使用量': '{:d}', '本次叫貨量': '{:d}', '總金額': '{:.1f}'}))
+            display_cols = {
+                COL_MAP['vendor_name']: '廠商', COL_MAP['item_name']: '品項名稱', COL_MAP['unit']: '單位',
+                COL_MAP['last_stock']: '上次庫存', COL_MAP['last_purchase']: '上次叫貨', 
+                COL_MAP['this_stock']: '這次剩餘', COL_MAP['usage_qty']: '期間使用量', 
+                COL_MAP['this_purchase']: '本次叫貨量', COL_MAP['total_price']: '總金額'
+            }
+            st.table(recs[list(display_cols.keys())].rename(columns=display_cols).style.format({
+                '上次庫存': '{:d}', '上次叫貨': '{:d}', '這次剩餘': '{:d}', '期間使用量': '{:d}', '本次叫貨量': '{:d}', '總金額': '{:.1f}'
+            }))
+            
+            # 💡 LINE 複製格式：加上單位
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n--------------------\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n廠商：{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
-                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}\n"
+                    u = r.get(COL_MAP['unit'], '')
+                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
             st.subheader("📱 LINE 複製格式")
             st.text_area("全選複製：", value=output, height=300)
     if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
@@ -214,8 +229,8 @@ elif st.session_state.step == "analysis":
         hist_df[COL_MAP['record_date']] = pd.to_datetime(hist_df[COL_MAP['record_date']]).dt.date
         analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] >= start) & (hist_df[COL_MAP['record_date']] <= end)]
         if not analysis.empty:
-            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name']]).agg({COL_MAP['usage_qty']: 'sum', COL_MAP['total_price']: 'sum'}).reset_index()
-            summary.columns = ['廠商名稱', '品項名稱', '總消耗數量', '總金額']
+            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit']]).agg({COL_MAP['usage_qty']: 'sum', COL_MAP['total_price']: 'sum'}).reset_index()
+            summary.columns = ['廠商名稱', '品項名稱', '單位', '總消耗數量', '總金額']
             st.table(summary[summary['總消耗數量'] != 0].sort_values('總消耗數量', ascending=False).style.format({'總消耗數量': '{:d}', '總金額': '{:.1f}'}))
         else: st.info("期間無數據。")
     if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
