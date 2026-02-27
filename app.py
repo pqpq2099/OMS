@@ -10,7 +10,7 @@ from pathlib import Path
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
-# 💡 擴展標題對照表：加入「單位」
+# 💡 嚴格定義中文欄位名稱
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
@@ -46,6 +46,12 @@ def get_cloud_data():
         ws = sh.worksheet("Records")
         data = ws.get_all_records()
         df = pd.DataFrame(data)
+        
+        # 💡 容錯機制：如果雲端資料是舊的，補上缺失的欄位
+        for col_name in COL_MAP.values():
+            if col_name not in df.columns:
+                df[col_name] = 0 if "金額" in col_name or "次" in col_name else ""
+                
         # 數量轉整數，金額轉浮點
         int_cols = [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['last_stock'], COL_MAP['last_purchase'], COL_MAP['usage_qty']]
         float_cols = [COL_MAP['unit_price'], COL_MAP['total_price']]
@@ -62,8 +68,13 @@ def sync_to_cloud(df_to_save):
     if not client: return False
     try:
         sh = client.open_by_key(SHEET_ID)
-        ws = sh.worksheet("Records")
+        try:
+            ws = sh.worksheet("Records")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title="Records", rows="1000", cols="20")
+        
         headers = list(COL_MAP.values())
+        # 💡 強制校準標題列，確保「單位」出現在正確位置
         ws.update('A1', [headers]) 
         ws.append_rows(df_to_save.values.tolist())
         return True
@@ -91,7 +102,7 @@ if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
-# 3. 介面流程控制
+# 3. 介面流程
 # =========================
 
 if st.session_state.step == "select_store":
@@ -142,12 +153,13 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         for _, row in items.iterrows():
             name = row['品項名稱']
-            unit = row.get('單位', '') # 💡 抓取單位
+            unit = row.get('單位', '')
             price = float(row.get('單價', 0))
             
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
-                past = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['item_name']] == name)]
+                past = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
+                               (hist_df[COL_MAP['item_name']] == name)]
                 if not past.empty:
                     latest = past.iloc[-1]
                     prev_s = int(latest.get(COL_MAP['this_stock'], 0))
@@ -183,33 +195,34 @@ elif st.session_state.step == "fill_items":
                     st.success("✅ 雲端同步成功！")
                     st.session_state.step = "select_vendor"; st.rerun()
             else: st.warning("未填寫數據。")
-            
         if cancel:
-            st.session_state.step = "select_vendor"
-            st.rerun()
+            st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "export":
     date_str = str(st.session_state.record_date)
     st.title(f"📋 {date_str} 叫貨報表")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
+    
     if not hist_df.empty:
         hist_df[COL_MAP['record_date']] = hist_df[COL_MAP['record_date']].astype(str)
-        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] == date_str) & (hist_df[COL_MAP['this_purchase']] > 0)].copy()
+        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
+                       (hist_df[COL_MAP['record_date']] == date_str) & 
+                       (hist_df[COL_MAP['this_purchase']] > 0)].copy()
+        
         if recs.empty:
-            st.warning(f"{date_str} 目前沒有任何叫貨紀錄。")
+            st.warning(f"⚠️ {date_str} 目前無叫貨紀錄。")
         else:
             st.subheader("🔍 今日叫貨數據對照表")
-            display_cols = {
-                COL_MAP['vendor_name']: '廠商', COL_MAP['item_name']: '品項名稱', COL_MAP['unit']: '單位',
-                COL_MAP['last_stock']: '上次庫存', COL_MAP['last_purchase']: '上次叫貨', 
-                COL_MAP['this_stock']: '這次剩餘', COL_MAP['usage_qty']: '期間使用量', 
-                COL_MAP['this_purchase']: '本次叫貨量', COL_MAP['total_price']: '總金額'
-            }
-            st.table(recs[list(display_cols.keys())].rename(columns=display_cols).style.format({
-                '上次庫存': '{:d}', '上次叫貨': '{:d}', '這次剩餘': '{:d}', '期間使用量': '{:d}', '本次叫貨量': '{:d}', '總金額': '{:.1f}'
-            }))
+            # 💡 這裡列出我們想要顯示的所有中文標題
+            display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], 
+                               COL_MAP['last_stock'], COL_MAP['last_purchase'], 
+                               COL_MAP['this_stock'], COL_MAP['usage_qty'], 
+                               COL_MAP['this_purchase'], COL_MAP['total_price']]
             
-            # 💡 LINE 複製格式：加上單位
+            # 只選取存在的欄位，避免 KeyError
+            existing_cols = [c for c in display_headers if c in recs.columns]
+            st.table(recs[existing_cols].style.format({COL_MAP['total_price']: '{:.1f}'}, precision=0))
+            
             output = f"【{st.session_state.store}】叫貨單 ({date_str})\n--------------------\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n廠商：{v}\n"
@@ -218,19 +231,25 @@ elif st.session_state.step == "export":
                     output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
             st.subheader("📱 LINE 複製格式")
             st.text_area("全選複製：", value=output, height=300)
-    if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
+    
+    if st.button("⬅️ 返回"): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
     st.title("📊 期間分析查詢")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     c1, c2 = st.columns(2)
     start, end = c1.date_input("起始日", value=date.today()-timedelta(7)), c2.date_input("結束日", value=date.today())
+    
     if not hist_df.empty:
         hist_df[COL_MAP['record_date']] = pd.to_datetime(hist_df[COL_MAP['record_date']]).dt.date
-        analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] >= start) & (hist_df[COL_MAP['record_date']] <= end)]
+        analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
+                           (hist_df[COL_MAP['record_date']] >= start) & 
+                           (hist_df[COL_MAP['record_date']] <= end)]
         if not analysis.empty:
-            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit']]).agg({COL_MAP['usage_qty']: 'sum', COL_MAP['total_price']: 'sum'}).reset_index()
-            summary.columns = ['廠商名稱', '品項名稱', '單位', '總消耗數量', '總金額']
-            st.table(summary[summary['總消耗數量'] != 0].sort_values('總消耗數量', ascending=False).style.format({'總消耗數量': '{:d}', '總金額': '{:.1f}'}))
+            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit']]).agg({
+                COL_MAP['usage_qty']: 'sum',
+                COL_MAP['total_price']: 'sum'
+            }).reset_index()
+            st.table(summary[summary[COL_MAP['usage_qty']] != 0].sort_values(COL_MAP['usage_qty'], ascending=False).style.format({COL_MAP['total_price']: '{:.1f}'}, precision=0))
         else: st.info("期間無數據。")
-    if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
+    if st.button("⬅️ 返回"): st.session_state.step = "select_vendor"; st.rerun()
