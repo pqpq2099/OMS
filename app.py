@@ -46,7 +46,7 @@ def get_cloud_data():
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # 強制數值轉換
+        # 數值型態強制轉型
         int_cols = [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['last_stock'], COL_MAP['last_purchase'], COL_MAP['usage_qty']]
         float_cols = [COL_MAP['unit_price'], COL_MAP['total_price']]
         for col in df.columns:
@@ -192,7 +192,6 @@ elif st.session_state.step == "export":
             st.warning(f"{date_str} 目前尚無叫貨紀錄。")
         else:
             st.subheader("🔍 當日叫貨與消耗參考")
-            # 💡 確保單價與金額列入顯示欄位
             display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['usage_qty'], COL_MAP['this_purchase'], COL_MAP['total_price']]
             st.dataframe(recs[display_headers].rename(columns={COL_MAP['usage_qty']: '上次至今消耗', COL_MAP['total_price']: '本次叫貨金額'}), use_container_width=True)
             
@@ -219,7 +218,7 @@ elif st.session_state.step == "analysis":
         analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] >= start) & (hist_df[COL_MAP['record_date']] <= end)].copy()
         
         if not analysis.empty:
-            # 💡 修正：在彙整時同時包含單價，確保能算出庫存價值
+            # 聚合計算
             summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['unit_price']]).agg({
                 COL_MAP['usage_qty']: 'sum',
                 COL_MAP['total_price']: 'sum'
@@ -230,8 +229,8 @@ elif st.session_state.step == "analysis":
             stock_map = last_records.set_index(COL_MAP['item_name'])[COL_MAP['this_stock']].to_dict()
             
             summary['期末庫存'] = summary[COL_MAP['item_name']].map(stock_map).fillna(0).astype(int)
-            # 💡 核心修正點：確保市值計算使用的是當前彙整出的單價
-            summary['期末市值'] = summary['期末庫存'] * summary[COL_MAP['unit_price']]
+            # 💡 名稱修改：由「期末市值」改為「庫存金額」
+            summary['庫存金額'] = summary['期末庫存'] * summary[COL_MAP['unit_price']]
             
             st.subheader(f"📅 期間匯總報表")
             st.dataframe(summary, use_container_width=True)
@@ -239,6 +238,7 @@ elif st.session_state.step == "analysis":
             st.write("---")
             m1, m2 = st.columns(2)
             m1.metric("採購支出總額", f"${summary[COL_MAP['total_price']].sum():,.0f}")
-            m2.metric("期末資產市值", f"${summary['期末市值'].sum():,.0f}")
+            # 💡 名稱修改：由「期末資產市值」改為「庫存金額」
+            m2.metric("庫存金額", f"${summary['庫存金額'].sum():,.0f}")
         else: st.info("無數據。")
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
