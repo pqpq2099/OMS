@@ -46,7 +46,6 @@ def get_cloud_data():
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # 欄位補齊與清洗
         for col_name in COL_MAP.values():
             if col_name not in df.columns:
                 df[col_name] = ""
@@ -89,7 +88,7 @@ def load_csv_safe(path):
         except: continue
     return None
 
-st.set_page_config(page_title="雲端進銷存系統", layout="wide")
+st.set_page_config(page_title="雲端進銷存管理系統", layout="wide")
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -148,10 +147,7 @@ elif st.session_state.step == "fill_items":
         for _, row in items.iterrows():
             name = str(row['品項名稱']).strip()
             unit = str(row['單位']).strip() if '單位' in row and pd.notna(row['單位']) else ""
-            try:
-                price = float(row['單價'])
-            except:
-                price = 0.0
+            price = float(row.get('單價', 0))
             
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
@@ -228,43 +224,55 @@ elif st.session_state.step == "export":
     if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間分析查詢 (全廠商匯總)")
+    st.title("📊 進銷存彙整分析 (會計與資產對帳)")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
     c1, c2 = st.columns(2)
-    start = c1.date_input("起始日", value=date.today()-timedelta(7))
-    end = c2.date_input("結束日", value=date.today())
+    start = c1.date_input("起始日期", value=date.today()-timedelta(7))
+    end = c2.date_input("結束日期", value=date.today())
     
     if not hist_df.empty:
-        # 💡 戰略修正：確保日期比對一致
         hist_df[COL_MAP['record_date']] = pd.to_datetime(hist_df[COL_MAP['record_date']]).dt.date
         
-        # 篩選分店與期間
-        analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
-                           (hist_df[COL_MAP['record_date']] >= start) & 
-                           (hist_df[COL_MAP['record_date']] <= end)].copy()
+        # 篩選區間
+        mask = (hist_df[COL_MAP['store_name']] == st.session_state.store) & \
+               (hist_df[COL_MAP['record_date']] >= start) & \
+               (hist_df[COL_MAP['record_date']] <= end)
+        analysis = hist_df[mask].copy()
         
         if not analysis.empty:
-            st.subheader(f"📅 統計區間：{start} ~ {end}")
-            
-            # 💡 核心優化：不針對單一廠商，而是對所有紀錄進行分組統計
-            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit']]).agg({
+            # 💡 戰略分析：計算區間內的進銷存狀態
+            # 1. 累計消耗與累計採購
+            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], COL_MAP['unit_price']]).agg({
+                COL_MAP['this_purchase']: 'sum',
                 COL_MAP['usage_qty']: 'sum',
                 COL_MAP['total_price']: 'sum'
             }).reset_index()
             
-            # 重新命名與排序
-            summary.columns = ['廠商名稱', '品項名稱', '單位', '總消耗數量', '總金額']
-            summary = summary[summary['總消耗數量'] != 0].sort_values(['廠商名稱', '總消耗數量'], ascending=[True, False])
+            # 2. 💡 核心：獲取該區間「最後一次盤點」的剩餘庫存
+            # 我們抓取區間內每個品項最後一筆紀錄的 'this_stock'
+            last_records = analysis.sort_values(COL_MAP['record_date']).groupby(COL_MAP['item_name']).tail(1)
+            stock_map = last_records.set_index(COL_MAP['item_name'])[COL_MAP['this_stock']].to_dict()
+            
+            summary['目前庫存'] = summary[COL_MAP['item_name']].map(stock_map)
+            summary['庫存市值'] = summary['目前庫存'] * summary[COL_MAP['unit_price']]
+            
+            summary.columns = ['廠商', '品項', '單位', '單價', '期間總叫貨', '期間總消耗', '期間總支出', '期末庫存', '期末庫存價值']
             
             # 顯示表格
-            st.table(summary.style.format({'總金額': '{:,.0f}'}, precision=0))
+            st.subheader(f"📈 營運分析表 ({start} ~ {end})")
+            st.table(summary.style.format({'期間總支出': '{:,.0f}', '期末庫存價值': '{:,.0f}'}, precision=0))
             
-            # 💡 額外加值：期間總支出統計
-            total_expense = summary['總金額'].sum()
-            st.metric("該期間總支出預估", f"${total_expense:,.0f}")
+            # 💡 財務指標
+            col_a, col_b = st.columns(2)
+            total_exp = summary['期間總支出'].sum()
+            total_inv = summary['期末庫存價值'].sum()
+            col_a.metric("期間採購總額 (變動成本)", f"${total_exp:,.0f}")
+            col_b.metric("期末庫存總額 (現有資產)", f"${total_inv:,.0f}")
+            
+            st.caption("註：庫存總額代表目前積壓在店內的資金價值，會計作帳時可用於資產負債評估。")
             
         else:
-            st.info("該期間內尚無任何叫貨或盤點數據。")
+            st.info("該期間內尚無數據。")
     
     if st.button("⬅️ 返回功能選單"): st.session_state.step = "select_vendor"; st.rerun()
