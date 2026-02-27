@@ -89,7 +89,7 @@ def load_csv_safe(path):
         except: continue
     return None
 
-st.set_page_config(page_title="專業雲端進銷存系統", layout="wide")
+st.set_page_config(page_title="雲端進銷存系統", layout="wide")
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -201,7 +201,6 @@ elif st.session_state.step == "export":
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
     if not hist_df.empty:
-        # 💡 戰略修正：篩選「該分店」、「該日期」且「有叫貨」的所有資料，不限單一廠商
         hist_df[COL_MAP['record_date']] = hist_df[COL_MAP['record_date']].astype(str)
         recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
                        (hist_df[COL_MAP['record_date']] == date_str) & 
@@ -211,15 +210,12 @@ elif st.session_state.step == "export":
             st.warning(f"⚠️ {date_str} 目前尚無叫貨紀錄。")
         else:
             st.subheader("🔍 當日所有廠商叫貨對照表")
-            # 依廠商排序，讓報表整齊
             recs = recs.sort_values(by=COL_MAP['vendor_name'])
-            
             display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit'], 
                                COL_MAP['this_purchase'], COL_MAP['total_price']]
             existing_cols = [c for c in display_headers if c in recs.columns]
             st.table(recs[existing_cols].style.format(precision=0))
             
-            # 💡 產生彙整版 LINE 格式
             output = f"【{st.session_state.store}】全廠商叫貨單 ({date_str})\n--------------------\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n廠商：{v}\n"
@@ -227,28 +223,48 @@ elif st.session_state.step == "export":
                 for _, r in v_items.iterrows():
                     u = str(r.get(COL_MAP['unit'], '')).strip()
                     output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
-            
-            st.subheader("📱 LINE 彙整複製格式")
-            st.text_area("全選複製：", value=output, height=400)
+            st.text_area("📱 LINE 彙整複製格式", value=output, height=400)
     
     if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間分析查詢")
+    st.title("📊 期間分析查詢 (全廠商匯總)")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
+    
     c1, c2 = st.columns(2)
-    start, end = c1.date_input("起始日", value=date.today()-timedelta(7)), c2.date_input("結束日", value=date.today())
+    start = c1.date_input("起始日", value=date.today()-timedelta(7))
+    end = c2.date_input("結束日", value=date.today())
     
     if not hist_df.empty:
+        # 💡 戰略修正：確保日期比對一致
         hist_df[COL_MAP['record_date']] = pd.to_datetime(hist_df[COL_MAP['record_date']]).dt.date
+        
+        # 篩選分店與期間
         analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
                            (hist_df[COL_MAP['record_date']] >= start) & 
-                           (hist_df[COL_MAP['record_date']] <= end)]
+                           (hist_df[COL_MAP['record_date']] <= end)].copy()
+        
         if not analysis.empty:
+            st.subheader(f"📅 統計區間：{start} ~ {end}")
+            
+            # 💡 核心優化：不針對單一廠商，而是對所有紀錄進行分組統計
             summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['unit']]).agg({
                 COL_MAP['usage_qty']: 'sum',
                 COL_MAP['total_price']: 'sum'
             }).reset_index()
-            st.table(summary[summary[COL_MAP['usage_qty']] != 0].sort_values(COL_MAP['vendor_name']).style.format(precision=0))
-        else: st.info("期間無數據。")
-    if st.button("⬅️ 返回"): st.session_state.step = "select_vendor"; st.rerun()
+            
+            # 重新命名與排序
+            summary.columns = ['廠商名稱', '品項名稱', '單位', '總消耗數量', '總金額']
+            summary = summary[summary['總消耗數量'] != 0].sort_values(['廠商名稱', '總消耗數量'], ascending=[True, False])
+            
+            # 顯示表格
+            st.table(summary.style.format({'總金額': '{:,.0f}'}, precision=0))
+            
+            # 💡 額外加值：期間總支出統計
+            total_expense = summary['總金額'].sum()
+            st.metric("該期間總支出預估", f"${total_expense:,.0f}")
+            
+        else:
+            st.info("該期間內尚無任何叫貨或盤點數據。")
+    
+    if st.button("⬅️ 返回功能選單"): st.session_state.step = "select_vendor"; st.rerun()
