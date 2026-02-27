@@ -23,6 +23,22 @@ def get_gspread_client():
         st.error(f"⚠️ 金鑰讀取失敗: {e}")
         return None
 
+def get_prev_data(store, item):
+    try:
+        client = get_gspread_client()
+        sh = client.open_by_key(SHEET_ID)
+        ws = sh.worksheet("Records")
+        all_data = pd.DataFrame(ws.get_all_records())
+        if all_data.empty: return 0, 0
+        
+        past = all_data[(all_data['store_name'] == store) & (all_data['item_name'] == item)]
+        if not past.empty:
+            latest = past.iloc[-1]
+            return int(latest['this_stock']), int(latest['this_purchase'])
+    except:
+        pass
+    return 0, 0
+
 def sync_data_to_gs(df_to_save):
     client = get_gspread_client()
     if not client: return False
@@ -36,7 +52,7 @@ def sync_data_to_gs(df_to_save):
         ws.append_rows(df_to_save.values.tolist())
         return True
     except Exception as e:
-        st.error(f"❌ 寫入 Google 表格失敗: {e}")
+        st.error(f"❌ 寫入失敗: {e}")
         return False
 
 # =========================
@@ -57,7 +73,6 @@ st.set_page_config(page_title="雲端進銷存系統", layout="wide")
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
-# 💡 初始化日期狀態
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
@@ -75,10 +90,7 @@ if st.session_state.step == "select_store":
 
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
-    
-    # 📅 加回日期選擇功能
     st.session_state.record_date = st.date_input("📅 選擇叫貨日期", value=st.session_state.record_date)
-    
     st.write("---")
     vendors = sorted(df_i['廠商名稱'].unique())
     for v in vendors:
@@ -93,34 +105,39 @@ elif st.session_state.step == "select_vendor":
 
 elif st.session_state.step == "fill_items":
     st.title(f"📝 {st.session_state.vendor}")
-    st.info(f"分店：{st.session_state.store} | 日期：{st.session_state.record_date}")
-    
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     
     with st.form("inventory_form"):
         temp_rows = []
         for _, row in items.iterrows():
             name = row['品項名稱']
-            st.write(f"**【{name}】**")
-            c1, c2 = st.columns(2)
-            ts = c1.number_input(f"剩餘量", min_value=0, step=1, key=f"s_{name}")
-            tp = c2.number_input(f"叫貨量", min_value=0, step=1, key=f"p_{name}")
             
-            # 使用 session_state.record_date 確保日期正確
-            temp_rows.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, name, 0, 0, int(ts), int(tp), 0])
+            # 抓取上次紀錄
+            prev_s, prev_p = get_prev_data(st.session_state.store, name)
+            st.write(f"**【{name}】** (上次結餘: {prev_s + prev_p})")
+            
+            c1, c2 = st.columns(2)
+            ts = c1.number_input(f"本次剩餘", min_value=0, step=1, key=f"s_{name}")
+            tp = c2.number_input(f"本次叫貨", min_value=0, step=1, key=f"p_{name}")
+            
+            # 計算使用量 (期間使用量 = 上次剩餘 + 上次叫貨 - 本次剩餘)
+            usage = (prev_s + prev_p) - ts
+            
+            # 💡 戰略過濾：只有當「叫貨量 > 0」或「剩餘量 > 0」時才加入待上傳清單
+            if ts > 0 or tp > 0:
+                temp_rows.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, name, int(prev_s), int(prev_p), int(ts), int(tp), int(usage)])
         
         col1, col2 = st.columns(2)
-        submit = col1.form_submit_button("💾 儲存並同步雲端")
-        cancel = col2.form_submit_button("❌ 不叫貨（返回）")
-        
-        if submit:
-            cols = ['record_date', 'store_name', 'vendor_name', 'item_name', 'last_stock', 'last_purchase', 'this_stock', 'this_purchase', 'usage_qty']
-            df_to_save = pd.DataFrame(temp_rows, columns=cols)
-            if sync_data_to_gs(df_to_save):
-                st.success("✅ 同步成功！")
-                st.session_state.step = "select_store"
-                st.rerun()
-        
-        if cancel:
+        if col1.form_submit_button("💾 儲存並同步雲端"):
+            if not temp_rows:
+                st.warning("⚠️ 沒有填寫任何數量，取消同步。")
+            else:
+                cols = ['record_date', 'store_name', 'vendor_name', 'item_name', 'last_stock', 'last_purchase', 'this_stock', 'this_purchase', 'usage_qty']
+                df_to_save = pd.DataFrame(temp_rows, columns=cols)
+                if sync_data_to_gs(df_to_save):
+                    st.success(f"✅ 同步成功！已寫入 {len(temp_rows)} 筆資料。")
+                    st.session_state.step = "select_store"
+                    st.rerun()
+        if col2.form_submit_button("❌ 不叫貨（返回）"):
             st.session_state.step = "select_vendor"
             st.rerun()
