@@ -194,14 +194,18 @@ elif st.session_state.step == "export":
             display_headers = [COL_MAP['vendor_name'], COL_MAP['item_name'], COL_MAP['usage_qty'], COL_MAP['this_purchase'], COL_MAP['total_price']]
             st.dataframe(recs[display_headers].rename(columns={COL_MAP['usage_qty']: '上次至今消耗', COL_MAP['total_price']: '本次叫貨金額'}), use_container_width=True)
             
-            # 💡 LINE 格式優化：移除「廠商:」與「(前次消耗:x)」
-            output = f"【{st.session_state.store}】叫貨單 ({date_str})\n"
+            # 💡 指定格式優化：日期 -> 分店 -> 廠商 -> 品項及金額
+            output = f"{date_str}\n{st.session_state.store}\n"
             for v in recs[COL_MAP['vendor_name']].unique():
-                output += f"\n{v}\n" # 💡 僅顯示廠商名稱
+                output += f"\n{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
                     u = str(r.get(COL_MAP['unit'], '')).strip()
-                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}{u}\n"
-            st.text_area("📱 LINE 複製格式", value=output, height=300)
+                    p = int(r.get(COL_MAP['unit_price'], 0))
+                    # 格式範例：● 黑珍珠菇3kg/包-$480：2包
+                    output += f"● {r[COL_MAP['item_name']]} ( {u} )-${p}：{int(r[COL_MAP['this_purchase']])}{u}\n"
+            
+            st.subheader("📱 LINE 複製格式")
+            st.text_area("全選複製：", value=output, height=300)
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
