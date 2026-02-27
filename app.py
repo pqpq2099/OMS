@@ -10,6 +10,7 @@ from pathlib import Path
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
+# 💡 嚴格定義中文欄位名稱
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
@@ -42,9 +43,8 @@ def get_cloud_data():
         client = get_gspread_client()
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet("Records")
-        data = ws.get_all_records()
-        df = pd.DataFrame(data)
-        # 強制數值轉換，避免雲端資料型態干擾
+        df = pd.DataFrame(ws.get_all_records())
+        # 強制數值轉換，避免雲端髒資料干擾
         for col in [COL_MAP['this_stock'], COL_MAP['this_purchase'], COL_MAP['unit_price'], COL_MAP['total_price']]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -58,7 +58,7 @@ def sync_to_cloud(df_to_save):
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet("Records")
         headers = list(COL_MAP.values())
-        # 強制複寫第一列標題，確保完全對齊
+        # 強制校準標題列
         ws.update('A1', [headers]) 
         ws.append_rows(df_to_save.values.tolist())
         return True
@@ -72,7 +72,7 @@ CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 
 def load_csv_safe(path):
-    for enc in ['utf-8', 'cp950', 'big5']:
+    for enc in ['utf-8', 'cp950', 'big5', 'utf-8-sig']:
         try:
             df = pd.read_csv(path, encoding=enc)
             return df.map(lambda x: x.strip() if isinstance(x, str) else x)
@@ -129,24 +129,24 @@ elif st.session_state.step == "select_vendor":
 
 elif st.session_state.step == "fill_items":
     st.title(f"📝 {st.session_state.vendor}")
-    st.caption(f"分店：{st.session_state.store} | 日期：{st.session_state.record_date}")
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
     with st.form("inventory_form"):
         temp_data = []
         for _, row in items.iterrows():
-            name = row['品項名稱']
-            # 強制轉換單價為數字
+            # 💡 這裡必須與 CSV 的標題完全一致
+            name = row['品項名稱'] 
             try:
-                raw_price = str(row.get('單價', '0')).replace(',', '').strip()
-                price = float(raw_price) if raw_price else 0.0
+                price = float(row['單價'])
             except:
                 price = 0.0
             
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
-                past = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['品項']] == name)]
+                # 💡 比對試算表中的「店名」與「品項」
+                past = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
+                               (hist_df[COL_MAP['item_name']] == name)]
                 if not past.empty:
                     latest = past.iloc[-1]
                     prev_s = int(float(latest.get(COL_MAP['this_stock'], 0)))
@@ -165,61 +165,4 @@ elif st.session_state.step == "fill_items":
                 st.success(f"計算使用量：{usage}")
             
             total_amt = t_p * price
-            if t_s > 0 or t_p > 0:
-                temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, name, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)])
-        
-        if st.form_submit_button("💾 儲存並返回廠商列表", use_container_width=True):
-            if temp_data:
-                df_to_save = pd.DataFrame(temp_data)
-                if sync_to_cloud(df_to_save):
-                    st.success("✅ 雲端同步成功！")
-                    st.session_state.step = "select_vendor"; st.rerun()
-            else: st.warning("未填寫數據。")
-
-elif st.session_state.step == "export":
-    date_str = str(st.session_state.record_date)
-    st.title(f"📋 {date_str} 叫貨報表")
-    hist_df = st.session_state.get('history_df', pd.DataFrame())
-    
-    if not hist_df.empty:
-        # 強制過濾目前店面與日期
-        hist_df[COL_MAP['record_date']] = hist_df[COL_MAP['record_date']].astype(str)
-        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
-                       (hist_df[COL_MAP['record_date']] == date_str) & 
-                       (hist_df[COL_MAP['this_purchase']] > 0)]
-        
-        if recs.empty:
-            st.warning(f"{date_str} 目前沒有任何叫貨紀錄。")
-        else:
-            st.subheader("🔍 今日叫貨數據對照表")
-            st.table(recs)
-            
-            output = f"【{st.session_state.store}】叫貨單 ({date_str})\n--------------------\n"
-            for v in recs[COL_MAP['vendor_name']].unique():
-                output += f"\n廠商：{v}\n"
-                for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
-                    output += f"● {r[COL_MAP['item_name']]}：{int(r[COL_MAP['this_purchase']])}\n"
-            st.subheader("📱 LINE 複製格式")
-            st.text_area("全選複製：", value=output, height=300)
-    
-    if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
-
-elif st.session_state.step == "analysis":
-    st.title("📊 期間分析查詢")
-    hist_df = st.session_state.get('history_df', pd.DataFrame())
-    c1, c2 = st.columns(2)
-    start, end = c1.date_input("起始日", value=date.today()-timedelta(7)), c2.date_input("結束日", value=date.today())
-    
-    if not hist_df.empty:
-        hist_df[COL_MAP['record_date']] = pd.to_datetime(hist_df[COL_MAP['record_date']]).dt.date
-        analysis = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
-                           (hist_df[COL_MAP['record_date']] >= start) & 
-                           (hist_df[COL_MAP['record_date']] <= end)]
-        if not analysis.empty:
-            summary = analysis.groupby([COL_MAP['vendor_name'], COL_MAP['item_name']]).agg({
-                COL_MAP['usage_qty']: 'sum',
-                COL_MAP['total_price']: 'sum'
-            }).reset_index()
-            st.table(summary[summary[COL_MAP['usage_qty']] != 0].sort_values(COL_MAP['usage_qty'], ascending=False))
-        else: st.info("期間無數據。")
-    if st.button("⬅️ 返回廠商列表"): st.session_state.step = "select_vendor"; st.rerun()
+            if t_s > 0 or t_p >
