@@ -195,7 +195,7 @@ elif st.session_state.step == "export":
             st.text_area("📱 LINE 複製", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 E：期間分析 (💡 字體統計行優化) ---
+# --- 頁面 E：期間分析 (💡 手機版文字適配優化) ---
 elif st.session_state.step == "analysis":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📊 期間進銷存分析")
@@ -213,17 +213,20 @@ elif st.session_state.step == "analysis":
             for c in ['期間消耗', '本次叫貨', '期末庫存']:
                 summary[c] = summary[c].apply(lambda x: int(x) if x == int(x) else round(x, 1))
             
-            # 💡 數據行視覺優化：加粗並稍微放大，增加可讀性
+            # 💡 移除背景色塊，改用對比色文字，確保深色模式可見
             buy_total = f"{summary['總金額'].sum():,.1f}"
             stock_total = f"{summary['庫存金額'].sum():,.1f}"
             
             st.markdown(f"""
-                <div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
-                    <span style='font-size: 16px; font-weight: bold;'>採購支出總額：</span>
-                    <span style='font-size: 18px; font-weight: 800; color: #1f77b4;'>${buy_total}</span>
-                    <span style='margin: 0 15px; color: #ccc;'>|</span>
-                    <span style='font-size: 16px; font-weight: bold;'>期末庫存總值：</span>
-                    <span style='font-size: 18px; font-weight: 800; color: #2ca02c;'>${stock_total}</span>
+                <div style='margin-bottom: 20px; border-left: 5px solid #1f77b4; padding-left: 15px;'>
+                    <div style='margin-bottom: 5px;'>
+                        <span style='font-size: 15px;'>採購支出總額：</span>
+                        <span style='font-size: 20px; font-weight: 800; color: #4A90E2;'>${buy_total}</span>
+                    </div>
+                    <div>
+                        <span style='font-size: 15px;'>期末庫存總值：</span>
+                        <span style='font-size: 20px; font-weight: 800; color: #50C878;'>${stock_total}</span>
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
             
