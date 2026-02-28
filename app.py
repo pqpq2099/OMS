@@ -10,7 +10,6 @@ from pathlib import Path
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
-# 💡 這裡定義 Records 試算表對應的欄位名稱
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
@@ -70,19 +69,16 @@ def sync_to_cloud(df_to_save):
         st.error(f"❌ 雲端寫入失敗: {e}"); return False
 
 # =========================
-# 2. 檔案載入 (暴力清洗版)
+# 2. 檔案載入
 # =========================
 CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 
 def load_csv_safe(path):
-    # 支援多種編碼讀取
     for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
         try:
             df = pd.read_csv(path, encoding=enc)
-            # 💡 關鍵修復：移除標題列所有不可見字元與空格
             df.columns = [str(c).strip().replace('\ufeff', '') for c in df.columns]
-            # 💡 關鍵修復：移除內容所有前後空格
             return df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
         except: continue
     return None
@@ -90,9 +86,8 @@ def load_csv_safe(path):
 st.set_page_config(page_title="進銷存管理系統", layout="centered")
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 
-# 💡 檢查數據是否載入成功，若失敗顯示引導資訊
 if df_i is None:
-    st.error("❌ 無法讀取品項 CSV 檔案，請確認檔名與編碼是否正確。")
+    st.error("❌ 品項 CSV 載入失敗，請檢查檔案。")
     st.stop()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -105,7 +100,6 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 if st.session_state.step == "select_store":
     st.title("🏠 選擇分店")
     if df_s is not None:
-        # 💡 安全讀取分店名稱欄位
         col_s = '分店名稱' if '分店名稱' in df_s.columns else df_s.columns[0]
         for s in df_s[col_s].unique():
             if st.button(f"📍 {s}", use_container_width=True):
@@ -116,21 +110,15 @@ if st.session_state.step == "select_store":
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 紀錄/送貨日期", value=st.session_state.record_date)
-    
     st.subheader("📦 廠商列表")
-    # 💡 使用安全性高的欄位抓取
     target_col = '廠商名稱' if '廠商名稱' in df_i.columns else '廠商'
-    try:
-        vendors = sorted(df_i[target_col].unique())
-        for v in vendors:
-            if st.button(f"📦 {v}", use_container_width=True):
-                st.session_state.vendor = v
-                st.session_state.history_df = get_cloud_data()
-                st.session_state.step = "fill_items"
-                st.rerun()
-    except KeyError:
-        st.error(f"❌ 找不到 '{target_col}' 欄位，請檢查 CSV 標題。目前欄位有: {list(df_i.columns)}")
-
+    vendors = sorted(df_i[target_col].unique())
+    for v in vendors:
+        if st.button(f"📦 {v}", use_container_width=True):
+            st.session_state.vendor = v
+            st.session_state.history_df = get_cloud_data()
+            st.session_state.step = "fill_items"
+            st.rerun()
     st.write("---")
     if st.button("📄 產生今日叫貨報表", type="primary", use_container_width=True):
         st.session_state.history_df = get_cloud_data()
@@ -195,9 +183,13 @@ elif st.session_state.step == "export":
             output = f"{date_str}\n{st.session_state.store}\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n{v}\n"
-                for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
-                    u, p = str(r.get(COL_MAP['unit'], '')), int(r.get(COL_MAP['unit_price'], 0))
-                    output += f"● {r[COL_MAP['item_name']]} ( {u} )-${p}：{int(r[r.index == r.name][COL_MAP['this_purchase']].values[0])}{u}\n"
+                v_items = recs[recs[COL_MAP['vendor_name']] == v]
+                for idx, r in v_items.iterrows():
+                    u = str(r.get(COL_MAP['unit'], ''))
+                    p = int(r.get(COL_MAP['unit_price'], 0))
+                    # 💡 修復關鍵：直接讀取 Series 中的數值，不再進行二次過濾
+                    qty = int(r[COL_MAP['this_purchase']])
+                    output += f"● {r[COL_MAP['item_name']]} ( {u} )-${p}：{qty}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
