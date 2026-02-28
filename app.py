@@ -6,15 +6,16 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # =========================
-# 1. 核心設定 (對齊新 CSV 結構)
+# 1. 核心設定
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
+# 💡 這裡定義 Records 試算表對應的欄位名稱
 COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
     'vendor_name': '廠商',
-    'item_name': '品項名稱', # 💡 這裡對齊 CSV 的新欄位：無價格名稱
+    'item_name': '品項名稱', 
     'unit': '單位',
     'last_stock': '上次剩餘',
     'last_purchase': '上次叫貨',
@@ -69,23 +70,30 @@ def sync_to_cloud(df_to_save):
         st.error(f"❌ 雲端寫入失敗: {e}"); return False
 
 # =========================
-# 2. 檔案載入 (支援新舊 CSV 過渡)
+# 2. 檔案載入 (暴力清洗版)
 # =========================
-# 💡 請將檔名改為您的新檔案
-CSV_ITEMS = Path("品項總覽_更新版.csv")
 CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
+CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 
 def load_csv_safe(path):
+    # 支援多種編碼讀取
     for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
         try:
             df = pd.read_csv(path, encoding=enc)
-            df.columns = [c.strip().replace('\ufeff', '') for c in df.columns]
-            return df.map(lambda x: x.strip() if isinstance(x, str) else x)
+            # 💡 關鍵修復：移除標題列所有不可見字元與空格
+            df.columns = [str(c).strip().replace('\ufeff', '') for c in df.columns]
+            # 💡 關鍵修復：移除內容所有前後空格
+            return df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
         except: continue
     return None
 
-st.set_page_config(page_title="進銷存管理 (精確版)", layout="centered")
+st.set_page_config(page_title="進銷存管理系統", layout="centered")
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
+
+# 💡 檢查數據是否載入成功，若失敗顯示引導資訊
+if df_i is None:
+    st.error("❌ 無法讀取品項 CSV 檔案，請確認檔名與編碼是否正確。")
+    st.stop()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
@@ -97,7 +105,9 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 if st.session_state.step == "select_store":
     st.title("🏠 選擇分店")
     if df_s is not None:
-        for s in df_s['分店名稱'].unique():
+        # 💡 安全讀取分店名稱欄位
+        col_s = '分店名稱' if '分店名稱' in df_s.columns else df_s.columns[0]
+        for s in df_s[col_s].unique():
             if st.button(f"📍 {s}", use_container_width=True):
                 st.session_state.store = s
                 st.session_state.step = "select_vendor"
@@ -106,14 +116,21 @@ if st.session_state.step == "select_store":
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 紀錄/送貨日期", value=st.session_state.record_date)
+    
     st.subheader("📦 廠商列表")
-    vendors = sorted(df_i['廠商名稱'].unique())
-    for v in vendors:
-        if st.button(f"📦 {v}", use_container_width=True):
-            st.session_state.vendor = v
-            st.session_state.history_df = get_cloud_data()
-            st.session_state.step = "fill_items"
-            st.rerun()
+    # 💡 使用安全性高的欄位抓取
+    target_col = '廠商名稱' if '廠商名稱' in df_i.columns else '廠商'
+    try:
+        vendors = sorted(df_i[target_col].unique())
+        for v in vendors:
+            if st.button(f"📦 {v}", use_container_width=True):
+                st.session_state.vendor = v
+                st.session_state.history_df = get_cloud_data()
+                st.session_state.step = "fill_items"
+                st.rerun()
+    except KeyError:
+        st.error(f"❌ 找不到 '{target_col}' 欄位，請檢查 CSV 標題。目前欄位有: {list(df_i.columns)}")
+
     st.write("---")
     if st.button("📄 產生今日叫貨報表", type="primary", use_container_width=True):
         st.session_state.history_df = get_cloud_data()
@@ -126,18 +143,16 @@ elif st.session_state.step == "select_vendor":
 
 elif st.session_state.step == "fill_items":
     st.title(f"📝 {st.session_state.vendor}")
-    # 💡 核心：獲取篩選後的項目
-    items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
+    target_col = '廠商名稱' if '廠商名稱' in df_i.columns else '廠商'
+    items = df_i[df_i[target_col] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
     with st.form("inventory_form"):
         temp_data = []
         for _, row in items.iterrows():
-            # 💡 填寫與顯示皆使用「品項名稱（無價格版）」
             display_name = str(row['品項名稱']).strip()
-            full_name = str(row['品項']).strip() # 💡 後台紀錄仍可抓取完整名稱
-            unit = str(row['單位']).strip() if '單位' in row and pd.notna(row['單位']) else ""
-            price = float(row.get('單價', 0))
+            unit = str(row['單位']).strip() if '單位' in row else ""
+            price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
@@ -159,8 +174,7 @@ elif st.session_state.step == "fill_items":
             if t_s > 0 or t_p > 0:
                 temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, display_name, unit, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(total_amt)])
         
-        submit = st.form_submit_button("💾 儲存並同步", use_container_width=True)
-        if submit:
+        if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             if temp_data:
                 df_to_save = pd.DataFrame(temp_data)
                 if sync_to_cloud(df_to_save):
@@ -178,14 +192,12 @@ elif st.session_state.step == "export":
         recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] == date_str) & (hist_df[COL_MAP['this_purchase']] > 0)].copy()
         if recs.empty: st.warning(f"{date_str} 目前尚無叫貨紀錄。")
         else:
-            # 💡 報表顯示以「品項名稱（無價格版）」為主
             output = f"{date_str}\n{st.session_state.store}\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
-                    u = str(r.get(COL_MAP['unit'], '')).strip()
-                    p = int(r.get(COL_MAP['unit_price'], 0))
-                    output += f"● {r[COL_MAP['item_name']]} ( {u} )-${p}：{int(r[COL_MAP['this_purchase']])}{u}\n"
+                    u, p = str(r.get(COL_MAP['unit'], '')), int(r.get(COL_MAP['unit_price'], 0))
+                    output += f"● {r[COL_MAP['item_name']]} ( {u} )-${p}：{int(r[r.index == r.name][COL_MAP['this_purchase']].values[0])}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
