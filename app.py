@@ -77,7 +77,7 @@ if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
-# 3. 介面分流 (分頁格式獨立)
+# 3. 介面分流 (分頁格式完全獨立)
 # =========================
 
 # --- 頁面 A：選擇分店 ---
@@ -100,7 +100,7 @@ elif st.session_state.step == "select_vendor":
             st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
             st.session_state.step = "fill_items"; st.rerun()
     st.write("---")
-    if st.button("📄 產生今日進貨報表", type="primary", use_container_width=True):
+    if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "export"; st.rerun()
     if st.button("📊 期間進銷存分析", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
@@ -177,7 +177,7 @@ elif st.session_state.step == "fill_items":
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 D：今日進貨報表 ---
+# --- 頁面 D：今日進貨報表 (💡 移除店名後的進貨單三字) ---
 elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨報表")
@@ -186,7 +186,8 @@ elif st.session_state.step == "export":
     if not hist_df.empty:
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'].astype(str) == date_str) & (hist_df['本次叫貨'] > 0)]
         if not recs.empty:
-            output = f"【{st.session_state.store}】進貨單 ({date_str})\n"
+            # 💡 修正位置：店名後面不顯示「進貨單」三個字
+            output = f"【{st.session_state.store}】({date_str})\n"
             for v in recs['廠商'].unique():
                 output += f"\n{v}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
@@ -195,7 +196,7 @@ elif st.session_state.step == "export":
             st.text_area("📱 LINE 複製", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 E：期間分析 (💡 手機版文字適配優化) ---
+# --- 頁面 E：期間分析 (格式獨立) ---
 elif st.session_state.step == "analysis":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📊 期間進銷存分析")
@@ -213,7 +214,6 @@ elif st.session_state.step == "analysis":
             for c in ['期間消耗', '本次叫貨', '期末庫存']:
                 summary[c] = summary[c].apply(lambda x: int(x) if x == int(x) else round(x, 1))
             
-            # 💡 移除背景色塊，改用對比色文字，確保深色模式可見
             buy_total = f"{summary['總金額'].sum():,.1f}"
             stock_total = f"{summary['庫存金額'].sum():,.1f}"
             
