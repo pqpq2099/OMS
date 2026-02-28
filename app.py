@@ -63,13 +63,13 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 佈局樣式控制 (智慧數字顯示 + 拔除按鈕)
+# 2. 佈局樣式控制 (智慧數字顯示 + 空間優化)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 
 st.markdown("""
     <style>
-    /* 1. 強力隱藏 +/- 按鈕 */
+    /* 1. 徹底拔除 +/- 按鈕 */
     div[data-testid="stNumberInputStepUp"], 
     div[data-testid="stNumberInputStepDown"],
     .stNumberInput button {
@@ -105,9 +105,14 @@ st.markdown("""
         border: 1px solid #ddd !important;
     }
 
-    /* 4. 解決 Metric 被切斷的問題 */
+    /* 4. 解決 Metric 被切斷與顯示 ... 的問題 */
     [data-testid="stMetricValue"] {
-        font-size: 24px !important;
+        font-size: 20px !important;
+        white-space: nowrap !important;
+    }
+    [data-testid="metric-container"] {
+        width: fit-content !important;
+        min-width: 150px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -195,13 +200,15 @@ elif st.session_state.step == "fill_items":
                 p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前:{p_show})")
             with c2:
-                # 💡 預設為整數輸入，支援小數，不主動顯示 .00
-                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g")
+                # 💡 數位智慧去零：預設不顯示數字，format 使用 %g 自動判斷
+                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g", value=None)
             with c3:
-                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g")
+                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g", value=None)
             
-            usage = (p_s + p_p) - t_s
-            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s, t_p, usage, float(price), float(round(t_p * price, 1))])
+            t_s_val = t_s if t_s is not None else 0.0
+            t_p_val = t_p if t_p is not None else 0.0
+            usage = (p_s + p_p) - t_s_val
+            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s_val, t_p_val, usage, float(price), float(round(t_p_val * price, 1))])
 
         if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
@@ -237,6 +244,7 @@ elif st.session_state.step == "analysis":
     st.title("📊 期間分析")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
+    # 日期選擇器改為分開放置，確保空間
     start = st.date_input("起始日期", value=date.today()-timedelta(7))
     end = st.date_input("結束日期", value=date.today())
     
@@ -252,14 +260,18 @@ elif st.session_state.step == "analysis":
             summary['庫存'] = summary['品項'].map(stock_map).fillna(0)
             summary['庫存金額'] = summary['庫存'] * summary['單價']
             
-            # 💡 數位智慧去零
+            # 💡 數據智慧去零處理
             for col in ['期間消耗', '本次叫貨', '庫存']:
                 summary[col] = summary[col].apply(lambda x: int(x) if x == int(x) else round(x, 1))
             
-            # 💡 戰略佈局：先顯示總金額，防止下方被切斷
-            m1, m2 = st.columns(2)
-            m1.metric("採購支出", f"${summary['總金額'].sum():,.0f}")
-            m2.metric("庫存估值", f"${summary['庫存金額'].sum():,.0f}")
+            # 💡 戰略佈局：Metric 獨立顯示，解決被切斷的問題
+            total_buy = summary['總金額'].sum()
+            total_stock_val = summary['庫存金額'].sum()
+            
+            st.markdown(f"### 💰 數據統計")
+            st.write(f"**採購支出總計：** ${total_buy:,.0f}")
+            st.write(f"**現有庫存估值：** ${total_stock_val:,.0f}")
+            st.write("---")
             
             st.dataframe(summary[['廠商', '品項名稱', '期間消耗', '本次叫貨', '總金額', '庫存', '庫存金額']], use_container_width=True)
         else: st.info("無數據。")
