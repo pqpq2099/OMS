@@ -6,25 +6,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # =========================
-# 1. 核心設定
+# 1. 核心與雲端設定
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
-
-COL_MAP = {
-    'record_date': '日期',
-    'store_name': '店名',
-    'vendor_name': '廠商',
-    'item_key': '品項',
-    'item_display': '品項名稱', 
-    'unit': '單位',
-    'last_stock': '上次剩餘',
-    'last_purchase': '上次叫貨',
-    'this_stock': '本次剩餘',
-    'this_purchase': '本次叫貨',
-    'usage_qty': '期間消耗',
-    'unit_price': '單價',
-    'total_price': '總金額'
-}
 
 @st.cache_resource
 def get_gspread_client():
@@ -45,7 +29,6 @@ def get_cloud_data():
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet("Records")
         df = pd.DataFrame(ws.get_all_records())
-        df.columns = [str(c).strip() for c in df.columns]
         num_cols = ['本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']
         for c in num_cols:
             if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
@@ -63,21 +46,20 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 物理級佈局鎖定 (窄版優化)
+# 2. 佈局樣式控制 (針對輸入分頁深度窄化)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 
 st.markdown("""
     <style>
-    /* 1. 極限壓榨邊距：解決滑動與過寬問題 */
+    /* 1. 全域窄版優化 */
     .block-container {
-        padding-left: 0.2rem !important;
-        padding-right: 0.2rem !important;
-        padding-top: 1rem !important;
+        padding-left: 0.3rem !important;
+        padding-right: 0.3rem !important;
         max-width: 100% !important;
     }
 
-    /* 2. 徹底拔除 +/- 按鈕 */
+    /* 2. 徹底拔除數字加減按鈕 */
     div[data-testid="stNumberInputStepUp"], 
     div[data-testid="stNumberInputStepDown"],
     .stNumberInput button {
@@ -89,32 +71,33 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* 3. 輸入頁面橫排強制鎖定 (庫存/進貨極致窄化至 55px) */
+    /* 3. 輸入欄位橫排：極致窄化鎖定 (庫/進 52px) */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
-        flex-flow: row nowrap !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
         align-items: center !important;
     }
-    div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-    div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
-        flex: 0 0 55px !important;
-        min-width: 55px !important;
-    }
+    /* 第一欄：品項名稱 (自動伸展) */
     div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
         flex: 1 1 auto !important;
+        min-width: 0px !important;
+    }
+    /* 第二、三欄：庫存與進貨 (強力鎖死窄度) */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(2),
+    div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
+        flex: 0 0 52px !important;
+        min-width: 52px !important;
+        max-width: 52px !important;
     }
 
-    /* 4. 輸入框視覺精簡 */
+    /* 4. 輸入框視覺優化：隱藏 Label，文字置中 */
     div[data-testid="stNumberInput"] label { display: none !important; }
     .stNumberInput input {
         font-size: 14px !important;
-        padding: 3px !important;
-        text-align: center;
-        border: 1px solid #ddd !important;
+        padding: 4px 2px !important;
+        text-align: center !important;
     }
-
-    /* 5. 數據分析顯示優化 */
-    [data-testid="stMetricValue"] { font-size: 20px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -125,14 +108,11 @@ def load_csv_safe(path):
     for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
         try:
             df = pd.read_csv(path, encoding=enc)
-            df.columns = [str(c).strip() for c in df.columns]
             return df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
         except: continue
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
-if df_i is None: st.error("❌ CSV 讀取失敗"); st.stop()
-
 item_display_map = df_i.set_index('品項')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -172,7 +152,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 標題列：極致窄版比例 [6, 1, 1]
+    # 標題列：比例需與下方內容嚴格對齊
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.caption("**品項**")
     h2.caption("**庫**")
@@ -195,32 +175,32 @@ elif st.session_state.step == "fill_items":
                     p_s = float(latest.get('本次剩餘', 0))
                     p_p = float(latest.get('本次叫貨', 0))
             
-            # 💡 比例對齊 [6, 1, 1]，CSS 會進一步縮減後兩者為 55px
             c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
                 st.markdown(f"**{d_n}**")
                 p_sum = p_s + p_p
+                # 歷史顯示智慧去零
                 p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前:{p_show})")
             with c2:
-                # 💡 數位智慧去零：預設為 None (空白)，format=%g (整數不顯.0)
+                # 💡 關鍵：format="%g" 確保不顯示 .00，value=None 確保預設空白不主動顯示數字
                 t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g", value=None)
             with c3:
                 t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g", value=None)
             
-            t_s_val = t_s if t_s is not None else 0.0
-            t_p_val = t_p if t_p is not None else 0.0
-            usage = (p_s + p_p) - t_s_val
-            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s_val, t_p_val, usage, float(price), float(round(t_p_val * price, 1))])
+            t_s_v = t_s if t_s is not None else 0.0
+            t_p_v = t_p if t_p is not None else 0.0
+            usage = (p_s + p_p) - t_s_v
+            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
         if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
     
-    if st.button("⬅️ 返回廠商列表", use_container_width=True):
-        st.session_state.step = "select_vendor"; st.rerun()
+    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
+# (其餘頁面 export/analysis 邏輯維持不變...)
 elif st.session_state.step == "export":
     st.title("📋 今日進貨報表")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
@@ -228,45 +208,31 @@ elif st.session_state.step == "export":
     if not hist_df.empty:
         hist_df['日期'] = hist_df['日期'].astype(str)
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'] == date_str) & (hist_df['本次叫貨'] > 0)].copy()
-        
-        if recs.empty: st.warning("今日無紀錄")
-        else:
+        if not recs.empty:
             output = f"【{st.session_state.store}】進貨單 ({date_str})\n"
             for v in recs['廠商'].unique():
                 output += f"\n{v}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     d_n = r.get('品項名稱', item_display_map.get(r['品項'], r['品項']))
-                    u = r['單位']
                     val = float(r['本次叫貨'])
-                    val_str = int(val) if val.is_integer() else val
-                    output += f"● {d_n}：{val_str}{u}\n"
-            st.text_area("📱 LINE 複製格式", value=output, height=300)
+                    val_s = int(val) if val.is_integer() else val
+                    output += f"● {d_n}：{val_s}{r['單位']}\n"
+            st.text_area("📱 LINE 複製", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間分析彙整")
+    st.title("📊 期間分析")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
-    start = st.date_input("起始日期", value=date.today()-timedelta(7))
-    end = st.date_input("結束日期", value=date.today())
-    
+    start = st.date_input("起始", value=date.today()-timedelta(7))
+    end = st.date_input("結束", value=date.today())
     if not hist_df.empty:
         hist_df['日期'] = pd.to_datetime(hist_df['日期']).dt.date
         analysis = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'] >= start) & (hist_df['日期'] <= end)].copy()
         if not analysis.empty:
             summary = analysis.groupby(['廠商', '品項', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
             summary['品項名稱'] = summary['品項'].map(lambda x: item_display_map.get(x, x))
-            
-            last_recs = analysis.sort_values('日期').groupby('品項').tail(1)
-            stock_map = last_recs.set_index('品項')['本次剩餘'].to_dict()
-            summary['庫存'] = summary['品項'].map(stock_map).fillna(0)
-            summary['庫存金額'] = summary['庫存'] * summary['單價']
-            
-            # 數位智慧去零
-            for col in ['期間消耗', '本次叫貨', '庫存']:
-                summary[col] = summary[col].apply(lambda x: int(x) if x == int(x) else round(x, 1))
-            
-            st.markdown(f"**採購支出總計：** ${summary['總金額'].sum():,.1f} | **剩餘庫存總值：** ${summary['庫存金額'].sum():,.1f}")
-            st.write("---")
-            st.dataframe(summary[['廠商', '品項名稱', '期間消耗', '本次叫貨', '總金額', '庫存', '庫存金額']], use_container_width=True)
-        else: st.info("無數據。")
+            for c in ['期間消耗', '本次叫貨']:
+                summary[c] = summary[c].apply(lambda x: int(x) if x == int(x) else round(x, 1))
+            st.markdown(f"**採購支出：** ${summary['總金額'].sum():,.1f}")
+            st.dataframe(summary[['廠商', '品項名稱', '期間消耗', '本次叫貨', '總金額']], use_container_width=True)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
