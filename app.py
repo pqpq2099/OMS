@@ -9,7 +9,7 @@ from pathlib import Path
 # 1. 核心與戰略參數 (比例在此修改)
 # =========================
 # 💡 修改這裡即可：[品項名稱, 庫存, 進貨]
-UI_RATIO = [2.8, 0.5, 0.5] 
+UI_RATIO = [1,0.5,0.5] 
 
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
@@ -250,4 +250,5 @@ elif st.session_state.step == "analysis":
             m1.metric("採購總金額", f"${summary['總金額'].sum():,.0f}")
             m2.metric("剩餘庫存總值", f"${summary['庫存金額'].sum():,.0f}")
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+
 
