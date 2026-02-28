@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # =========================
-# 1. 核心與雲端設定
+# 1. 核心設定
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
@@ -63,20 +63,13 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 物理級佈局鎖定 (數位優化版)
+# 2. 佈局樣式控制 (智慧數字顯示 + 拔除按鈕)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 
 st.markdown("""
     <style>
-    /* 1. 全域容器優化：防止分析頁面溢出 */
-    .block-container {
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-        max-width: 100% !important;
-    }
-
-    /* 2. 徹底拔除 +/- 按鈕與微調原生樣式 */
+    /* 1. 強力隱藏 +/- 按鈕 */
     div[data-testid="stNumberInputStepUp"], 
     div[data-testid="stNumberInputStepDown"],
     .stNumberInput button {
@@ -88,24 +81,22 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* 3. 輸入頁面橫排鎖定 (庫存/進貨固定 65px) */
+    /* 2. 輸入頁面橫排鎖定 (庫存/進貨固定 60px) */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
+        flex-flow: row nowrap !important;
         align-items: center !important;
     }
     div[data-testid="stHorizontalBlock"] > div:nth-child(2),
     div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
-        flex: 0 0 65px !important;
-        min-width: 65px !important;
+        flex: 0 0 60px !important;
+        min-width: 60px !important;
     }
     div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
         flex: 1 1 auto !important;
-        min-width: 0px !important;
     }
 
-    /* 4. 數位顯示：不顯示主動小數點 */
+    /* 3. 輸入框視覺優化 */
     div[data-testid="stNumberInput"] label { display: none !important; }
     .stNumberInput input {
         font-size: 14px !important;
@@ -114,8 +105,10 @@ st.markdown("""
         border: 1px solid #ddd !important;
     }
 
-    /* 5. 期間分析表格微調：防止過寬 */
-    .stDataFrame { width: 100% !important; }
+    /* 4. 解決 Metric 被切斷的問題 */
+    [data-testid="stMetricValue"] {
+        font-size: 24px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -132,7 +125,7 @@ def load_csv_safe(path):
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
-if df_i is None: st.error("❌ 品項檔異常"); st.stop()
+if df_i is None: st.error("❌ CSV 讀取失敗"); st.stop()
 
 item_display_map = df_i.set_index('品項')['品項名稱'].to_dict()
 
@@ -198,15 +191,14 @@ elif st.session_state.step == "fill_items":
             c1, c2, c3 = st.columns([5, 1, 1])
             with c1:
                 st.markdown(f"**{d_n}**")
-                # 💡 歷史結餘顯示優化 (不顯示冗餘小數)
-                p_total = p_s + p_p
-                p_show = int(p_total) if p_total.is_integer() else p_total
+                p_sum = p_s + p_p
+                p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前:{p_show})")
             with c2:
-                # 💡 關鍵：輸入預設為整數，若有小數才顯示小數
-                t_s = st.number_input("庫", min_value=0.0, max_value=999.0, step=0.1, key=f"s_{f_n}")
+                # 💡 預設為整數輸入，支援小數，不主動顯示 .00
+                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g")
             with c3:
-                t_p = st.number_input("進", min_value=0.0, max_value=999.0, step=0.1, key=f"p_{f_n}")
+                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g")
             
             usage = (p_s + p_p) - t_s
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s, t_p, usage, float(price), float(round(t_p * price, 1))])
@@ -235,9 +227,9 @@ elif st.session_state.step == "export":
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     d_n = r.get('品項名稱', item_display_map.get(r['品項'], r['品項']))
                     u = r['單位']
-                    q = round(float(r['本次叫貨']), 1)
-                    q_str = int(q) if q.is_integer() else q
-                    output += f"● {d_n}：{q_str}{u}\n"
+                    val = float(r['本次叫貨'])
+                    val_str = int(val) if val.is_integer() else val
+                    output += f"● {d_n}：{val_str}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
@@ -245,7 +237,6 @@ elif st.session_state.step == "analysis":
     st.title("📊 期間分析")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 修正：日期選擇器改為上下結構，防止結束日期看不見
     start = st.date_input("起始日期", value=date.today()-timedelta(7))
     end = st.date_input("結束日期", value=date.today())
     
@@ -261,14 +252,15 @@ elif st.session_state.step == "analysis":
             summary['庫存'] = summary['品項'].map(stock_map).fillna(0)
             summary['庫存金額'] = summary['庫存'] * summary['單價']
             
-            # 💡 數位顯示優化：轉換為整數或小數
+            # 💡 數位智慧去零
             for col in ['期間消耗', '本次叫貨', '庫存']:
-                summary[col] = summary[col].apply(lambda x: int(x) if x.is_integer() else round(x, 1))
+                summary[col] = summary[col].apply(lambda x: int(x) if x == int(x) else round(x, 1))
+            
+            # 💡 戰略佈局：先顯示總金額，防止下方被切斷
+            m1, m2 = st.columns(2)
+            m1.metric("採購支出", f"${summary['總金額'].sum():,.0f}")
+            m2.metric("庫存估值", f"${summary['庫存金額'].sum():,.0f}")
             
             st.dataframe(summary[['廠商', '品項名稱', '期間消耗', '本次叫貨', '總金額', '庫存', '庫存金額']], use_container_width=True)
-            
-            m1, m2 = st.columns(2)
-            m1.metric("採購總額", f"${summary['總金額'].sum():,.1f}")
-            m2.metric("庫存總值", f"${summary['庫存金額'].sum():,.1f}")
-        else: st.info("所選期間無數據。")
+        else: st.info("無數據。")
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
