@@ -30,8 +30,7 @@ def get_cloud_data():
         ws = sh.worksheet("Records")
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
-        # 確保關鍵數值欄位為 float 以供後續分析計算
-        for c in ['本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']:
+        for c in ['上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         return df
@@ -48,13 +47,11 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域基礎樣式 (移除按鈕)
+# 2. 全域樣式 (移除按鈕)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
-
 st.markdown("""
     <style>
-    /* 徹底隱藏加減按鈕 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button {
         display: none !important;
     }
@@ -80,7 +77,7 @@ if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
-# 3. 介面分流 (分頁格式完全獨立)
+# 3. 介面分流
 # =========================
 
 # --- 頁面 A：選擇分店 ---
@@ -110,7 +107,7 @@ elif st.session_state.step == "select_vendor":
     if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"; st.rerun()
 
-# --- 頁面 C：庫存進貨 (極窄橫排) ---
+# --- 頁面 C：庫存進貨 (💡 加入參照表格) ---
 elif st.session_state.step == "fill_items":
     st.markdown("""
         <style>
@@ -128,9 +125,26 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
+    # 🔍 智慧參照區：顯示該廠商的上次數據
+    if not hist_df.empty:
+        ref_data = []
+        for f_n in items['品項'].unique():
+            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_n)]
+            if not past.empty:
+                latest = past.iloc[-1]
+                ref_data.append({
+                    "品項": item_display_map.get(f_n, f_n),
+                    "上剩": latest.get('上次剩餘', 0),
+                    "上進": latest.get('上次叫貨', 0),
+                    "消耗": latest.get('期間消耗', 0)
+                })
+        if ref_data:
+            with st.expander("📊 查看上次歷史參考", expanded=True):
+                st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
+    
+    st.write("---")
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.caption("**品項**"); h2.caption("**庫**"); h3.caption("**進**")
-    st.write("---")
 
     with st.form("inventory_form"):
         temp_data = []
@@ -164,7 +178,7 @@ elif st.session_state.step == "fill_items":
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 D：今日進貨報表 ---
+# --- 頁面 D：今日進貨報表 (格式獨立) ---
 elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨報表")
@@ -182,7 +196,7 @@ elif st.session_state.step == "export":
             st.text_area("📱 LINE 複製", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 E：期間分析 (修正庫存金額顯示) ---
+# --- 頁面 E：期間分析 (格式獨立) ---
 elif st.session_state.step == "analysis":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📊 期間進銷存分析")
@@ -192,19 +206,13 @@ elif st.session_state.step == "analysis":
         hist_df['日期'] = pd.to_datetime(hist_df['日期']).dt.date
         analysis = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'] >= start) & (hist_df['日期'] <= end)]
         if not analysis.empty:
-            # 💡 重新計算匯總，確保單價與金額被正確加總
             summary = analysis.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
-            # 抓取最後一筆紀錄作為「期末庫存」
             last_recs = analysis.sort_values('日期').groupby('品項名稱').tail(1)
             stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
             summary['期末庫存'] = summary['品項名稱'].map(stock_map).fillna(0)
             summary['庫存金額'] = summary['期末庫存'] * summary['單價']
-            
-            # 格式化輸出
             for c in ['期間消耗', '本次叫貨', '期末庫存']:
                 summary[c] = summary[c].apply(lambda x: int(x) if x == int(x) else round(x, 1))
-            
-            st.markdown(f"**採購支出總額：** ${summary['總金額'].sum():,.1f}")
-            st.markdown(f"**期末庫存總值：** ${summary['庫存金額'].sum():,.1f}")
+            st.markdown(f"**採購支出總額：** ${summary['總金額'].sum():,.1f} | **期末庫存總值：** ${summary['庫存金額'].sum():,.1f}")
             st.dataframe(summary, use_container_width=True)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
