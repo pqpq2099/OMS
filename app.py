@@ -14,7 +14,7 @@ COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
     'vendor_name': '廠商',
-    'item_key': '品項',       # 數據庫唯一鍵（含價格長名）
+    'item_key': '品項',       # 數據庫唯一鍵（長名）
     'unit': '單位',
     'last_stock': '上次剩餘',
     'last_purchase': '上次叫貨',
@@ -59,13 +59,14 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 強力 CSS 注入 (解決手機排版與按鈕問題)
+# 2. 佈局與樣式 (解決手機排版與按鈕問題)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 
+# 💡 這次使用更精確的選擇器，避免按鈕消失
 st.markdown("""
     <style>
-    /* 1. 徹底拔除數字框的 +/- 按鈕與多餘空間 */
+    /* 1. 移除數字輸入框的 +/- 步進按鈕 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"] {
         display: none !important;
     }
@@ -74,9 +75,10 @@ st.markdown("""
         padding: 5px !important;
         text-align: center;
     }
+    /* 隱藏數字框上方的文字標籤以節省空間 */
     div[data-testid="stNumberInput"] label { display: none !important; }
 
-    /* 2. 強制橫向佈局 (不論螢幕多窄) */
+    /* 2. 強制手機版橫向排列 (固定比例) */
     [data-testid="column"] {
         flex: 1 1 0% !important;
         min-width: 0px !important;
@@ -85,9 +87,8 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] > div:nth-child(2) { flex: 1 1 0% !important; }
     div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 1 1 0% !important; }
 
-    /* 3. 調整字體大小適配手機 */
-    p, span, label { font-size: 14px !important; }
-    .stMarkdown h3 { font-size: 18px !important; }
+    /* 3. 確保按鈕高度與字體適中 */
+    .stButton button { width: 100%; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -105,10 +106,8 @@ def load_csv_safe(path):
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 if df_i is None or '品項' not in df_i.columns:
-    st.error("❌ CSV 讀取失敗，請確認標題包含『品項』與『品項名稱』。")
-    st.stop()
+    st.error("❌ CSV 讀取失敗"); st.stop()
 
-# 名稱映射表
 item_display_map = df_i.set_index('品項')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -123,7 +122,7 @@ if st.session_state.step == "select_store":
     if df_s is not None:
         col_s = '分店名稱' if '分店名稱' in df_s.columns else df_s.columns[0]
         for s in df_s[col_s].unique():
-            if st.button(f"📍 {s}", use_container_width=True):
+            if st.button(f"📍 {s}", key=f"store_{s}"):
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "select_vendor":
@@ -132,12 +131,14 @@ elif st.session_state.step == "select_vendor":
     v_col = '廠商名稱' if '廠商名稱' in df_i.columns else '廠商'
     vendors = sorted(df_i[v_col].unique())
     for v in vendors:
-        if st.button(f"📦 {v}", use_container_width=True):
+        if st.button(f"📦 {v}", key=f"vendor_{v}"):
             st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
             st.session_state.step = "fill_items"; st.rerun()
     st.write("---")
-    if st.button("📄 產生進貨報表", type="primary", use_container_width=True):
+    if st.button("📄 產生進貨報表", type="primary", key="go_export"):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "export"; st.rerun()
+    if st.button("⬅️ 返回分店列表", key="back_to_store"):
+        st.session_state.step = "select_store"; st.rerun()
 
 elif st.session_state.step == "fill_items":
     st.title(f"📝 {st.session_state.vendor}")
@@ -145,9 +146,9 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i[v_col] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 標題列：左至右
+    # 標題列
     t1, t2, t3 = st.columns([2, 1, 1])
-    t1.write("**品項名稱**")
+    t1.write("**品項**")
     t2.write("**庫存**")
     t3.write("**進貨**")
     st.write("---")
@@ -160,7 +161,6 @@ elif st.session_state.step == "fill_items":
             unit = str(row['單位']).strip() if '單位' in row else ""
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
-            # 抓取上次數據
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
                 past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == full_name)]
@@ -169,33 +169,29 @@ elif st.session_state.step == "fill_items":
                     prev_s = int(pd.to_numeric(latest.get('本次剩餘', 0), errors='coerce') or 0)
                     prev_p = int(pd.to_numeric(latest.get('本次叫貨', 0), errors='coerce') or 0)
             
-            # 💡 橫向排版列
             c1, c2, c3 = st.columns([2, 1, 1])
             with c1:
                 st.write(f"**{display_name}**")
                 st.caption(f"{unit} (上次:{prev_s+prev_p})")
             with c2:
-                # 庫存改為數字框
                 t_s = st.number_input("庫存", min_value=0, step=1, key=f"s_{full_name}")
             with c3:
-                # 進貨改為數字框
                 t_p = st.number_input("進貨", min_value=0, step=1, key=f"p_{full_name}")
             
-            # 💡 這裡將消耗計算邏輯放入暫存列表
             usage = (prev_s + prev_p) - t_s
-            # 存入列表（使用長品項名，確保數據庫連續性）
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, full_name, unit, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(round(t_p * price, 1))])
 
-        st.write("---")
-        if st.form_submit_button("💾 儲存並同步雲端", use_container_width=True):
-            if temp_data:
-                # 只存有輸入數據的項目
-                valid_data = [d for d in temp_data if d[7] > 0 or d[8] > 0]
-                if valid_data and sync_to_cloud(pd.DataFrame(valid_data)):
-                    st.success("✅ 數據已更新 (期間消耗已結算)"); st.session_state.step = "select_vendor"; st.rerun()
-                else: st.warning("請至少填入一項庫存或進貨")
-        if st.form_submit_button("❌ 返回", use_container_width=True):
-            st.session_state.step = "select_vendor"; st.rerun()
+        # Form 提交按鈕
+        submit = st.form_submit_button("💾 儲存並同步雲端", use_container_width=True)
+        if submit:
+            valid_data = [d for d in temp_data if d[7] > 0 or d[8] > 0]
+            if valid_data and sync_to_cloud(pd.DataFrame(valid_data)):
+                st.success("✅ 數據已更新"); st.session_state.step = "select_vendor"; st.rerun()
+            else: st.warning("請輸入數據")
+    
+    # 返回按鈕放在 Form 外面，確保絕對顯示
+    if st.button("⬅️ 放棄並返回廠商列表", key="cancel_fill"):
+        st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
@@ -211,9 +207,10 @@ elif st.session_state.step == "export":
             for v in recs['廠商'].unique():
                 output += f"\n{v}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
-                    # 💡 關鍵：報表輸出使用潔淨名稱
                     disp_n = item_display_map.get(r['品項'], r['品項'])
                     u, p, q = r['單位'], int(pd.to_numeric(r['單價'], errors='coerce') or 0), int(pd.to_numeric(r['本次叫貨'], errors='coerce') or 0)
                     output += f"● {disp_n} ( {u} )-${p}：{q}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+    
+    if st.button("⬅️ 返回廠商列表", key="back_from_export"):
+        st.session_state.step = "select_vendor"; st.rerun()
