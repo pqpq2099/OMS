@@ -63,13 +63,21 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 佈局樣式控制 (智慧數字顯示 + 空間優化)
+# 2. 物理級佈局鎖定 (窄版優化)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 
 st.markdown("""
     <style>
-    /* 1. 徹底拔除 +/- 按鈕 */
+    /* 1. 極限壓榨邊距：解決滑動與過寬問題 */
+    .block-container {
+        padding-left: 0.2rem !important;
+        padding-right: 0.2rem !important;
+        padding-top: 1rem !important;
+        max-width: 100% !important;
+    }
+
+    /* 2. 徹底拔除 +/- 按鈕 */
     div[data-testid="stNumberInputStepUp"], 
     div[data-testid="stNumberInputStepDown"],
     .stNumberInput button {
@@ -81,7 +89,7 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* 2. 輸入頁面橫排鎖定 (庫存/進貨固定 60px) */
+    /* 3. 輸入頁面橫排強制鎖定 (庫存/進貨極致窄化至 55px) */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-flow: row nowrap !important;
@@ -89,31 +97,24 @@ st.markdown("""
     }
     div[data-testid="stHorizontalBlock"] > div:nth-child(2),
     div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
-        flex: 0 0 60px !important;
-        min-width: 60px !important;
+        flex: 0 0 55px !important;
+        min-width: 55px !important;
     }
     div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
         flex: 1 1 auto !important;
     }
 
-    /* 3. 輸入框視覺優化 */
+    /* 4. 輸入框視覺精簡 */
     div[data-testid="stNumberInput"] label { display: none !important; }
     .stNumberInput input {
         font-size: 14px !important;
-        padding: 4px !important;
+        padding: 3px !important;
         text-align: center;
         border: 1px solid #ddd !important;
     }
 
-    /* 4. 解決 Metric 被切斷與顯示 ... 的問題 */
-    [data-testid="stMetricValue"] {
-        font-size: 20px !important;
-        white-space: nowrap !important;
-    }
-    [data-testid="metric-container"] {
-        width: fit-content !important;
-        min-width: 150px !important;
-    }
+    /* 5. 數據分析顯示優化 */
+    [data-testid="stMetricValue"] { font-size: 20px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -171,7 +172,8 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    h1, h2, h3 = st.columns([5, 1, 1])
+    # 標題列：極致窄版比例 [6, 1, 1]
+    h1, h2, h3 = st.columns([6, 1, 1])
     h1.caption("**品項**")
     h2.caption("**庫**")
     h3.caption("**進**")
@@ -193,14 +195,15 @@ elif st.session_state.step == "fill_items":
                     p_s = float(latest.get('本次剩餘', 0))
                     p_p = float(latest.get('本次叫貨', 0))
             
-            c1, c2, c3 = st.columns([5, 1, 1])
+            # 💡 比例對齊 [6, 1, 1]，CSS 會進一步縮減後兩者為 55px
+            c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
                 st.markdown(f"**{d_n}**")
                 p_sum = p_s + p_p
                 p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前:{p_show})")
             with c2:
-                # 💡 數位智慧去零：預設不顯示數字，format 使用 %g 自動判斷
+                # 💡 數位智慧去零：預設為 None (空白)，format=%g (整數不顯.0)
                 t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g", value=None)
             with c3:
                 t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g", value=None)
@@ -241,10 +244,8 @@ elif st.session_state.step == "export":
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間分析")
+    st.title("📊 期間分析彙整")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
-    
-    # 日期選擇器改為分開放置，確保空間
     start = st.date_input("起始日期", value=date.today()-timedelta(7))
     end = st.date_input("結束日期", value=date.today())
     
@@ -260,19 +261,12 @@ elif st.session_state.step == "analysis":
             summary['庫存'] = summary['品項'].map(stock_map).fillna(0)
             summary['庫存金額'] = summary['庫存'] * summary['單價']
             
-            # 💡 數據智慧去零處理
+            # 數位智慧去零
             for col in ['期間消耗', '本次叫貨', '庫存']:
                 summary[col] = summary[col].apply(lambda x: int(x) if x == int(x) else round(x, 1))
             
-            # 💡 戰略佈局：Metric 獨立顯示，解決被切斷的問題
-            total_buy = summary['總金額'].sum()
-            total_stock_val = summary['庫存金額'].sum()
-            
-            st.markdown(f"### 💰 數據統計")
-            st.write(f"**採購支出總計：** ${total_buy:,.0f}")
-            st.write(f"**現有庫存估值：** ${total_stock_val:,.0f}")
+            st.markdown(f"**採購支出總計：** ${summary['總金額'].sum():,.1f} | **剩餘庫存總值：** ${summary['庫存金額'].sum():,.1f}")
             st.write("---")
-            
             st.dataframe(summary[['廠商', '品項名稱', '期間消耗', '本次叫貨', '總金額', '庫存', '庫存金額']], use_container_width=True)
         else: st.info("無數據。")
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
