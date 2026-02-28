@@ -6,9 +6,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # =========================
-# 1. 戰略參數區 (比例設為 6:2:2，加起來為 10)
+# 1. 戰略參數區 (平衡比例：名稱50%, 庫存25%, 進貨25%)
 # =========================
-UI_RATIO = [6, 2, 2] 
+# 💡 若想調寬名稱，改為 [6, 2, 2]；若想輸入框大一點，改為 [4, 3, 3]
+UI_RATIO = [5, 2.5, 2.5] 
 
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
@@ -48,7 +49,7 @@ def get_cloud_data():
         ws = sh.worksheet("Records")
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
-        # 確保數值欄位正確轉換，以供分析使用
+        # 強制轉型確保分析功能有數據
         for c in ['本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
@@ -66,27 +67,25 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 物理佈局鎖定 CSS
+# 2. 物理級佈局鎖定 (解決滑動問題 & 移除按鈕)
 # =========================
-st.set_page_config(page_title="OMS 進銷存系統", layout="centered")
+st.set_page_config(page_title="OMS 系統", layout="centered")
 
 st.markdown(f"""
     <style>
-    /* 移除網頁大邊距，壓榨螢幕寬度 */
+    /* 1. 壓榨螢幕邊距 */
     .block-container {{
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-left: 0.3rem !important;
+        padding-right: 0.3rem !important;
         max-width: 100% !important;
     }}
 
-    /* 徹底隱藏數字框的 +/- 按鈕 */
+    /* 2. 徹底隱藏 +/- 按鈕 */
     div[data-testid="stNumberInputStepUp"], 
     div[data-testid="stNumberInputStepDown"],
     .stNumberInput button {{
         display: none !important;
     }}
-    
-    /* 針對各類瀏覽器隱藏原生箭頭 */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button {{
         -webkit-appearance: none !important;
@@ -94,35 +93,35 @@ st.markdown(f"""
     }}
     input[type=number] {{ -moz-appearance: textfield !important; }}
 
-    /* 強制橫向不換行，且允許內容在 100% 寬度內自動微調 */
+    /* 3. 強制橫排且禁止溢出 (解決滑動問題) */
     [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        align-items: center !important;
         width: 100% !important;
+        overflow: hidden !important;
     }}
     
     [data-testid="column"] {{
         min-width: 0px !important;
-        flex: 1 1 auto !important;
+        flex: 1 1 0% !important;
+        word-break: break-all !important; /* 💡 強制長名稱換行，不撐開格子 */
     }}
 
-    /* 使用 6:2:2 比例分配 */
+    /* 使用平衡比例分配 */
     div[data-testid="stHorizontalBlock"] > div:nth-child(1) {{ flex: {UI_RATIO[0]} !important; }}
     div[data-testid="stHorizontalBlock"] > div:nth-child(2) {{ flex: {UI_RATIO[1]} !important; }}
     div[data-testid="stHorizontalBlock"] > div:nth-child(3) {{ flex: {UI_RATIO[2]} !important; }}
 
-    /* 移除輸入框標籤並美化輸入框 */
+    /* 4. 輸入框視覺縮小 */
     div[data-testid="stNumberInput"] label {{ display: none !important; }}
     .stNumberInput input {{
         font-size: 15px !important;
         padding: 5px !important;
         text-align: center;
-        border: 1px solid #ddd !important;
     }}
     
-    /* 縮小字體確保不換行 */
+    /* 5. 字體精簡 */
     p, caption, .stMarkdown {{
         font-size: 13px !important;
         line-height: 1.2 !important;
@@ -151,7 +150,7 @@ if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
-# 3. 執行介面流程
+# 3. 執行介面
 # =========================
 
 if st.session_state.step == "select_store":
@@ -164,7 +163,7 @@ if st.session_state.step == "select_store":
 
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
-    st.session_state.record_date = st.date_input("🗓️ 日期", value=st.session_state.record_date)
+    st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     v_col = '廠商名稱' if '廠商名稱' in df_i.columns else '廠商'
     vendors = sorted(df_i[v_col].unique())
     for v in vendors:
@@ -172,7 +171,7 @@ elif st.session_state.step == "select_vendor":
             st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
             st.session_state.step = "fill_items"; st.rerun()
     st.write("---")
-    if st.button("📄 產生今日進貨報表", type="primary", use_container_width=True):
+    if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "export"; st.rerun()
     if st.button("📊 期間進銷存分析", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
@@ -207,7 +206,7 @@ elif st.session_state.step == "fill_items":
                     p_s = int(pd.to_numeric(latest.get('本次剩餘', 0), errors='coerce') or 0)
                     p_p = int(pd.to_numeric(latest.get('本次叫貨', 0), errors='coerce') or 0)
             
-            # 強制橫向排版
+            # 💡 強制不滑動橫向排版
             c1, c2, c3 = st.columns(UI_RATIO)
             with c1:
                 st.markdown(f"**{d_n}**")
@@ -236,7 +235,7 @@ elif st.session_state.step == "export":
         hist_df['日期'] = hist_df['日期'].astype(str)
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'] == date_str) & (pd.to_numeric(hist_df['本次叫貨'], errors='coerce') > 0)].copy()
         
-        if recs.empty: st.warning("今日無進貨數據")
+        if recs.empty: st.warning("今日無進貨紀錄")
         else:
             output = f"【{st.session_state.store}】進貨單 ({date_str})\n"
             for v in recs['廠商'].unique():
@@ -249,7 +248,7 @@ elif st.session_state.step == "export":
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間分析 (含金額)")
+    st.title("📊 期間分析")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     c1, c2 = st.columns(2)
     start, end = c1.date_input("起始", value=date.today()-timedelta(7)), c2.date_input("結束", value=date.today())
