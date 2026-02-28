@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # =========================
-# 1. 核心設定 (請確認 Google 試算表標題包含「品項」)
+# 1. 核心設定
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
@@ -14,7 +14,7 @@ COL_MAP = {
     'record_date': '日期',
     'store_name': '店名',
     'vendor_name': '廠商',
-    'item_name': '品項',      # 數據比對用完整長名
+    'item_name': '品項',      # 數據庫唯一識別 Key (長名)
     'unit': '單位',
     'last_stock': '上次剩餘',
     'last_purchase': '上次叫貨',
@@ -59,8 +59,46 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 檔案載入與樣式硬核注入
+# 2. 佈局與樣式注入 (硬核控制)
 # =========================
+st.set_page_config(page_title="OMS 系統", layout="centered")
+
+# 💡 終極 CSS：拔除按鈕、強制橫向、優化間距
+st.markdown("""
+    <style>
+    /* 1. 徹底隱藏所有數字輸入框的 + / - 按鈕 */
+    button.step-up, button.step-down { display: none !important; }
+    div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"] {
+        display: none !important;
+    }
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    /* 2. 強制手機版 Columns 不堆疊 */
+    [data-testid="column"] {
+        flex: 1 1 0% !important;
+        min-width: 0px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 2 1 0% !important; }
+    div[data-testid="stHorizontalBlock"] > div:nth-child(2) { flex: 1 1 0% !important; }
+    div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 1 1 0% !important; }
+
+    /* 3. 輸入框優化 */
+    .stNumberInput input {
+        font-size: 16px !important;
+        padding: 8px !important;
+        text-align: center;
+    }
+    div[data-testid="stNumberInput"] label { display: none !important; }
+    
+    /* 4. 緊湊化間距 */
+    .element-container { margin-bottom: 0.2rem !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
 CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 
@@ -73,42 +111,11 @@ def load_csv_safe(path):
         except: continue
     return None
 
-st.set_page_config(page_title="OMS 進銷存系統", layout="centered")
-
-# 💡 終極 CSS：移除 +/- 按鈕，強制手機橫向
-st.markdown("""
-    <style>
-    /* 1. 移除數字輸入框的控制按鈕 (加減號) */
-    button.step-up, button.step-down { display: none !important; }
-    div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"] {
-        display: none !important;
-    }
-    
-    /* 2. 強制橫向排版不堆疊 */
-    [data-testid="column"] {
-        flex: 1 1 0% !important;
-        min-width: 0px !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 2 1 0% !important; }
-    div[data-testid="stHorizontalBlock"] > div:nth-child(2) { flex: 1 1 0% !important; }
-    div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 1 1 0% !important; }
-
-    /* 3. 輸入框優化：直接顯示數字，無多餘外距 */
-    .stNumberInput input {
-        font-size: 16px !important;
-        padding: 6px !important;
-        text-align: center;
-    }
-    /* 隱藏輸入框標籤以節省版面 */
-    div[data-testid="stNumberInput"] label { display: none !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
 if df_i is None or '品項' not in df_i.columns:
-    st.error("❌ CSV 缺少 '品項' 欄位，請檢查檔案"); st.stop()
+    st.error("❌ CSV 缺少 '品項' 欄位"); st.stop()
 
-# 建立顯示名稱對照字典
+# 名稱映射字典
 item_display_map = df_i.set_index('品項')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -128,7 +135,7 @@ if st.session_state.step == "select_store":
 
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
-    st.session_state.record_date = st.date_input("🗓️ 日期", value=st.session_state.record_date)
+    st.session_state.record_date = st.date_input("🗓️ 盤點/進貨日期", value=st.session_state.record_date)
     v_col = '廠商名稱' if '廠商名稱' in df_i.columns else '廠商'
     vendors = sorted(df_i[v_col].unique())
     for v in vendors:
@@ -146,23 +153,23 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i[v_col] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 手機版自定義表頭
-    h1, h2, h3 = st.columns([2, 1, 1])
-    h1.caption("**品項名稱**")
-    h2.caption("**庫存**")
-    h3.caption("**進貨**")
+    # 💡 自定義橫向表頭
+    c_h1, c_h2, c_h3 = st.columns([2, 1, 1])
+    c_h1.caption("**品項名稱**")
+    c_h2.caption("**庫存**")
+    c_h3.caption("**進貨**")
     st.write("---")
 
+    # 注意：在 st.form 內無法實現輸入即時計算，但我們保留公式顯示
     with st.form("inventory_form"):
         temp_data = []
         for _, row in items.iterrows():
             full_name = str(row['品項']).strip()
-            # 💡 讀取清潔名稱用於輸入頁面顯示
             display_name = item_display_map.get(full_name, full_name)
             unit = str(row['單位']).strip() if '單位' in row else ""
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
-            # 歷史庫存抓取
+            # 歷史數據比對
             prev_s, prev_p = 0, 0
             if not hist_df.empty:
                 past = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['item_name']] == full_name)]
@@ -171,28 +178,28 @@ elif st.session_state.step == "fill_items":
                     prev_s = int(pd.to_numeric(latest.get(COL_MAP['this_stock'], 0), errors='coerce') or 0)
                     prev_p = int(pd.to_numeric(latest.get(COL_MAP['this_purchase'], 0), errors='coerce') or 0)
             
-            # 💡 橫向排列：品項(2) | 庫存(1) | 進貨(1)
+            # 💡 橫向排列：品項名稱 | 庫存輸入 | 進貨輸入
             c1, c2, c3 = st.columns([2, 1, 1])
             with c1:
                 st.markdown(f"**{display_name}**")
-                st.caption(f"{unit} (前:{prev_s+prev_p})")
+                st.caption(f"{unit} (前期總額:{prev_s+prev_p})")
             with c2:
-                # 💡 庫存輸入框 (移除加減按鈕)
-                t_s = st.number_input("庫", min_value=0, step=1, key=f"s_{full_name}")
+                # 使用 number_input 配合 CSS 隱藏 +/-
+                t_s = st.number_input("庫存", min_value=0, step=1, key=f"s_{full_name}")
             with c3:
-                # 💡 進貨輸入框 (移除加減按鈕)
-                t_p = st.number_input("進", min_value=0, step=1, key=f"p_{full_name}")
+                t_p = st.number_input("進貨", min_value=0, step=1, key=f"p_{full_name}")
             
+            # 💡 在輸入框下方顯示「預計消耗」公式參考 (因 Form 特性，存檔時會精確計算)
             usage = (prev_s + prev_p) - t_s
             if t_s > 0 or t_p > 0:
                 temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, full_name, unit, int(prev_s), int(prev_p), int(t_s), int(t_p), int(usage), float(price), float(round(t_p * price, 1))])
         
         st.write("---")
-        if st.form_submit_button("💾 儲存並同步到雲端", use_container_width=True):
+        if st.form_submit_button("💾 儲存並計算消耗", use_container_width=True):
             if temp_data and sync_to_cloud(pd.DataFrame(temp_data)):
-                st.success("✅ 儲存成功！"); st.session_state.step = "select_vendor"; st.rerun()
+                st.success("✅ 數據已更新 (期間消耗已自動結算)"); st.session_state.step = "select_vendor"; st.rerun()
             else: st.warning("請填寫數據。")
-        if st.form_submit_button("❌ 放棄並返回", use_container_width=True):
+        if st.form_submit_button("❌ 放棄", use_container_width=True):
             st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "export":
@@ -201,23 +208,19 @@ elif st.session_state.step == "export":
     date_str = str(st.session_state.record_date)
     if not hist_df.empty:
         hist_df[COL_MAP['record_date']] = hist_df[COL_MAP['record_date']].astype(str)
-        # 篩選今日進貨數據
-        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & 
-                       (hist_df[COL_MAP['record_date']] == date_str) & 
-                       (pd.to_numeric(hist_df[COL_MAP['this_purchase']], errors='coerce') > 0)].copy()
+        recs = hist_df[(hist_df[COL_MAP['store_name']] == st.session_state.store) & (hist_df[COL_MAP['record_date']] == date_str) & (pd.to_numeric(hist_df[COL_MAP['this_purchase']], errors='coerce') > 0)].copy()
         
-        if recs.empty: st.warning("今日尚無進貨紀錄。")
+        if recs.empty: st.warning("今日尚無進貨數據。")
         else:
             output = f"{date_str}\n{st.session_state.store}\n"
             for v in recs[COL_MAP['vendor_name']].unique():
                 output += f"\n{v}\n"
                 for _, r in recs[recs[COL_MAP['vendor_name']] == v].iterrows():
-                    # 💡 報表顯示：將長品項名轉化為簡潔「品項名稱」
-                    full_name = r[COL_MAP['item_name']]
-                    disp_name = item_display_map.get(full_name, full_name)
+                    # 💡 報表輸出：翻譯為「品項名稱」
+                    disp_n = item_display_map.get(r[COL_MAP['item_name']], r[COL_MAP['item_name']])
                     u = r[COL_MAP['unit']]
                     p = int(pd.to_numeric(r[COL_MAP['unit_price']], errors='coerce') or 0)
                     q = int(pd.to_numeric(r[COL_MAP['this_purchase']], errors='coerce') or 0)
-                    output += f"● {disp_name} ( {u} )-${p}：{q}{u}\n"
+                    output += f"● {disp_n} ( {u} )-${p}：{q}{u}\n"
             st.text_area("📱 LINE 複製格式", value=output, height=300)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
