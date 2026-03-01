@@ -5,7 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
 
-# 💡 繪圖引擎加固載入
+# 💡 繪圖引擎加固載入 (確保紀錄庫圖表正常)
 try:
     import plotly.express as px
     HAS_PLOTLY = True
@@ -31,7 +31,6 @@ def get_gspread_client():
         st.error(f"⚠️ 金鑰連線失敗: {e}"); return None
 
 def get_worksheet_data(sheet_name):
-    """讀取特定工作表數據"""
     try:
         client = get_gspread_client()
         sh = client.open_by_key(SHEET_ID)
@@ -59,39 +58,49 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (強力修復重疊問題)
+# 2. 全域視覺標準 (終極修復文字重疊)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 1. 強制重磅字體 (700/800) */
+    /* 1. 強制重磅字體 */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
     }
     h1, h2, h3 { font-weight: 800 !important; }
 
-    /* 2. 徹底消滅數字輸入框內建的英文字與箭頭 (解決 arr_right/down 重疊) */
+    /* 2. 徹底消滅數字輸入框內建組件 (解決 arr_... 重疊) */
+    /* 針對 Webkit 核心 (Chrome/Safari) */
     input::-webkit-outer-spin-button,
     input::-webkit-inner-spin-button {
         -webkit-appearance: none !important;
         margin: 0 !important;
     }
+    /* 針對 Firefox */
     input[type=number] {
         -moz-appearance: textfield !important;
         appearance: none !important;
     }
+    /* 隱藏 Streamlit 原生標籤防重疊 */
     div[data-testid="stNumberInput"] label { display: none !important; }
-
-    /* 3. 輸入框樣式加固 */
+    
+    /* 3. 輸入框佈局優化 */
     .stNumberInput input { 
         font-weight: 800 !important; 
         font-size: 16px !important; 
         text-align: center !important; 
+        padding: 4px !important;
+        border-radius: 5px !important;
     }
-    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
+    
+    /* 4. 建立欄位標題與輸入框的垂直安全距離 */
+    [data-testid="column"] b {
+        display: block !important;
+        margin-bottom: 12px !important;
+    }
 
-    /* 功能區隔離線 */
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     .function-divider { margin: 25px 0px; border-top: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
@@ -159,7 +168,7 @@ elif st.session_state.step == "select_vendor":
             st.session_state.step = "view_history"; st.rerun()
     if st.button("⬅️ 返回分店列表", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
 
-# --- 步驟 3：填寫頁面 (前結數據回歸) ---
+# --- 步驟 3：填寫頁面 ---
 elif st.session_state.step == "fill_items":
     if "vendor" not in st.session_state: st.session_state.step = "select_vendor"; st.rerun()
     st.markdown("<style>.block-container { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }</style>", unsafe_allow_html=True)
@@ -168,7 +177,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 歷史參考展開區回歸
+    # 💡 功能復歸：歷史參考區塊
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -183,6 +192,7 @@ elif st.session_state.step == "fill_items":
                 st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
     
     st.write("---")
+    # 💡 佈局加固：5:1.5:1.5 比例
     h1, h2, h3 = st.columns([5, 1.5, 1.5])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -205,7 +215,8 @@ elif st.session_state.step == "fill_items":
             with c1:
                 if d_n == last_item_name: st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
-                st.caption(f"{unit} (前結:{int(p_s+p_p)})") # 💡 前結標註回歸
+                # 💡 功能復歸：前結標註
+                st.caption(f"{unit} (前結:{int(p_s+p_p)})")
                 last_item_name = d_n
             with c2: t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None)
             with c3: t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None)
@@ -218,7 +229,7 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 # --- 步驟 4：紀錄庫 (趨勢圖復歸) ---
 elif st.session_state.step == "view_history":
@@ -237,10 +248,10 @@ elif st.session_state.step == "view_history":
                 p_df = v_df[v_df['品項名稱'] == tgt].sort_values('日期')
                 fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 消耗走勢", markers=True)
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.info("💡 趨勢圖模組加載中，請確保已更新 requirements.txt")
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+            else: st.info("💡 趨勢圖模組加載中...")
+    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 步驟 5：進銷存分析 (金額補回) ---
+# --- 步驟 5：進銷存分析 (金額與庫存價值復歸) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析報表")
     a_df = get_cloud_data()
@@ -251,16 +262,16 @@ elif st.session_state.step == "analysis":
         filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
         if not filt.empty:
             summ = filt.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
-            # 💡 補回庫存金額計算
+            # 💡 金額計算復歸
             last_recs = filt.sort_values('日期').groupby('品項名稱').tail(1)
             stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
             summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
-            summ['庫存金額'] = summ['期末庫存'] * summ['單價']
-            st.markdown(f"#### 💰 採購總額：${summ['總金額'].sum():,.1f} | 📦 庫存總值：${summ['庫存金額'].sum():,.1f}")
+            summ['庫存價值'] = summ['期末庫存'] * summ['單價']
+            st.markdown(f"#### 💰 採購總額：${summ['總金額'].sum():,.1f} | 📦 庫存總值：${summ['庫存價值'].sum():,.1f}")
             st.dataframe(summ, use_container_width=True, hide_index=True)
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 步驟 6：叫貨明細導出 ---
+# --- 步驟 6：明細導出 ---
 elif st.session_state.step == "export":
     st.title("📋 明日進貨明細")
     h_df = get_cloud_data()
@@ -278,4 +289,4 @@ elif st.session_state.step == "export":
                     out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
                 out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
             st.text_area("LINE 複製", value=out, height=350)
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
