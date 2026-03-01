@@ -185,6 +185,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
+    # --- 💡 庫存頁面：上次數據參考表格 (鎖定小數點一位) ---
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -193,6 +194,7 @@ elif st.session_state.step == "fill_items":
                            ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_name)))]
             if not past.empty:
                 latest = past.iloc[-1]
+                # 💡 核心修正：強制轉換為 float 並鎖定一位小數
                 ref_list.append({
                     "品項名稱": f_name, 
                     "上次進貨": round(float(latest.get('本次叫貨', 0)), 1), 
@@ -200,8 +202,10 @@ elif st.session_state.step == "fill_items":
                 })
         if ref_list:
             st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
-            st.table(pd.DataFrame(ref_list)) # 💡 這裡改用 st.table 消滅亂碼
-    
+            # 💡 為了維持跟歷史庫一樣的簡潔感，這裡也套用 small-table
+            st.markdown('<div class="small-table">', unsafe_allow_html=True)
+            st.table(pd.DataFrame(ref_list)) 
+            st.markdown('</div>', unsafe_allow_html=True)
     st.write("---")
     # (後續填寫表單內容保持不變...)
     h1, h2, h3 = st.columns([6, 1, 1])
@@ -375,6 +379,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
