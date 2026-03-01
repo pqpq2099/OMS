@@ -47,31 +47,28 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺權重鎖定 (針對元和特殊符號優化)
+# 2. 全域視覺標準 (強制加粗與視覺純淨)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 1. 強制全域字體重量：解決中英符號混雜導致的不一致 */
-    html, body, [class*="css"], .stMarkdown, p, span {
+    /* 全域字體權重鎖定 */
+    html, body, [class*="css"], .stMarkdown, p, span, div {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
-        font-weight: 700 !important; /* 強制所有文字加粗 */
+        font-weight: 700 !important;
+        font-style: normal !important;
     }
     
-    /* 2. 標題：極重權重 */
     h1, h2, h3 { font-weight: 800 !important; color: #1E1E1E; }
     
-    /* 3. 輸入框：數值與字體加深 */
     .stNumberInput input { 
         font-weight: 800 !important; 
         font-size: 16px !important; 
         color: #000 !important; 
     }
     
-    /* 4. 輔助資訊：維持細體以拉開層次 */
     .stCaption { font-weight: 500 !important; color: #666 !important; font-size: 13px !important; }
     
-    /* 5. 隱藏微調按鈕 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
     </style>
@@ -145,8 +142,10 @@ elif st.session_state.step == "fill_items":
             past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
             if not past.empty:
                 latest = past.iloc[-1]
+                # 💡 歷史表也同步拿掉 *
+                ref_name = str(item_display_map.get(f_id, f_id)).replace('*', '')
                 ref_data.append({
-                    "品項": item_display_map.get(f_id, f_id),
+                    "品項": ref_name,
                     "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)
                 })
         if ref_data:
@@ -162,7 +161,8 @@ elif st.session_state.step == "fill_items":
         last_item_display_name = "" 
         for _, row in items.iterrows():
             f_id = str(row['品項ID']).strip()
-            d_n = str(row['品項名稱']).strip() 
+            # 💡 核心優化：將名稱中的 * 徹底移除，讓顯示更清爽
+            d_n = str(row['品項名稱']).strip().replace('*', '')
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
@@ -190,6 +190,7 @@ elif st.session_state.step == "fill_items":
             
             t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
+            # 存入時保留清洗後的名稱
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
         if st.form_submit_button("💾 儲存並同步數據", use_container_width=True):
@@ -203,8 +204,6 @@ elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨明細")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
-    
-    # 日期與星期邏輯
     week_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
     delivery_weekday = week_map[delivery_date.weekday()]
@@ -218,7 +217,9 @@ elif st.session_state.step == "export":
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
-                    output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
+                    # 💡 LINE 報表也同步拿掉 *
+                    line_name = str(r['品項名稱']).replace('*', '')
+                    output += f"{line_name} {val_s} {r['單位']}\n"
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
