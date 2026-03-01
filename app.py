@@ -254,52 +254,22 @@ elif st.session_state.step == "view_history":
             d_df = v_df.copy()
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
-            
-            # 1. 數據降噪：徹底移除店名、品項ID
-            cols_to_drop = [c for c in ['店名', '品項ID'] if c in d_df.columns]
-            if cols_to_drop:
-                d_df = d_df.drop(columns=cols_to_drop)
-            
-            # 2. 格式化數字至小數點一位
-            num_cols = d_df.select_dtypes(include=['number']).columns
-            for col in num_cols:
-                d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
 
-            # 3. 💡 暴力內聯樣式：直接生成 HTML 表格，徹底解決字體與粗細問題
-            # 這裡設定：字體 11px, 權重 400 (變細), 隱藏首列序號
-            html_table = d_df.sort_values('日期', ascending=False).to_html(
-                index=False, 
-                classes='pure-table', 
-                escape=False
+            # 💡 戰略設定：使用 column_config 隱藏特定欄位並格式化數字
+            # 這能保證字體不會因為 st.table 的原生限制而顯得粗大
+            st.dataframe(
+                d_df.sort_values('日期', ascending=False),
+                use_container_width=True,
+                hide_index=True,  # 💡 徹底移除最左側的序號 (0, 1, 2...)
+                column_config={
+                    "店名": None,    # 💡 物理隱藏店名
+                    "品項ID": None,  # 💡 物理隱藏品項ID
+                    "單價": st.column_config.NumberColumn(format="%.1f"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f"),
+                    "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
+                    "總金額": st.column_config.NumberColumn(format="%.1f")
+                }
             )
-            
-            # 注入樣式：字體變細 (400)、變小 (11px)、移除粗體
-            st.markdown(f"""
-                <style>
-                    .custom-container {{ overflow-x: auto; }}
-                    .custom-table {{ 
-                        width: 100%; 
-                        border-collapse: collapse; 
-                        font-size: 11px !important; 
-                        font-weight: 400 !important; 
-                        color: #333;
-                    }}
-                    .custom-table th {{ 
-                        background: #f0f2f6; 
-                        padding: 6px 4px; 
-                        text-align: left; 
-                        font-weight: 600 !important; /* 標題稍微維持結構感 */
-                    }}
-                    .custom-table td {{ 
-                        padding: 4px; 
-                        border-bottom: 1px solid #eee;
-                        font-weight: 400 !important; /* 💡 確保內容字體變細 */
-                    }}
-                </style>
-                <div class="custom-container">
-                    {html_table.replace('class="dataframe pure-table"', 'class="custom-table"')}
-                </div>
-            """, unsafe_allow_html=True)
             
         with t2:
             if HAS_PLOTLY:
@@ -360,6 +330,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
