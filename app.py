@@ -297,21 +297,33 @@ elif st.session_state.step == "export":
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
+# --- 進銷存分析 (金額垂直堆疊修正) ---
 elif st.session_state.step == "analysis":
-    st.title("📊 期間進銷存分析")
-    hist_df = get_cloud_data()
-    start = st.date_input("起始日期", value=date.today()-timedelta(7)); end = st.date_input("結束日期", value=date.today())
-    if not hist_df.empty:
-        hist_df['日期'] = pd.to_datetime(hist_df['日期']).dt.date
-        analysis = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'] >= start) & (hist_df['日期'] <= end)]
-        if not analysis.empty:
-            summary = analysis.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
-            last_recs = analysis.sort_values('日期').groupby('品項名稱').tail(1)
+    st.title("📊 進銷存分析")
+    a_df = get_worksheet_data("Records")
+    start = st.date_input("起始", value=date.today()-timedelta(7)); end = st.date_input("結束", value=date.today())
+    if not a_df.empty:
+        a_df['日期'] = pd.to_datetime(a_df['日期']).dt.date
+        filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
+        if not filt.empty:
+            summ = filt.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
+            last_recs = filt.sort_values('日期').groupby('品項名稱').tail(1)
             stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
-            summary['期末庫存'] = summary['品項名稱'].map(stock_map).fillna(0)
-            summary['庫存金額'] = summary['期末庫存'] * summary['單價']
-            st.markdown(f"#### 💰 採購總額：${summary['總金額'].sum():,.1f} | 📦 庫存總值：${summary['庫存金額'].sum():,.1f}")
-            st.dataframe(summary, use_container_width=True)
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+            summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
+            summ['庫存金額'] = summ['期末庫存'] * summ['單價']
+            
+            # 💡 核心指令：金額垂直堆疊排列 (進貨在上、庫存在下)
+            st.markdown(f"""
+                <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #4A90E2; margin-bottom: 12px;'>
+                    <div style='font-size: 14px; color: #666; font-weight: 700;'>💰 今日採購支出總額</div>
+                    <div style='font-size: 24px; color: #4A90E2; font-weight: 800;'>${summ['總金額'].sum():,.1f}</div>
+                </div>
+                <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #50C878; margin-bottom: 25px;'>
+                    <div style='font-size: 14px; color: #666; font-weight: 700;'>📦 目前剩餘庫存總值</div>
+                    <div style='font-size: 24px; color: #50C878; font-weight: 800;'>${summ['庫存金額'].sum():,.1f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.dataframe(summ, use_container_width=True, hide_index=True)
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 
