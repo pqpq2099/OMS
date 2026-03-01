@@ -277,7 +277,7 @@ elif st.session_state.step == "fill_items":
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 💡 這裡開始是修正後的完整歷史紀錄區塊 ---
+# --- 💡 修正後的位置：從這裡開始整塊覆蓋 ---
 elif st.session_state.step == "view_history":
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
@@ -302,8 +302,8 @@ elif st.session_state.step == "view_history":
             for col in num_cols:
                 d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
             
-            # 💡 包裹容器，強制觸發 CSS
-            st.markdown('<div class="small-font">', unsafe_allow_html=True)
+            # 💡 套用全域 CSS 縮小字體 (確保你的 style 區塊有 .small-table)
+            st.markdown('<div class="small-table">', unsafe_allow_html=True)
             st.table(d_df.sort_values('日期', ascending=False))
             st.markdown('</div>', unsafe_allow_html=True)
             
@@ -318,6 +318,7 @@ elif st.session_state.step == "view_history":
                 st.plotly_chart(fig, use_container_width=True)
                 
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+# --- 💡 覆蓋到此結束 ---r"))
 # --- 今日進貨明細 ---
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
@@ -365,4 +366,5 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
