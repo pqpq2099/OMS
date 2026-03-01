@@ -71,13 +71,14 @@ def load_csv_safe(path):
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
+# 💡 建立映射時使用「品項」(ID) 作為 Key
 item_display_map = df_i.set_index('品項')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
-# 3. 介面分流 (分頁格式完全獨立)
+# 3. 介面分流
 # =========================
 
 if st.session_state.step == "select_store":
@@ -142,11 +143,17 @@ elif st.session_state.step == "fill_items":
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.caption("**品項**"); h2.caption("**庫**"); h3.caption("**進**")
 
+    # 💡 進入表單
     with st.form("inventory_form"):
         temp_data = []
+        last_item_display_name = ""  # 用於追蹤上一個顯示的名稱
+        
         for _, row in items.iterrows():
-            f_n = str(row['品項']).strip(); d_n = item_display_map.get(f_n, f_n)
-            unit = str(row['單位']).strip(); price = pd.to_numeric(row.get('單價', 0), errors='coerce')
+            f_n = str(row['品項']).strip() # 這是 ID
+            d_n = str(row['品項名稱']).strip() # 這是顯示名稱
+            unit = str(row['單位']).strip()
+            price = pd.to_numeric(row.get('單價', 0), errors='coerce')
+            
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
                 past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_n)]
@@ -156,10 +163,18 @@ elif st.session_state.step == "fill_items":
             
             c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
-                st.markdown(f"**{d_n}**")
+                # 💡 優化顯示：如果名稱與上一行重複，則縮減顯示
+                if d_n == last_item_display_name:
+                    st.markdown(f"<span style='color:gray;'>└ </span> **{unit}**", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"**{d_n}**")
+                
                 p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前:{p_show})")
+                last_item_display_name = d_n # 更新紀錄
+                
             with c2:
+                # 💡 關鍵：使用 f_n (品項 ID) 作為唯一 Key
                 t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g", value=None)
             with c3:
                 t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g", value=None)
@@ -168,40 +183,34 @@ elif st.session_state.step == "fill_items":
             usage = (p_s + p_p) - t_s_v
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
+        # 💡 儲存按鈕必須在 with st.form 的範圍內
         if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
+                
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 D：今日進貨明細 (💡 仿生個人習慣格式) ---
+# --- 頁面 D：今日進貨明細 ---
 elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨明細")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
-    date_str = str(st.session_state.record_date)
     
-    # 💡 配送日期與星期計算
     week_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
     delivery_weekday = week_map[delivery_date.weekday()]
-    
-    # 格式化日期為 3/2(一)
     header_date = f"{delivery_date.month}/{delivery_date.day}({delivery_weekday})"
     
     if not hist_df.empty:
-        recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'].astype(str) == date_str) & (hist_df['本次叫貨'] > 0)]
+        recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & (hist_df['本次叫貨'] > 0)]
         if not recs.empty:
-            # 💡 頂部標題：日期(星期)
             output = f"{header_date}\n"
             for v in recs['廠商'].unique():
-                # 💡 廠商名稱 -> 店名
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
-                    # 💡 行格式：品項名稱 數量 單位
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
-                # 💡 底部尾綴
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
@@ -233,4 +242,3 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summary, use_container_width=True)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
-
