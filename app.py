@@ -263,7 +263,7 @@ elif st.session_state.step == "fill_items":
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 歷史紀錄 (精確縮進與靜態小字版) ---
+# --- 歷史紀錄 (強制縮小字體、隱藏 ID 與序號) ---
 elif st.session_state.step == "view_history":
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
@@ -277,20 +277,32 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            # 1. 格式化數字到小數點第一位
+            # 1. 💡 隱藏品項ID：直接從顯示的 Dataframe 中刪除該欄位
+            if '品項ID' in d_df.columns:
+                d_df = d_df.drop(columns=['品項ID'])
+            
+            # 2. 格式化數字到小數點第一位
             num_cols = d_df.select_dtypes(include=['number']).columns
             for col in num_cols:
                 d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
             
-            # 2. 局部 CSS：縮小字體並隱藏左側數字列
+            # 3. 💡 強力 CSS：強制縮小表格字體並隱藏左側數字列
             st.markdown("""
                 <style>
-                    .small-font table { font-size: 13px !important; }
-                    .small-font table th:nth-child(1), .small-font table td:nth-child(1) { display: none !important; }
+                    /* 針對所有表格標籤強力壓制字體 */
+                    .small-font table, .small-font th, .small-font td { 
+                        font-size: 11px !important; 
+                        padding: 2px !important;
+                    }
+                    /* 隱藏最左側的索引序號數字 */
+                    .small-font table th:first-child, 
+                    .small-font table td:first-child { 
+                        display: none !important; 
+                    }
                 </style>
             """, unsafe_allow_html=True)
             
-            # 3. 渲染靜態表格
+            # 4. 渲染
             st.markdown('<div class="small-font">', unsafe_allow_html=True)
             st.table(d_df.sort_values('日期', ascending=False))
             st.markdown('</div>', unsafe_allow_html=True)
@@ -353,6 +365,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
