@@ -4,6 +4,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
+import plotly.express as px  # 新增：用於產生趨勢圖
 
 # =========================
 # 1. 核心與數據設定
@@ -24,14 +25,12 @@ def get_gspread_client():
         st.error(f"⚠️ 金鑰連線失敗: {e}"); return None
 
 def get_worksheet_data(sheet_name):
-    """讀取特定工作表數據"""
     try:
         client = get_gspread_client()
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet(sheet_name)
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
-        
         num_cols = ['上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']
         for c in num_cols:
             if c in df.columns:
@@ -95,7 +94,6 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 # =========================
 
 if st.session_state.step == "select_store":
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("🏠 選擇分店")
     if df_s is not None:
         for s in df_s['分店名稱'].unique():
@@ -103,11 +101,9 @@ if st.session_state.step == "select_store":
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "select_vendor":
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
-    # --- 區塊 1：廠商選擇 ---
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
         for v in vendors:
@@ -116,8 +112,6 @@ elif st.session_state.step == "select_vendor":
                 st.session_state.step = "fill_items"; st.rerun()
     
     st.write("---")
-    
-    # --- 區塊 2：報表與分析 (入口找回) ---
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
     if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "export"; st.rerun()
@@ -125,9 +119,8 @@ elif st.session_state.step == "select_vendor":
     if st.button("📈 期間進銷存分析", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
     
-    # --- 區塊 3：分店紀錄入口 ---
     history_sheet = f"{st.session_state.store}_紀錄"
-    if st.button(f"📜 查看 {st.session_state.store} 歷史紀錄", use_container_width=True):
+    if st.button(f"📜 查看 {st.session_state.store} 歷史紀錄數據庫", use_container_width=True):
         st.session_state.view_df = get_worksheet_data(history_sheet)
         st.session_state.step = "view_history"; st.rerun()
         
@@ -135,18 +128,8 @@ elif st.session_state.step == "select_vendor":
         st.session_state.step = "select_store"; st.rerun()
 
 elif st.session_state.step == "fill_items":
-    # (填寫頁面邏輯維持，確保輸入寬度 70px)
-    st.markdown("""
-        <style>
-        .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
-        [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
-        div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
-        div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 72px !important; min-width: 72px !important; max-width: 72px !important; }
-        div[data-testid="stNumberInput"] label { display: none !important; }
-        </style>
-        """, unsafe_allow_html=True)
-    
+    # 填寫介面邏輯 (擴大欄位)
+    st.markdown("<style>.block-container { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"📝 {st.session_state.vendor}")
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
@@ -165,29 +148,25 @@ elif st.session_state.step == "fill_items":
                 st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
     
     st.write("---")
-    h1, h2, h3 = st.columns([6, 1, 1])
+    h1, h2, h3 = st.columns([6, 1.2, 1.2]) # 稍微擴大標題空間
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
-    h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
-    h3.write("<div style='text-align:center;'><b>進貨</b></div>", unsafe_allow_html=True)
+    h2.write("<b>庫存</b>", unsafe_allow_html=True)
+    h3.write("<b>進貨</b>", unsafe_allow_html=True)
 
     with st.form("inventory_form"):
         temp_data = []
         last_item_display_name = "" 
         for _, row in items.iterrows():
-            f_id = str(row['品項ID']).strip()
-            d_n = str(row['品項名稱']).strip() 
-            unit = str(row['單位']).strip()
-            price = pd.to_numeric(row.get('單價', 0), errors='coerce')
-            
+            f_id = str(row['品項ID']).strip(); d_n = str(row['品項名稱']).strip() 
+            unit = str(row['單位']).strip(); price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & 
-                               ((hist_df['品項ID'].astype(str) == f_id) | (hist_df['品項名稱'] == d_n))]
+                past = hist_df[(hist_df['店名'] == st.session_state.store) & ((hist_df['品項ID'].astype(str) == f_id) | (hist_df['品項名稱'] == d_n))]
                 if not past.empty:
                     latest = past.iloc[-1]
                     p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
             
-            c1, c2, c3 = st.columns([6, 1, 1])
+            c1, c2, c3 = st.columns([6, 1.2, 1.2])
             with c1:
                 if d_n == last_item_display_name:
                     st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
@@ -211,23 +190,39 @@ elif st.session_state.step == "fill_items":
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "view_history":
-    st.title(f"📜 {st.session_state.store} 歷史紀錄")
+    st.title(f"📜 {st.session_state.store} 數據庫")
     view_df = st.session_state.get('view_df', pd.DataFrame())
+    
     if not view_df.empty:
-        search = st.text_input("🔍 搜尋品項或日期")
-        display_df = view_df.copy()
-        if search:
-            display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(search)).any(axis=1)]
-        st.dataframe(display_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
-    if st.button("⬅️ 返回廠商列表", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+        # 💡 新增：進階檢視選單
+        tab1, tab2 = st.tabs(["📋 紀錄明細", "📈 消耗趨勢"])
+        
+        with tab1:
+            search = st.text_input("🔍 搜尋品項或日期")
+            display_df = view_df.copy()
+            if search:
+                display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(search)).any(axis=1)]
+            st.dataframe(display_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
+            
+        with tab2:
+            st.write("<b>核心品項消耗分析</b>", unsafe_allow_html=True)
+            target_item = st.selectbox("選擇要分析的品項", options=view_df['品項名稱'].unique())
+            plot_df = view_df[view_df['品項名稱'] == target_item].sort_values('日期')
+            if not plot_df.empty:
+                fig = px.line(plot_df, x="日期", y="期間消耗", title=f"{target_item} 消耗趨勢", markers=True)
+                st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("目前尚無可讀取的紀錄。")
+        
+    if st.button("⬅️ 返回廠商列表", use_container_width=True):
+        st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = get_cloud_data()
     week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
-    delivery_weekday = week_map[delivery_date.weekday()]
-    header_date = f"{delivery_date.month}/{delivery_date.day}({delivery_weekday})"
+    header_date = f"{delivery_date.month}/{delivery_date.day}({week_map[delivery_date.weekday()]})"
     if not hist_df.empty:
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & (hist_df['本次叫貨'] > 0)]
         if not recs.empty:
@@ -237,26 +232,20 @@ elif st.session_state.step == "export":
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
-                output += f"禮拜{delivery_weekday}到，謝謝\n"
+                output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
-    st.title("📊 期間進銷存分析")
+    st.title("📊 期間分析")
     hist_df = get_cloud_data()
-    start = st.date_input("起始日期", value=date.today()-timedelta(7)); end = st.date_input("結束日期", value=date.today())
+    start = st.date_input("起始", value=date.today()-timedelta(7)); end = st.date_input("結束", value=date.today())
     if not hist_df.empty:
         hist_df['日期'] = pd.to_datetime(hist_df['日期']).dt.date
         analysis = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'] >= start) & (hist_df['日期'] <= end)]
         if not analysis.empty:
             summary = analysis.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
-            last_recs = analysis.sort_values('日期').groupby('品項名稱').tail(1)
-            stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
-            summary['期末庫存'] = summary['品項名稱'].map(stock_map).fillna(0)
-            summary['庫存金額'] = summary['期末庫存'] * summary['單價']
-            buy_total, stock_total = f"{summary['總金額'].sum():,.1f}", f"{summary['庫存金額'].sum():,.1f}"
-            st.markdown(f"""<div style='margin-bottom: 25px; border-left: 5px solid #1f77b4; padding-left: 15px;'>
-                <div style='margin-bottom: 8px;'><span style='font-size: 15px; font-weight: 700; color: #555;'>採購支出總額：</span><span style='font-size: 22px; font-weight: 800; color: #4A90E2;'>${buy_total}</span></div>
-                <div><span style='font-size: 15px; font-weight: 700; color: #555;'>期末庫存總值：</span><span style='font-size: 22px; font-weight: 800; color: #50C878;'>${stock_total}</span></div></div>""", unsafe_allow_html=True)
+            buy_total = f"{summary['總金額'].sum():,.1f}"
+            st.markdown(f"### 採購支出總額：${buy_total}")
             st.dataframe(summary, use_container_width=True)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
