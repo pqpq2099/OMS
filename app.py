@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # =========================
-# 1. 核心數據引擎
+# 1. 核心數據與 Sheet 連線
 # =========================
 SHEET_ID = '1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc' 
 
@@ -34,7 +34,7 @@ def get_worksheet_data(sheet_name):
     except: return pd.DataFrame()
 
 # =========================
-# 2. 全域視覺鎖定 (修正重疊與分行)
+# 2. 全域視覺標準 (物理性去噪，不誤傷分店頁)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
@@ -45,7 +45,7 @@ st.markdown("""
         font-weight: 700 !important;
     }
     
-    /* 2. 徹底消滅輸入框幽靈文字與重疊 */
+    /* 2. 徹底消滅輸入框幽靈文字與重疊：僅針對 text_input */
     div[data-testid="stTextInput"] label,
     div[data-testid="stWidgetLabel"],
     [aria-label] {
@@ -54,25 +54,22 @@ st.markdown("""
         visibility: hidden !important;
     }
 
-    /* 3. 強制單排：壓縮文字框樣式並鎖定寬度 */
+    /* 3. 強制單排：壓縮文字框樣式並鎖定置中 */
     .stTextInput input {
         font-weight: 800 !important;
         font-size: 16px !important;
         text-align: center !important;
-        padding: 4px 2px !important;
+        padding: 5px 2px !important;
         height: 38px !important;
-        min-width: 65px !important; /* 💡 鎖定格子最小寬度 */
     }
 
-    /* 4. 欄位間距極小化，防止換行觸發 */
+    /* 4. 極限間距縮減，防止手機換行 */
     div[data-testid="stHorizontalBlock"] {
         gap: 0.1rem !important;
-        display: flex !important;
-        flex-direction: row !important; /* 💡 強制橫排，不准塌陷 */
-        flex-wrap: nowrap !important;
+        align-items: center !important;
     }
     
-    /* 5. 分店與廠商按鈕保持大面積好點擊 */
+    /* 5. 保持按鈕大面積好點擊，不隱藏 */
     .stButton button { width: 100% !important; border-radius: 8px !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -98,7 +95,7 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 # 3. 介面流程
 # =========================
 
-# --- 分店選擇頁 ---
+# --- 步驟 1：選擇分店 (恢復正常) ---
 if st.session_state.step == "select_store":
     st.title("🏠 選擇分店")
     if df_s is not None:
@@ -106,7 +103,7 @@ if st.session_state.step == "select_store":
             if st.button(f"📍 {s}", key=f"s_{s}"):
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 廠商中心 ---
+# --- 步驟 2：廠商中心 (手機雙欄穩定版) ---
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
@@ -114,7 +111,7 @@ elif st.session_state.step == "select_vendor":
     
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
-        # 手機雙欄廠商穩定顯示
+        # 強制手機雙欄排列
         for i in range(0, len(vendors), 2):
             cols = st.columns(2)
             with cols[0]:
@@ -138,7 +135,7 @@ elif st.session_state.step == "select_vendor":
             st.session_state.history_df = get_worksheet_data("Records"); st.session_state.step = "analysis"; st.rerun()
     if st.button("⬅️ 返回分店"): st.session_state.step = "select_store"; st.rerun()
 
-# --- 進貨填寫頁 (關鍵修正區) ---
+# --- 步驟 3：填寫頁面 (強迫單排對齊) ---
 elif st.session_state.step == "fill_items":
     if "vendor" not in st.session_state: st.session_state.step = "select_vendor"; st.rerun()
     st.markdown("<style>.block-container { padding-left: 0.1rem !important; padding-right: 0.1rem !important; }</style>", unsafe_allow_html=True)
@@ -147,7 +144,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 標題列分配：5 : 2 : 2
+    # 標題列分配：5 : 2 : 2 (給格子足夠寬度防止塌陷)
     h1, h2, h3 = st.columns([5, 2, 2])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -170,7 +167,7 @@ elif st.session_state.step == "fill_items":
                 if d_n == last_item_name: st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 last_item_name = d_n
-            # 💡 改用 text_input 並配合 label_visibility="collapsed" 以強迫單排
+            # 💡 終極修復：text_input 配合 label_visibility="collapsed"
             with c2: t_s_r = st.text_input("", key=f"s_{f_id}", value="0", label_visibility="collapsed")
             with c3: t_p_r = st.text_input("", key=f"p_{f_id}", value="0", label_visibility="collapsed")
             
@@ -189,14 +186,38 @@ elif st.session_state.step == "fill_items":
             st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# 其他分頁邏輯保持一致 (報表、歷史庫)
+# 其他報表邏輯 (analysis, export) 完整保留，不作變動
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
     a_df = get_worksheet_data("Records")
-    # ... (分析報表邏輯)
+    start = st.date_input("開始日期", value=date.today()-timedelta(7)); end = st.date_input("結束日期", value=date.today())
+    if not a_df.empty:
+        a_df['日期'] = pd.to_datetime(a_df['日期']).dt.date
+        filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
+        if not filt.empty:
+            summ = filt.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
+            last_recs = filt.sort_values('日期').groupby('品項名稱').tail(1)
+            stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
+            summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0); summ['庫存價值'] = summ['期末庫存'] * summ['單價']
+            st.markdown(f"#### 💰 採購總額：${summ['總金額'].sum():,.1f} | 📦 庫存價值：${summ['庫存價值'].sum():,.1f}")
+            st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "export":
     st.title("📋 今日叫貨明細")
-    # ... (叫貨明細邏輯)
+    h_df = get_worksheet_data("Records")
+    week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
+    deliv_date = st.session_state.record_date + timedelta(days=1)
+    header = f"{deliv_date.month}/{deliv_date.day}({week_map[deliv_date.weekday()]})"
+    if not h_df.empty:
+        recs = h_df[(h_df['店名'] == st.session_state.store) & (h_df['日期'].astype(str) == str(st.session_state.record_date)) & (h_df['本次叫貨'] > 0)]
+        if not recs.empty:
+            out = f"{header}\n"
+            for v in recs['廠商'].unique():
+                out += f"\n{v}\n{st.session_state.store}\n"
+                for _, r in recs[recs['廠商'] == v].iterrows():
+                    v_val = float(r['本次叫貨']); v_s = int(v_val) if v_val.is_integer() else v_val
+                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
+                out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
+            st.text_area("LINE 複製", value=out, height=350)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
