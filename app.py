@@ -93,18 +93,20 @@ st.markdown("""
         -webkit-appearance: none !important;
         margin: 0 !important;
     }
-    /* 💡 強力壓制：隱藏所有表格首列序號 (0, 1, 2...) */
+    /* 💡 強力隱藏首列序號 (0, 1, 2...) */
     [data-testid="stTable"] td:nth-child(1), 
     [data-testid="stTable"] th:nth-child(1) {
         display: none !important;
     }
 
-    /* 💡 強制縮小字體：針對 small-table 容器內的表格執行 */
+    /* 💡 歷史紀錄表格：變細、縮小、緊湊化 */
     .small-table [data-testid="stTable"] td, 
     .small-table [data-testid="stTable"] th {
-        font-size: 11px !important;
-        padding: 4px 2px !important;
-        line-height: 1.2 !important;
+        font-size: 11px !important;     /* 極致縮小 */
+        font-weight: 400 !important;    /* 💡 這裡將字體變細 (原本是 700) */
+        letter-spacing: -0.5px !important; /* 文字靠緊一點 */
+        padding: 3px 2px !important;    /* 壓縮間距 */
+        line-height: 1.1 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -277,17 +279,17 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            # 💡 數據降噪：隱藏「店名」與「品項ID」
+            # 1. 隱藏店名與 ID
             cols_to_drop = [c for c in ['店名', '品項ID'] if c in d_df.columns]
             if cols_to_drop:
                 d_df = d_df.drop(columns=cols_to_drop)
             
-            # 💡 格式化數字到小數點第一位
+            # 2. 格式化數字至小數點一位
             num_cols = d_df.select_dtypes(include=['number']).columns
             for col in num_cols:
                 d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
             
-            # 💡 套用全域 CSS 縮小字體 (確保你的 style 區塊有 .small-table)
+            # 3. 💡 用 div 包起來，強制套用「細化、縮小」CSS
             st.markdown('<div class="small-table">', unsafe_allow_html=True)
             st.table(d_df.sort_values('日期', ascending=False))
             st.markdown('</div>', unsafe_allow_html=True)
@@ -351,6 +353,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
