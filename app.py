@@ -6,6 +6,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import plotly.express as px  # 加入這一行
+try:
+    HAS_PLOTLY = True       # 💡 補上這行
+except ImportError:
+    HAS_PLOTLY = False      # 💡 補上這行
 # =========================
 # 1. 核心與數據設定
 # =========================
@@ -260,6 +264,8 @@ elif st.session_state.step == "view_history":
                 fig.update_layout(xaxis_type='category', hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
+# --- 今日進貨明細 ---
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = get_cloud_data()
@@ -277,9 +283,9 @@ elif st.session_state.step == "export":
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 進銷存分析 (金額垂直堆疊修正) ---
+# --- 進銷存分析 (垂直堆疊版) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
     a_df = get_worksheet_data("Records")
@@ -294,7 +300,6 @@ elif st.session_state.step == "analysis":
             summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
             summ['庫存金額'] = summ['期末庫存'] * summ['單價']
             
-            # 💡 核心指令：金額垂直堆疊排列 (進貨在上、庫存在下)
             st.markdown(f"""
                 <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #4A90E2; margin-bottom: 12px;'>
                     <div style='font-size: 14px; color: #666; font-weight: 700;'>💰 目前採購支出總額</div>
@@ -307,7 +312,3 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
-
-
-
-
