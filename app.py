@@ -177,17 +177,23 @@ elif st.session_state.step == "fill_items":
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 D：今日進貨報表 (💡 移除店名後的進貨單三字) ---
+# --- 頁面 D：今日進貨報表 (💡 實施隔日配送邏輯) ---
 elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
-    st.title("📋 今日進貨報表")
+    st.title("📋 今日進貨明細")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     date_str = str(st.session_state.record_date)
+    
+    # 💡 計算配送日期 (今日下單，隔日到)
+    delivery_date = st.session_state.record_date + timedelta(days=1)
+    delivery_str = str(delivery_date)
+    
     if not hist_df.empty:
+        # 篩選條件依然使用「盤點日期」，但顯示時切換為「配送日期」
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'].astype(str) == date_str) & (hist_df['本次叫貨'] > 0)]
         if not recs.empty:
-            # 💡 修正位置：店名後面不顯示「進貨單」三個字
-            output = f"【{st.session_state.store}】({date_str})\n"
+            # 💡 標題與括號內日期改為配送日期
+            output = f"【{st.session_state.store}】({delivery_str})\n"
             for v in recs['廠商'].unique():
                 output += f"\n{v}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
