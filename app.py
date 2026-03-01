@@ -47,7 +47,7 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (強制加粗與視覺純淨)
+# 2. 全域視覺標準 (💡 解決深色模式看不見數字的問題)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
@@ -59,16 +59,19 @@ st.markdown("""
         font-style: normal !important;
     }
     
-    h1, h2, h3 { font-weight: 800 !important; color: #1E1E1E; }
+    h1, h2, h3 { font-weight: 800 !important; }
     
+    /* 💡 數字輸入框：核心視覺修正 */
     .stNumberInput input { 
         font-weight: 800 !important; 
         font-size: 16px !important; 
-        color: #000 !important; 
+        /* 移除固定顏色，讓系統自動判斷深淺色模式 */
     }
     
-    .stCaption { font-weight: 500 !important; color: #666 !important; font-size: 13px !important; }
+    /* 輔助文字 */
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     
+    /* 隱藏微調按鈕 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
     </style>
@@ -142,7 +145,6 @@ elif st.session_state.step == "fill_items":
             past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
             if not past.empty:
                 latest = past.iloc[-1]
-                # 💡 歷史表也同步拿掉 *
                 ref_name = str(item_display_map.get(f_id, f_id)).replace('*', '')
                 ref_data.append({
                     "品項": ref_name,
@@ -161,7 +163,7 @@ elif st.session_state.step == "fill_items":
         last_item_display_name = "" 
         for _, row in items.iterrows():
             f_id = str(row['品項ID']).strip()
-            # 💡 核心優化：將名稱中的 * 徹底移除，讓顯示更清爽
+            # 💡 移除 * 號
             d_n = str(row['品項名稱']).strip().replace('*', '')
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
@@ -190,7 +192,6 @@ elif st.session_state.step == "fill_items":
             
             t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
-            # 存入時保留清洗後的名稱
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
         if st.form_submit_button("💾 儲存並同步數據", use_container_width=True):
@@ -217,7 +218,6 @@ elif st.session_state.step == "export":
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
-                    # 💡 LINE 報表也同步拿掉 *
                     line_name = str(r['品項名稱']).replace('*', '')
                     output += f"{line_name} {val_s} {r['單位']}\n"
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
@@ -246,11 +246,11 @@ elif st.session_state.step == "analysis":
                 <div style='margin-bottom: 25px; border-left: 5px solid #1f77b4; padding-left: 15px;'>
                     <div style='margin-bottom: 8px;'>
                         <span style='font-size: 15px; font-weight: 700; color: #555;'>採購支出總額：</span>
-                        <span style='font-size: 24px; font-weight: 800; color: #4A90E2;'>${buy_total}</span>
+                        <span style='font-size: 22px; font-weight: 800; color: #4A90E2;'>${buy_total}</span>
                     </div>
                     <div>
                         <span style='font-size: 15px; font-weight: 700; color: #555;'>期末庫存總值：</span>
-                        <span style='font-size: 24px; font-weight: 800; color: #50C878;'>${stock_total}</span>
+                        <span style='font-size: 22px; font-weight: 800; color: #50C878;'>${stock_total}</span>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
