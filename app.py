@@ -263,13 +263,13 @@ elif st.session_state.step == "fill_items":
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 歷史紀錄 (將搜尋框改為品項下拉清單，並鎖定小數點一位) ---
+# --- 歷史紀錄 (精確縮進與靜態小字版) ---
 elif st.session_state.step == "view_history":
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
-       with t1:
+        with t1:
             all_items_list = ["全部品項"] + sorted(v_df['品項名稱'].unique().tolist())
             selected_item = st.selectbox("請選擇品項查看細節", options=all_items_list)
             
@@ -282,7 +282,7 @@ elif st.session_state.step == "view_history":
             for col in num_cols:
                 d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
             
-            # 2. 局部 CSS：只縮小「這個分頁」的表格字體，並隱藏左側數字(序號)
+            # 2. 局部 CSS：縮小字體並隱藏左側數字列
             st.markdown("""
                 <style>
                     .small-font table { font-size: 13px !important; }
@@ -290,7 +290,7 @@ elif st.session_state.step == "view_history":
                 </style>
             """, unsafe_allow_html=True)
             
-            # 3. 用 div 包起來讓上面的 CSS 生效
+            # 3. 渲染靜態表格
             st.markdown('<div class="small-font">', unsafe_allow_html=True)
             st.table(d_df.sort_values('日期', ascending=False))
             st.markdown('</div>', unsafe_allow_html=True)
@@ -353,6 +353,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
