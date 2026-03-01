@@ -71,8 +71,9 @@ def load_csv_safe(path):
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
-# 💡 建立映射時使用「品項」(ID) 作為 Key
-item_display_map = df_i.set_index('品項')['品項名稱'].to_dict()
+
+# 💡 關鍵修正：使用「品項ID」作為映射的 Key
+item_display_map = df_i.set_index('品項ID')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
@@ -125,12 +126,13 @@ elif st.session_state.step == "fill_items":
     
     if not hist_df.empty:
         ref_data = []
-        for f_n in items['品項'].unique():
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_n)]
+        # 💡 使用「品項ID」進行歷史匹配
+        for f_id in items['品項ID'].unique():
+            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
             if not past.empty:
                 latest = past.iloc[-1]
                 ref_data.append({
-                    "品項": item_display_map.get(f_n, f_n),
+                    "品項": latest.get('品項名稱', f_id),
                     "上剩": latest.get('本次剩餘', 0),
                     "上進": latest.get('本次叫貨', 0),
                     "消耗": latest.get('期間消耗', 0)
@@ -143,47 +145,47 @@ elif st.session_state.step == "fill_items":
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.caption("**品項**"); h2.caption("**庫**"); h3.caption("**進**")
 
-    # 💡 進入表單
     with st.form("inventory_form"):
         temp_data = []
-        last_item_display_name = ""  # 用於追蹤上一個顯示的名稱
+        last_item_name = ""  # 紀錄上一個顯示的名稱
         
         for _, row in items.iterrows():
-            f_n = str(row['品項']).strip() # 這是 ID
-            d_n = str(row['品項名稱']).strip() # 這是顯示名稱
+            f_id = str(row['品項ID']).strip() # 💡 改用「品項ID」作為唯一Key
+            d_n = str(row['品項名稱']).strip() # 💡 改用「品項名稱」作為顯示
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_n)]
+                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
                 if not past.empty:
                     latest = past.iloc[-1]
                     p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
             
             c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
-                # 💡 優化顯示：如果名稱與上一行重複，則縮減顯示
-                if d_n == last_item_display_name:
+                # 💡 自動縮減重複名稱：若名稱相同，則顯示 └ 單位
+                if d_n == last_item_name:
                     st.markdown(f"<span style='color:gray;'>└ </span> **{unit}**", unsafe_allow_html=True)
                 else:
                     st.markdown(f"**{d_n}**")
                 
                 p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前:{p_show})")
-                last_item_display_name = d_n # 更新紀錄
+                last_item_name = d_n # 更新紀錄
                 
             with c2:
-                # 💡 關鍵：使用 f_n (品項 ID) 作為唯一 Key
-                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_n}", format="%g", value=None)
+                # 💡 key 改用 f_id，徹底解決紅字當機
+                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None)
             with c3:
-                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_n}", format="%g", value=None)
+                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None)
             
             t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
-            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_n, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
+            # 存入時保留完整 ID 與名稱，確保分析準確
+            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
-        # 💡 儲存按鈕必須在 with st.form 的範圍內
+        # 💡 按鈕縮排修復：確保在 form 範圍內
         if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
@@ -191,7 +193,7 @@ elif st.session_state.step == "fill_items":
                 
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 D：今日進貨明細 ---
+# --- 頁面 D：今日進貨明細 (格式保持) ---
 elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨明細")
@@ -215,7 +217,7 @@ elif st.session_state.step == "export":
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 E：期間分析 ---
+# --- 頁面 E：期間分析 (格式保持) ---
 elif st.session_state.step == "analysis":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📊 期間進銷存分析")
