@@ -63,50 +63,26 @@ def sync_to_cloud(df_to_save):
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 全域字體與重磅標題 */
-    html, body, [class*="css"], .stMarkdown, p, span, div, b {
-        font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
-        font-weight: 700 !important;
-    }
-    h1, h2, h3 { font-weight: 800 !important; }
-    
-    /* 按鈕樣式加固 */
-    .stButton button { font-weight: 700 !important; border-radius: 8px !important; }
-
-    /* 輸入框視覺鎖定：800權重、16px字體、居中對齊 */
-    .stNumberInput input {
-        font-weight: 800 !important;
-        font-size: 16px !important;
-        text-align: center !important;
-    }
-
-    /* 物理移除：徹底消除 +- 按鈕與原生描述，確保純淨格子 */
-    div[data-testid="stNumberInputStepUp"], 
-    div[data-testid="stNumberInputStepDown"], 
-    .stNumberInput button { 
-        display: none !important; 
-    }
-    
-    /* 移除數字框內建外距 */
-    input[type=number] {
-        -moz-appearance: textfield !important;
-        -webkit-appearance: none !important;
-        margin: 0 !important;
-    }
-    /* 💡 強力隱藏首列序號 (0, 1, 2...) */
+    /* 💡 強力壓制：隱藏序號列並強制表格縮小、變細 */
     [data-testid="stTable"] td:nth-child(1), 
     [data-testid="stTable"] th:nth-child(1) {
         display: none !important;
     }
 
-    /* 💡 歷史紀錄表格：變細、縮小、緊湊化 */
-    .small-table [data-testid="stTable"] td, 
-    .small-table [data-testid="stTable"] th {
-        font-size: 11px !important;     /* 極致縮小 */
-        font-weight: 400 !important;    /* 💡 這裡將字體變細 (原本是 700) */
-        letter-spacing: -0.5px !important; /* 文字靠緊一點 */
-        padding: 3px 2px !important;    /* 壓縮間距 */
+    /* 強制字體 11px、權重 400 (變細)、間距壓縮 */
+    [data-testid="stTable"] td, 
+    [data-testid="stTable"] th {
+        font-size: 11px !important;
+        font-weight: 400 !important;
+        padding: 4px 2px !important;
         line-height: 1.1 !important;
+        letter-spacing: -0.2px !important;
+    }
+
+    /* 確保標題不要太粗 */
+    [data-testid="stTable"] th {
+        font-weight: 600 !important;
+        background-color: #f0f2f6 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -384,6 +360,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
