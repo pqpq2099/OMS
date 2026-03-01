@@ -315,7 +315,7 @@ elif st.session_state.step == "analysis":
             # 💡 核心指令：金額垂直堆疊排列 (進貨在上、庫存在下)
             st.markdown(f"""
                 <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #4A90E2; margin-bottom: 12px;'>
-                    <div style='font-size: 14px; color: #666; font-weight: 700;'>💰 今日採購支出總額</div>
+                    <div style='font-size: 14px; color: #666; font-weight: 700;'>💰 目前採購支出總額</div>
                     <div style='font-size: 24px; color: #4A90E2; font-weight: 800;'>${summ['總金額'].sum():,.1f}</div>
                 </div>
                 <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #50C878; margin-bottom: 25px;'>
@@ -325,5 +325,6 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
