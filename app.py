@@ -259,21 +259,28 @@ elif st.session_state.step == "fill_items":
 
 # --- 💡 修正後的位置：從這裡開始整塊覆蓋 ---
 elif st.session_state.step == "view_history":
-    # 💡 戰略擴張：僅針對此頁面調寬 block-container，從預設的 730px 稍微放寬
+    # 💡 強力寬幅戰略：確保在手機上橫向空間最大化
     st.markdown("""
         <style>
+            /* 針對歷史紀錄頁面強力拉寬 */
             [data-testid="stMainBlockContainer"] {
-                max-width: 90% !important; /* 將寬度從置中改為佔據 90% 螢幕 */
-                padding-left: 1rem !important;
-                padding-right: 1rem !important;
+                max-width: 95% !important; 
+                padding-left: 0.5rem !important;
+                padding-right: 0.5rem !important;
             }
-            /* 保持之前的極窄間距 */
+            /* 極致壓縮表格間距 */
             [data-testid="stDataFrame"] [role="gridcell"] {
-                padding: 1px 4px !important;
+                padding: 1px 2px !important;
                 line-height: 1.0 !important;
+            }
+            /* 讓表頭也變小 */
+            [data-testid="stDataFrame"] [role="columnheader"] {
+                padding: 2px 2px !important;
+                font-size: 10px !important;
             }
         </style>
     """, unsafe_allow_html=True)
+    
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     
@@ -287,39 +294,21 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
 
-            # 💡 數據前處理：將日期轉換為「月-日」格式 (移除年份)
+            # 💡 日期精簡處理
             if '日期' in d_df.columns:
                 d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
 
-            # 💡 物理壓縮：強制縮減行高與留白
-            st.markdown("""
-                <style>
-                    [data-testid="stDataFrame"] [role="gridcell"] {
-                        padding: 1px 4px !important;
-                        line-height: 1.0 !important;
-                    }
-                    [data-testid="stDataFrame"] [role="columnheader"] {
-                        padding: 2px 4px !important;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-
-            # 💡 戰略隱藏與寬度微調
+            # 💡 極窄化動態表格配置
             st.dataframe(
                 d_df.sort_values('日期', ascending=False),
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "日期": st.column_config.TextColumn(width="minishort"), # 日期現在更窄了
+                    "日期": st.column_config.TextColumn(width="minishort"),
                     "廠商": st.column_config.TextColumn(width="small"),
                     "品項名稱": st.column_config.TextColumn(width="medium"),
                     "單位": st.column_config.TextColumn(width="minishort"),
-                    # --- 隱藏區 ---
-                    "店名": None, 
-                    "品項ID": None,
-                    "單價": None,
-                    "總金額": None,
-                    # -------------
+                    "店名": None, "品項ID": None, "單價": None, "總金額": None, # 隱藏雜訊
                     "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
@@ -386,5 +375,6 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
