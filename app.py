@@ -173,7 +173,7 @@ elif st.session_state.step == "fill_items":
     
     st.title(f"📝 {st.session_state.vendor}")
     
-    # 💡 戰略植入：直接展開的歷史參考看板
+    # --- 💡 以下是蓋掉的部分：改用靜態表格防止亂碼 ---
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
@@ -193,13 +193,8 @@ elif st.session_state.step == "fill_items":
         
         if ref_list:
             st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
-            # 💡 關鍵：直接顯示表格，不使用摺疊，並固定高度防止頁面過長
-            st.dataframe(
-                pd.DataFrame(ref_list), 
-                use_container_width=True, 
-                hide_index=True,
-                height=180 # 固定高度，約顯示 4-5 筆，過多時可於表內滑動
-            )
+            # 使用 st.table 徹底消滅「三個點」的功能選單與亂碼
+            st.table(pd.DataFrame(ref_list))
     
     st.write("---")
     # (後續填寫表單內容保持不變...)
@@ -333,5 +328,6 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
