@@ -279,7 +279,7 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            # 1. 隱藏店名與 ID
+            # 1. 數據降噪：徹底移除店名、品項ID
             cols_to_drop = [c for c in ['店名', '品項ID'] if c in d_df.columns]
             if cols_to_drop:
                 d_df = d_df.drop(columns=cols_to_drop)
@@ -288,11 +288,42 @@ elif st.session_state.step == "view_history":
             num_cols = d_df.select_dtypes(include=['number']).columns
             for col in num_cols:
                 d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
+
+            # 3. 💡 暴力內聯樣式：直接生成 HTML 表格，徹底解決字體與粗細問題
+            # 這裡設定：字體 11px, 權重 400 (變細), 隱藏首列序號
+            html_table = d_df.sort_values('日期', ascending=False).to_html(
+                index=False, 
+                classes='pure-table', 
+                escape=False
+            )
             
-            # 3. 💡 用 div 包起來，強制套用「細化、縮小」CSS
-            st.markdown('<div class="small-table">', unsafe_allow_html=True)
-            st.table(d_df.sort_values('日期', ascending=False))
-            st.markdown('</div>', unsafe_allow_html=True)
+            # 注入樣式：字體變細 (400)、變小 (11px)、移除粗體
+            st.markdown(f"""
+                <style>
+                    .custom-container {{ overflow-x: auto; }}
+                    .custom-table {{ 
+                        width: 100%; 
+                        border-collapse: collapse; 
+                        font-size: 11px !important; 
+                        font-weight: 400 !important; 
+                        color: #333;
+                    }}
+                    .custom-table th {{ 
+                        background: #f0f2f6; 
+                        padding: 6px 4px; 
+                        text-align: left; 
+                        font-weight: 600 !important; /* 標題稍微維持結構感 */
+                    }}
+                    .custom-table td {{ 
+                        padding: 4px; 
+                        border-bottom: 1px solid #eee;
+                        font-weight: 400 !important; /* 💡 確保內容字體變細 */
+                    }}
+                </style>
+                <div class="custom-container">
+                    {html_table.replace('class="dataframe pure-table"', 'class="custom-table"')}
+                </div>
+            """, unsafe_allow_html=True)
             
         with t2:
             if HAS_PLOTLY:
@@ -353,6 +384,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
