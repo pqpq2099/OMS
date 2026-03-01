@@ -242,6 +242,21 @@ elif st.session_state.step == "fill_items":
 
 # --- 💡 修正後的位置：從這裡開始整塊覆蓋 ---
 elif st.session_state.step == "view_history":
+    # 💡 戰略擴張：僅針對此頁面調寬 block-container，從預設的 730px 稍微放寬
+    st.markdown("""
+        <style>
+            [data-testid="stMainBlockContainer"] {
+                max-width: 95% !important; /* 將寬度從置中改為佔據 95% 螢幕 */
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+            }
+            /* 保持之前的極窄間距 */
+            [data-testid="stDataFrame"] [role="gridcell"] {
+                padding: 1px 4px !important;
+                line-height: 1.0 !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     
@@ -354,6 +369,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
