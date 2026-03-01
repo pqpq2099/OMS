@@ -258,20 +258,19 @@ elif st.session_state.step == "view_history":
     if not v_df.empty:
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         with t1:
-            # 💡 戰略修正：從原本的文字輸入框改為下拉選單
             all_items_list = ["全部品項"] + sorted(v_df['品項名稱'].unique().tolist())
             selected_item = st.selectbox("請選擇品項查看細節", options=all_items_list)
             
             d_df = v_df.copy()
-            # 根據選擇過濾數據
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
+            # 💡 核心修正：將原本的 st.dataframe 改為 st.table
+            # 使用靜態表格，徹底解決亂碼選單問題
+            st.table(d_df.sort_values('日期', ascending=False))
             
         with t2:
             if HAS_PLOTLY:
-                # 趨勢圖表維持不變，依然使用品項選擇
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()), key="chart_select")
                 p_df = v_df[v_df['品項名稱'] == tgt].copy()
                 p_df['日期'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
@@ -279,8 +278,8 @@ elif st.session_state.step == "view_history":
                 fig = px.line(p_df, x="日期", y="期間消耗", markers=True, title=f"【{tgt}】消耗趨勢")
                 fig.update_layout(xaxis_type='category', hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
+                
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
-
 # --- 今日進貨明細 ---
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
@@ -328,6 +327,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
