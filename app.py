@@ -97,6 +97,20 @@ st.markdown("""
     table th:first-child, table td:first-child {
         display: none !important;
     }
+    
+    /* 💡 就在這裡插入：開始貼上您剛才那段代碼 */
+    table th:first-child, table td:first-child { 
+        display: none !important; 
+    }
+    
+    .small-font table { 
+        font-size: 11px !important; 
+    }
+    .small-font td, .small-font th { 
+        padding: 4px 2px !important; 
+        line-height: 1.2 !important; 
+    }
+    /* 💡 插入結束 */
     .small-table table {
         font-size: 12px !important; /* 縮小字體至 12px */
     }
@@ -351,3 +365,4 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
