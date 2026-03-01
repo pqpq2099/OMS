@@ -124,11 +124,28 @@ elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
-    # 廠商按鈕
+        # --- 💡 廠商按鈕：改為兩列並排戰略 ---
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
-        for v in vendors:
-            if st.button(f"📦 {v}", key=f"v_{v}", use_container_width=True):
+        
+        # 使用每列 2 個的柵格邏輯
+        for i in range(0, len(vendors), 2):
+            cols = st.columns(2)  # 建立兩列
+            
+            # 處理左側按鈕
+            with cols[0]:
+                v_left = vendors[i]
+                if st.button(f"📦 {v_left}", key=f"v_{v_left}", use_container_width=True):
+                    st.session_state.vendor = v_left; st.session_state.history_df = get_cloud_data()
+                    st.session_state.step = "fill_items"; st.rerun()
+            
+            # 處理右側按鈕 (需判斷是否還有下一個廠商)
+            if i + 1 < len(vendors):
+                with cols[1]:
+                    v_right = vendors[i+1]
+                    if st.button(f"📦 {v_right}", key=f"v_{v_right}", use_container_width=True):
+                        st.session_state.vendor = v_right; st.session_state.history_df = get_cloud_data()
+                        st.session_state.step = "fill_items"; st.rerun()
                 st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
                 st.session_state.step = "fill_items"; st.rerun()
     
@@ -369,3 +386,4 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
