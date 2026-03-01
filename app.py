@@ -231,53 +231,35 @@ elif st.session_state.step == "fill_items":
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 報表與歷史頁面 (維持邏輯) ---
+# --- 歷史紀錄 (將搜尋框改為品項下拉清單) ---
 elif st.session_state.step == "view_history":
-    st.title(f"📜 {st.session_state.store} 歷史紀錄庫")
-    view_df = st.session_state.get('view_df', pd.DataFrame())
-    
-    if not view_df.empty:
-        # 💡 戰略：使用 Tabs 將數據與圖表分離，確保手機版不會因頁面過長而崩潰
-        tab1, tab2 = st.tabs(["📋 明細數據", "📈 消耗趨勢"])
-        
-        with tab1:
-            search = st.text_input("🔍 搜尋品項或日期")
-            display_df = view_df.copy()
-            if search:
-                display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(search)).any(axis=1)]
-            st.dataframe(display_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
-        
-        with tab2:
-            # 讓使用者選擇分析品項
-            all_items = sorted(view_df['品項名稱'].unique())
-            target_item = st.selectbox("分析品項", options=all_items, key="chart_item_select")
+    st.title(f"📜 {st.session_state.store} 歷史庫")
+    v_df = st.session_state.get('view_df', pd.DataFrame())
+    if not v_df.empty:
+        t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
+        with t1:
+            # 💡 戰略修正：從原本的文字輸入框改為下拉選單
+            all_items_list = ["全部品項"] + sorted(v_df['品項名稱'].unique().tolist())
+            selected_item = st.selectbox("請選擇品項查看細節", options=all_items_list)
             
-            # 數據處理：強制格式化日期以移除毫秒
-            chart_df = view_df[view_df['品項名稱'] == target_item].copy()
-            chart_df['日期'] = pd.to_datetime(chart_df['日期']).dt.strftime('%Y-%m-%d')
-            chart_df = chart_df.sort_values('日期')
+            d_df = v_df.copy()
+            # 根據選擇過濾數據
+            if selected_item != "全部品項":
+                d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            # 繪製線圖
-            fig = px.line(
-                chart_df, 
-                x="日期", 
-                y="期間消耗", 
-                markers=True, 
-                title=f"【{target_item}】消耗走勢"
-            )
+            st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
             
-            # 💡 關鍵修正：強制 X 軸為 category 類型，徹底移除毫秒亂碼
-            fig.update_layout(
-                xaxis_type='category', 
-                hovermode="x unified",
-                margin=dict(l=10, r=10, t=50, b=10)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-    if st.button("⬅️ 返回廠商列表", use_container_width=True): 
-        st.session_state.step = "select_vendor"
-        st.rerun()
-
+        with t2:
+            if HAS_PLOTLY:
+                # 趨勢圖表維持不變，依然使用品項選擇
+                tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()), key="chart_select")
+                p_df = v_df[v_df['品項名稱'] == tgt].copy()
+                p_df['日期'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
+                p_df = p_df.sort_values('日期')
+                fig = px.line(p_df, x="日期", y="期間消耗", markers=True, title=f"【{tgt}】消耗趨勢")
+                fig.update_layout(xaxis_type='category', hovermode="x unified")
+                st.plotly_chart(fig, use_container_width=True)
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = get_cloud_data()
@@ -325,6 +307,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
