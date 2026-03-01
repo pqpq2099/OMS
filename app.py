@@ -93,33 +93,18 @@ st.markdown("""
         -webkit-appearance: none !important;
         margin: 0 !important;
     }
-    /* 💡 移除 st.table 左側的索引序號與縮小字體 */
-    table th:first-child, table td:first-child {
+    /* 💡 強力壓制：隱藏所有表格首列序號 (0, 1, 2...) */
+    [data-testid="stTable"] td:nth-child(1), 
+    [data-testid="stTable"] th:nth-child(1) {
         display: none !important;
     }
-    
-    /* 💡 就在這裡插入：開始貼上您剛才那段代碼 */
-    table th:first-child, table td:first-child { 
-        display: none !important; 
-    }
-    
-    .small-font table { 
-        font-size: 11px !important; 
-    }
-    .small-font td, .small-font th { 
-        padding: 4px 2px !important; 
-        line-height: 1.2 !important; 
-    }
-    /* 💡 插入結束 */
-    .small-table table {
-        font-size: 12px !important; /* 縮小字體至 12px */
-    }
-    .small-table th {
-        padding: 4px !important;
-        background-color: #f0f2f6 !important;
-    }
-    .small-table td {
-        padding: 4px !important;
+
+    /* 💡 強制縮小字體：針對 small-table 容器內的表格執行 */
+    .small-table [data-testid="stTable"] td, 
+    .small-table [data-testid="stTable"] th {
+        font-size: 11px !important;
+        padding: 4px 2px !important;
+        line-height: 1.2 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -366,5 +351,6 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
