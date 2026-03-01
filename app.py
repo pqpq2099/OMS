@@ -93,6 +93,20 @@ st.markdown("""
         -webkit-appearance: none !important;
         margin: 0 !important;
     }
+    /* 💡 移除 st.table 左側的索引序號與縮小字體 */
+    table th:first-child, table td:first-child {
+        display: none !important;
+    }
+    .small-table table {
+        font-size: 12px !important; /* 縮小字體至 12px */
+    }
+    .small-table th {
+        padding: 4px !important;
+        background-color: #f0f2f6 !important;
+    }
+    .small-table td {
+        padding: 4px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -263,13 +277,15 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            # 💡 核心修正：強制將所有數字欄位轉換為小數點第一位字串，解決冗餘零的問題
+            # 💡 強制鎖定小數點一位
             num_cols = d_df.select_dtypes(include=['number']).columns
             for col in num_cols:
                 d_df[col] = d_df[col].apply(lambda x: f"{x:.1f}")
             
-            # 使用靜態表格，徹底解決亂碼選單與縮進報錯
+            # 💡 套用 small-table 樣式並渲染
+            st.markdown('<div class="small-table">', unsafe_allow_html=True)
             st.table(d_df.sort_values('日期', ascending=False))
+            st.markdown('</div>', unsafe_allow_html=True)
             
         with t2:
             if HAS_PLOTLY:
@@ -329,6 +345,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
