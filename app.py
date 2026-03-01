@@ -24,35 +24,32 @@ def get_gspread_client():
         st.error(f"⚠️ 金鑰連線失敗: {e}"); return None
 
 def get_worksheet_data(sheet_name):
-    """讀取特定工作表數據 (標題在第一行)"""
+    """讀取工作表：直接從第一行開始讀取 (配合您的結構調整)"""
     try:
         client = get_gspread_client()
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet(sheet_name)
+        # 💡 使用 get_all_records，假設標題就在第一行
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
         
-        # 數值轉換
         num_cols = ['上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']
         for c in num_cols:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         return df
     except Exception as e:
+        # 如果 get_all_records 失敗 (可能因為公式報錯)，改用 get_all_values
+        try:
+            data = ws.get_all_values()
+            if len(data) > 1:
+                df = pd.DataFrame(data[1:], columns=data[0])
+                return df
+        except: pass
         return pd.DataFrame()
 
 def get_cloud_data():
     return get_worksheet_data("Records")
-
-def sync_to_cloud(df_to_save):
-    client = get_gspread_client()
-    if not client: return False
-    try:
-        sh = client.open_by_key(SHEET_ID)
-        ws = sh.worksheet("Records")
-        ws.append_rows(df_to_save.values.tolist())
-        return True
-    except: return False
 
 # =========================
 # 2. 全域視覺標準
@@ -66,14 +63,13 @@ st.markdown("""
         font-style: normal !important;
     }
     h1, h2, h3 { font-weight: 800 !important; }
-    .stButton button { font-weight: 700 !important; }
     .stNumberInput input { font-weight: 800 !important; font-size: 16px !important; text-align: center !important; }
-    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
     </style>
     """, unsafe_allow_html=True)
 
+# 讀取品項清單
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
 CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 
@@ -92,12 +88,8 @@ if df_i is not None:
 if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
-# =========================
-# 3. 介面分流
-# =========================
-
+# --- 核心頁面跳轉邏輯 ---
 if st.session_state.step == "select_store":
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("🏠 選擇分店")
     if df_s is not None:
         for s in df_s['分店名稱'].unique():
@@ -105,10 +97,10 @@ if st.session_state.step == "select_store":
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "select_vendor":
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
+    # 廠商列表
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
         for v in vendors:
@@ -117,108 +109,26 @@ elif st.session_state.step == "select_vendor":
                 st.session_state.step = "fill_items"; st.rerun()
     
     st.write("---")
-    if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
-        st.session_state.history_df = get_cloud_data(); st.session_state.step = "export"; st.rerun()
-    
+    # 💡 歷史紀錄入口
     history_sheet = f"{st.session_state.store}_紀錄"
     if st.button(f"📜 查看 {st.session_state.store} 歷史紀錄", use_container_width=True):
         st.session_state.view_df = get_worksheet_data(history_sheet)
         st.session_state.step = "view_history"; st.rerun()
-        
+
     if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"; st.rerun()
 
-elif st.session_state.step == "fill_items":
-    st.markdown("""
-        <style>
-        .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
-        [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
-        div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
-        div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 72px !important; min-width: 72px !important; max-width: 72px !important; }
-        div[data-testid="stNumberInput"] label { display: none !important; }
-        </style>
-        """, unsafe_allow_html=True)
-    
-    st.title(f"📝 {st.session_state.vendor}")
-    items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
-    hist_df = st.session_state.get('history_df', pd.DataFrame())
-    
-    if not hist_df.empty:
-        ref_data = []
-        db_col = '品項ID' if '品項ID' in hist_df.columns else '品項'
-        for f_id in items['品項ID'].unique():
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df[db_col].astype(str) == str(f_id))]
-            if not past.empty:
-                latest = past.iloc[-1]
-                ref_data.append({
-                    "品項": item_display_map.get(f_id, f_id),
-                    "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)
-                })
-        if ref_data:
-            with st.expander("📊 查看上次歷史參考", expanded=True):
-                st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
-    
-    st.write("---")
-    h1, h2, h3 = st.columns([6, 1, 1])
-    h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
-    h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
-    h3.write("<div style='text-align:center;'><b>進貨</b></div>", unsafe_allow_html=True)
-
-    with st.form("inventory_form"):
-        temp_data = []
-        last_item_display_name = "" 
-        db_col = '品項ID' if '品項ID' in hist_df.columns else '品項'
-        for _, row in items.iterrows():
-            f_id = str(row['品項ID']).strip()
-            d_n = str(row['品項名稱']).strip() 
-            unit = str(row['單位']).strip()
-            price = pd.to_numeric(row.get('單價', 0), errors='coerce')
-            
-            p_s, p_p = 0.0, 0.0
-            if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df[db_col].astype(str) == str(f_id))]
-                if not past.empty:
-                    latest = past.iloc[-1]
-                    p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
-            
-            c1, c2, c3 = st.columns([6, 1, 1])
-            with c1:
-                if d_n == last_item_display_name:
-                    st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
-                else:
-                    st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
-                p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
-                st.caption(f"{unit} (前結:{p_show})")
-                last_item_display_name = d_n
-                
-            with c2:
-                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None)
-            with c3:
-                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None)
-            
-            t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
-            usage = (p_s + p_p) - t_s_v
-            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
-
-        if st.form_submit_button("💾 儲存並同步數據", use_container_width=True):
-            valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
-            if valid and sync_to_cloud(pd.DataFrame(valid)):
-                st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
-                
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
-
 elif st.session_state.step == "view_history":
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"📜 {st.session_state.store} 歷史紀錄")
     view_df = st.session_state.get('view_df', pd.DataFrame())
     if not view_df.empty:
-        search = st.text_input("🔍 模糊搜尋 (輸入日期或品項名稱)", help="系統會自動即時過濾數據")
+        # 💡 系統內建最強搜尋框
+        search = st.text_input("🔍 搜尋品項或日期 (即時過濾)", help="輸入名稱或日期，系統會自動幫您找。")
         display_df = view_df.copy()
         if search:
             display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(search)).any(axis=1)]
         st.dataframe(display_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
     else:
-        st.warning("目前尚無可讀取的紀錄。")
+        st.warning("⚠️ 無法顯示紀錄，請確認該分店分頁標題是否已拉到第一行，且公式無報錯。")
     if st.button("⬅️ 返回廠商列表", use_container_width=True):
         st.session_state.step = "select_vendor"; st.rerun()
