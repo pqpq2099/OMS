@@ -47,30 +47,33 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域基礎樣式 (所有頁面字體權重校準)
+# 2. 全域視覺權重鎖定 (針對元和特殊符號優化)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 全系統字體一致性：強制載入黑體並校準權重 */
-    html, body, [class*="css"] { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+    /* 1. 強制全域字體重量：解決中英符號混雜導致的不一致 */
+    html, body, [class*="css"], .stMarkdown, p, span {
+        font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
+        font-weight: 700 !important; /* 強制所有文字加粗 */
+    }
     
-    /* 標題 (Title)：超重粗體 */
+    /* 2. 標題：極重權重 */
     h1, h2, h3 { font-weight: 800 !important; color: #1E1E1E; }
     
-    /* 按鈕 (Buttons)：明顯粗體 */
-    .stButton button { font-weight: 700 !important; }
+    /* 3. 輸入框：數值與字體加深 */
+    .stNumberInput input { 
+        font-weight: 800 !important; 
+        font-size: 16px !important; 
+        color: #000 !important; 
+    }
     
-    /* 數字輸入框 (Number Inputs)：數值加粗 */
-    .stNumberInput input { font-weight: 700 !important; font-size: 16px !important; color: #000; }
+    /* 4. 輔助資訊：維持細體以拉開層次 */
+    .stCaption { font-weight: 500 !important; color: #666 !important; font-size: 13px !important; }
     
-    /* 隱藏微調按鈕 */
+    /* 5. 隱藏微調按鈕 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
-    
-    /* 表格與標籤加粗 */
-    .stCaption, p, span { font-weight: 500; }
-    strong, b { font-weight: 700 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -86,7 +89,6 @@ def load_csv_safe(path):
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
-# 💡 建立映射時使用「品項ID」作為唯一 Key
 item_display_map = df_i.drop_duplicates('品項ID').set_index('品項ID')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -159,7 +161,7 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         last_item_display_name = "" 
         for _, row in items.iterrows():
-            f_id = str(row['品項ID']).strip() # 💡 唯一識別
+            f_id = str(row['品項ID']).strip()
             d_n = str(row['品項名稱']).strip() 
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
@@ -182,7 +184,6 @@ elif st.session_state.step == "fill_items":
                 last_item_display_name = d_n
                 
             with c2:
-                # 💡 使用 f_id 防止 Duplicate Key
                 t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None)
             with c3:
                 t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None)
@@ -191,7 +192,6 @@ elif st.session_state.step == "fill_items":
             usage = (p_s + p_p) - t_s_v
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
-        # 💡 確保按鈕在 form 範圍內
         if st.form_submit_button("💾 儲存並同步數據", use_container_width=True):
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
@@ -204,14 +204,13 @@ elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 核心修正：日期進位與星期判定
+    # 日期與星期邏輯
     week_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
     delivery_weekday = week_map[delivery_date.weekday()]
     header_date = f"{delivery_date.month}/{delivery_date.day}({delivery_weekday})"
     
     if not hist_df.empty:
-        # 查詢昨日存入的當天盤點數據
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & (hist_df['本次叫貨'] > 0)]
         if not recs.empty:
             output = f"{header_date}\n"
@@ -220,7 +219,6 @@ elif st.session_state.step == "export":
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
-                # 💡 結尾自動帶上配送日與謝謝
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
