@@ -30,7 +30,9 @@ def get_cloud_data():
         ws = sh.worksheet("Records")
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
-        for c in ['上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']:
+        # 💡 強制轉換數值欄位，避免運算錯誤
+        num_cols = ['上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']
+        for c in num_cols:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         return df
@@ -47,12 +49,11 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準
+# 2. 全域視覺標準 (重磅字體)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 全域字體權重鎖定 */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
@@ -79,7 +80,7 @@ def load_csv_safe(path):
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
-# 💡 根據新結構，使用「品項ID」作為唯一映射 Key
+# 💡 對應新 CSV 欄位：品項ID -> 品項名稱
 item_display_map = df_i.drop_duplicates('品項ID').set_index('品項ID')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -121,7 +122,7 @@ elif st.session_state.step == "fill_items":
         [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
         div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 70px !important; min-width: 70px !important; max-width: 70px !important; }
+        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 72px !important; min-width: 72px !important; max-width: 72px !important; }
         div[data-testid="stNumberInput"] label { display: none !important; }
         </style>
         """, unsafe_allow_html=True)
@@ -132,14 +133,17 @@ elif st.session_state.step == "fill_items":
     
     if not hist_df.empty:
         ref_data = []
+        # 💡 修復：hist_df 讀取時，如果沒「品項」欄位，應對齊「品項ID」
+        db_col = '品項ID' if '品項ID' in hist_df.columns else '品項'
         for f_id in items['品項ID'].unique():
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
-            if not past.empty:
-                latest = past.iloc[-1]
-                ref_data.append({
-                    "品項": item_display_map.get(f_id, f_id),
-                    "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)
-                })
+            if db_col in hist_df.columns:
+                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df[db_col] == f_id)]
+                if not past.empty:
+                    latest = past.iloc[-1]
+                    ref_data.append({
+                        "品項": item_display_map.get(f_id, f_id),
+                        "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)
+                    })
         if ref_data:
             with st.expander("📊 查看上次歷史參考", expanded=True):
                 st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
@@ -153,15 +157,18 @@ elif st.session_state.step == "fill_items":
     with st.form("inventory_form"):
         temp_data = []
         last_item_display_name = "" 
+        # 💡 資料庫對應欄位判定
+        db_col = '品項ID' if '品項ID' in hist_df.columns else '品項'
+        
         for _, row in items.iterrows():
-            f_id = str(row['品項ID']).strip() # 💡 唯一識別碼
+            f_id = str(row['品項ID']).strip()
             d_n = str(row['品項名稱']).strip() 
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
             p_s, p_p = 0.0, 0.0
-            if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
+            if not hist_df.empty and db_col in hist_df.columns:
+                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df[db_col] == f_id)]
                 if not past.empty:
                     latest = past.iloc[-1]
                     p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
@@ -183,6 +190,7 @@ elif st.session_state.step == "fill_items":
             
             t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
+            # 存入時，為保持歷史連續性，將品項ID存入「品項」欄位
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
         if st.form_submit_button("💾 儲存並同步數據", use_container_width=True):
@@ -196,8 +204,6 @@ elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨明細")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
-    
-    # 💡 報表日期邏輯：自動進位一天
     week_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
     delivery_weekday = week_map[delivery_date.weekday()]
