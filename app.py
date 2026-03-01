@@ -21,10 +21,10 @@ def get_gspread_client():
             creds = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"⚠️ 金鑰錯誤: {e}"); return None
+        st.error(f"⚠️ 金鑰連線失敗: {e}"); return None
 
 def get_worksheet_data(sheet_name):
-    """讀取特定工作表數據"""
+    """讀取特定工作表數據 (加入錯誤提示)"""
     try:
         client = get_gspread_client()
         sh = client.open_by_key(SHEET_ID)
@@ -32,7 +32,8 @@ def get_worksheet_data(sheet_name):
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        st.warning(f"💡 無法讀取分頁 '{sheet_name}'，請確認分頁是否存在於試算表中。"); return pd.DataFrame()
 
 def get_cloud_data():
     return get_worksheet_data("Records")
@@ -73,13 +74,18 @@ CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
 def load_csv_safe(path):
     for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
         try:
+            if not path.exists():
+                st.error(f"❌ 找不到檔案: {path.name}，請確認檔名是否正確。")
+                return None
             df = pd.read_csv(path, encoding=enc)
             return df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
         except: continue
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
-item_display_map = df_i.drop_duplicates('品項ID').set_index('品項ID')['品項名稱'].to_dict()
+
+if df_i is not None:
+    item_display_map = df_i.drop_duplicates('品項ID').set_index('品項ID')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
@@ -88,7 +94,6 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 # 3. 介面分流
 # =========================
 
-# --- 頁面 A：選擇分店 ---
 if st.session_state.step == "select_store":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("🏠 選擇分店")
@@ -97,17 +102,17 @@ if st.session_state.step == "select_store":
             if st.button(f"📍 {s}", key=f"s_{s}", use_container_width=True):
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 B：選擇廠商 ---
 elif st.session_state.step == "select_vendor":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
-    vendors = sorted(df_i['廠商名稱'].unique())
-    for v in vendors:
-        if st.button(f"📦 {v}", key=f"v_{v}", use_container_width=True):
-            st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
-            st.session_state.step = "fill_items"; st.rerun()
+    if df_i is not None:
+        vendors = sorted(df_i['廠商名稱'].unique())
+        for v in vendors:
+            if st.button(f"📦 {v}", key=f"v_{v}", use_container_width=True):
+                st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
+                st.session_state.step = "fill_items"; st.rerun()
     
     st.write("---")
     st.markdown("##### 📊 報表與數據中心")
@@ -116,7 +121,6 @@ elif st.session_state.step == "select_vendor":
     if st.button("📈 期間進銷存分析", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
     
-    # 💡 核心新增：分店歷史紀錄入口
     history_sheet = f"{st.session_state.store}_紀錄"
     if st.button(f"📜 查看 {st.session_state.store} 歷史紀錄", use_container_width=True):
         st.session_state.view_df = get_worksheet_data(history_sheet)
@@ -125,7 +129,6 @@ elif st.session_state.step == "select_vendor":
     if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"; st.rerun()
 
-# --- 頁面 C：庫存進貨 ---
 elif st.session_state.step == "fill_items":
     st.markdown("""
         <style>
@@ -145,7 +148,9 @@ elif st.session_state.step == "fill_items":
     if not hist_df.empty:
         ref_data = []
         for f_id in items['品項ID'].unique():
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項ID'] == f_id)]
+            # 💡 容錯：檢查資料庫欄位是「品項ID」還是「品項」
+            db_col = '品項ID' if '品項ID' in hist_df.columns else '品項'
+            past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df[db_col].astype(str) == str(f_id))]
             if not past.empty:
                 latest = past.iloc[-1]
                 ref_data.append({
@@ -173,7 +178,8 @@ elif st.session_state.step == "fill_items":
             
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項ID'] == f_id)]
+                db_col = '品項ID' if '品項ID' in hist_df.columns else '品項'
+                past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df[db_col].astype(str) == str(f_id))]
                 if not past.empty:
                     latest = past.iloc[-1]
                     p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
@@ -204,35 +210,29 @@ elif st.session_state.step == "fill_items":
                 
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 F：查看歷史紀錄 (核心新增) ---
 elif st.session_state.step == "view_history":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"📜 {st.session_state.store} 歷史紀錄")
     
     view_df = st.session_state.get('view_df', pd.DataFrame())
     if not view_df.empty:
-        # 只顯示核心欄位，讓畫面不擁擠
         show_cols = ['日期', '廠商', '品項名稱', '單位', '本次剩餘', '本次叫貨', '總金額']
         existing_cols = [c for c in show_cols if c in view_df.columns]
-        
-        # 搜尋過濾功能
-        search = st.text_input("🔍 搜尋品項或日期", help="輸入名稱或日期進行過濾")
+        search = st.text_input("🔍 搜尋品項或日期")
         display_df = view_df[existing_cols].copy()
         if search:
             display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(search)).any(axis=1)]
-        
         st.dataframe(display_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
     else:
-        st.warning("目前尚無紀錄數據。")
+        st.warning("⚠️ 讀取不到分店專屬分頁，請確認 Google Sheets 內是否有該工作表。")
         
     if st.button("⬅️ 返回廠商列表", use_container_width=True):
         st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 頁面 D & E：報表與分析 ---
 elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨明細")
-    hist_df = st.session_state.get('history_df', pd.DataFrame())
+    hist_df = get_cloud_data() # 💡 進入此頁面時重新抓取，確保拿到最新儲存
     week_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
     delivery_weekday = week_map[delivery_date.weekday()]
@@ -249,12 +249,14 @@ elif st.session_state.step == "export":
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
+        else:
+            st.info("今日尚未有叫貨紀錄。")
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
 elif st.session_state.step == "analysis":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📊 期間進銷存分析")
-    hist_df = st.session_state.get('history_df', pd.DataFrame())
+    hist_df = get_cloud_data()
     start = st.date_input("起始日期", value=date.today()-timedelta(7)); end = st.date_input("結束日期", value=date.today())
     if not hist_df.empty:
         hist_df['日期'] = pd.to_datetime(hist_df['日期']).dt.date
