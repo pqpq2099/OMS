@@ -176,10 +176,30 @@ elif st.session_state.step == "fill_items":
     
     st.title(f"📝 {st.session_state.vendor}")
     
-    # 💡 根據您的指令：此處已移除原本的 Expander 表格區塊
-    
+    # 💡 戰略植入：增加歷史數據參考看板
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
+    
+    if not hist_df.empty:
+        ref_list = []
+        # 只針對當前廠商的品項抓取數據
+        for f_id in items['品項ID'].unique():
+            f_name = item_display_map.get(f_id, "")
+            # 尋找該店該品項的最後一筆紀錄
+            past = hist_df[(hist_df['店名'] == st.session_state.store) & 
+                           ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_name)))]
+            if not past.empty:
+                latest = past.iloc[-1]
+                ref_list.append({
+                    "品項": f_name, 
+                    "上次叫貨": latest.get('本次叫貨', 0), 
+                    "期間消耗": latest.get('期間消耗', 0)
+                })
+        
+        if ref_list:
+            with st.expander("📊 參考：上次叫貨與消耗紀錄", expanded=False):
+                # 💡 使用 hide_index 讓表格在手機端更清爽
+                st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
     
     st.write("---")
     h1, h2, h3 = st.columns([6, 1, 1])
@@ -312,3 +332,4 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
