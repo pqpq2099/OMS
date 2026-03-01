@@ -45,7 +45,7 @@ def get_worksheet_data(sheet_name):
     except: return pd.DataFrame()
 
 # =========================
-# 2. 全域視覺標準 (強力鎖定佈局，解決重疊與分行)
+# 2. 全域視覺標準 (終極暴力去噪)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
@@ -56,33 +56,36 @@ st.markdown("""
         font-weight: 700 !important;
     }
     
-    /* 2. 物理性切除重疊空間 (根除 arr_... 幽靈文字) */
-    div[data-testid="stTextInput"] label, 
-    div[data-testid="stNumberInput"] label {
+    /* 2. 終極暴力消除 arr_down/right 幽靈文字 */
+    /* 針對所有可能產生文字溢出的標籤空間進行 0 化處理 */
+    div[data-testid="stWidgetLabel"], 
+    div[data-testid="stTextInput"] label,
+    div[data-testid="stNumberInput"] label,
+    [aria-label^="arr_"], [aria-label^="val_"] {
         display: none !important;
+        font-size: 0px !important;
+        line-height: 0px !important;
         height: 0px !important;
         margin: 0px !important;
         padding: 0px !important;
-        overflow: hidden !important;
-    }
-    
-    /* 3. 消滅原生組件的描述性文字 */
-    [aria-label^="arr_"], [aria-label^="val_"], div[data-testid="stWidgetLabel"] {
-        display: none !important;
+        color: transparent !important;
         opacity: 0 !important;
-        height: 0 !important;
+        visibility: hidden !important;
     }
 
-    /* 4. 強制輸入框樣式：置中且維持重磅 */
+    /* 3. 輸入框佈局優化：移除外距，壓縮高度防止擠出兩行 */
     .stTextInput input {
         font-weight: 800 !important;
         font-size: 16px !important;
         text-align: center !important;
-        height: 40px !important;
+        padding: 4px !important;
+        height: 38px !important;
+        margin-top: -10px !important;
     }
 
-    .stCaption { font-weight: 600 !important; font-size: 13px !important; color: #666 !important; }
-    .function-divider { margin: 25px 0px; border-top: 1px solid #eee; }
+    /* 4. 分隔線與標註 */
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; color: #888 !important; }
+    .function-divider { margin: 20px 0px; border-top: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -167,8 +170,8 @@ elif st.session_state.step == "fill_items":
                 st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
     
     st.write("---")
-    # 💡 終極方案：標題與輸入框垂直解鎖，欄位寬度改為 6:2:2
-    h1, h2, h3 = st.columns([6, 2, 2])
+    # 💡 佈局鎖定：擴大標題空間並縮減輸入框空間，確保單排
+    h1, h2, h3 = st.columns([5.5, 1.8, 1.8])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
     h3.write("<div style='text-align:center;'><b>進貨</b></div>", unsafe_allow_html=True)
@@ -186,16 +189,15 @@ elif st.session_state.step == "fill_items":
                     latest = past.iloc[-1]
                     p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
             
-            c1, c2, c3 = st.columns([6, 2, 2])
+            c1, c2, c3 = st.columns([5.5, 1.8, 1.8])
             with c1:
                 if d_n == last_item_name: st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 st.caption(f"{unit} (前結:{int(p_s+p_p)})")
                 last_item_name = d_n
-            # 💡 採用 text_input 並完全鎖定 label_visibility="collapsed"
-            # 💡 同時將寬度分配加到 2 以防止擠壓變兩行
-            with c2: t_s_r = st.text_input("庫", key=f"s_{f_id}", value="0", label_visibility="collapsed")
-            with c3: t_p_r = st.text_input("進", key=f"p_{f_id}", value="0", label_visibility="collapsed")
+            # 💡 核心修正：使用 text_input 搭配物理寬度鎖定
+            with c2: t_s_r = st.text_input("s", key=f"s_{f_id}", value="0", label_visibility="collapsed")
+            with c3: t_p_r = st.text_input("p", key=f"p_{f_id}", value="0", label_visibility="collapsed")
             try: t_s_v = float(t_s_r) if t_s_r else 0.0
             except: t_s_v = 0.0
             try: t_p_v = float(t_p_r) if t_p_r else 0.0
@@ -207,7 +209,7 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回廠商列表", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
@@ -227,12 +229,12 @@ elif st.session_state.step == "analysis":
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "view_history":
-    st.title(f"📜 {st.session_state.store} 歷史庫")
+    st.title(f"📜 {st.session_state.store} 歷史數據庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         with t1:
-            s = st.text_input("🔍 搜尋品項")
+            s = st.text_input("🔍 搜尋")
             d_df = v_df.copy()
             if s: d_df = d_df[d_df.astype(str).apply(lambda x: x.str.contains(s)).any(axis=1)]
             st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
@@ -240,12 +242,13 @@ elif st.session_state.step == "view_history":
             if HAS_PLOTLY:
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()))
                 p_df = v_df[v_df['品項名稱'] == tgt].copy()
+                # 💡 強制修正毫秒：移除時間雜訊
                 p_df['日期'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
                 p_df = p_df.sort_values('日期')
                 fig = px.line(p_df, x="日期", y="期間消耗", markers=True)
                 fig.update_layout(xaxis_type='category')
                 st.plotly_chart(fig, use_container_width=True)
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回廠商列表", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "export":
     st.title("📋 今日叫貨明細")
