@@ -255,7 +255,7 @@ elif st.session_state.step == "view_history":
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
-        with t1:
+       with t1:
             all_items_list = ["全部品項"] + sorted(v_df['品項名稱'].unique().tolist())
             selected_item = st.selectbox("請選擇品項查看細節", options=all_items_list)
             
@@ -263,8 +263,11 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
             
-            # 💡 核心修正：將原本的 st.dataframe 改為 st.table
-            # 使用靜態表格，徹底解決亂碼選單問題
+            # 💡 核心修正：只針對數字欄位，強制鎖定小數點一位
+            num_cols = d_df.select_dtypes(include=['number']).columns
+            d_df[num_cols] = d_df[num_cols].round(1)
+            
+            # 渲染靜態表格
             st.table(d_df.sort_values('日期', ascending=False))
             
         with t2:
@@ -325,6 +328,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
