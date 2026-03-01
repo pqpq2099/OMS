@@ -5,7 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
 
-# 💡 繪圖引擎安全載入 (確保紀錄庫圖表正常)
+# 💡 繪圖引擎加固
 try:
     import plotly.express as px
     HAS_PLOTLY = True
@@ -58,48 +58,42 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (終極消除重疊與佈局加固)
+# 2. 全域視覺標準 (終極淨化方案)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 1. 字體重量鎖定 (700/800) */
+    /* 1. 字體鎖定 */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
     }
     
-    /* 2. 徹底消滅 arr_right/down 幽靈文字 */
-    /* 透過更高優先級的選擇器將 Aria-label 隱形 */
-    [data-testid="stNumberInput"] label, 
-    [data-testid="stWidgetLabel"],
-    [aria-label^="arr_"], [aria-label^="val_"] {
+    /* 2. 徹底消滅 arr_right/down 幽靈文字 (使用最高權限) */
+    [aria-label^="arr_"], [aria-label^="val_"], div[data-testid="stWidgetLabel"] p {
         display: none !important;
-        color: transparent !important;
+        opacity: 0 !important;
+        height: 0 !important;
         font-size: 0 !important;
-        visibility: hidden !important;
+        line-height: 0 !important;
     }
 
-    /* 3. 恢復並固定單排佈局樣式 */
-    /* 移除數字框內建按鈕以節省空間 */
-    input::-webkit-outer-spin-button,
-    input::-webkit-inner-spin-button {
-        -webkit-appearance: none !important;
-        margin: 0 !important;
-    }
-    input[type=number] {
-        -moz-appearance: textfield !important;
-    }
-
+    /* 3. 強制單排：解決分兩行問題 */
     .stNumberInput input {
         font-weight: 800 !important;
         font-size: 16px !important;
         text-align: center !important;
         padding: 5px !important;
+        min-height: 35px !important;
     }
 
-    /* 修復標題欄位，確保不跑位 */
-    .stCaption { font-weight: 600 !important; font-size: 13px !important; color: #666 !important; }
+    /* 隱藏數字框按鈕以節省空間 */
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
+        -webkit-appearance: none !important;
+        margin: 0 !important;
+    }
+
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     .function-divider { margin: 20px 0px; border-top: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
@@ -127,7 +121,6 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 # 3. 介面分流
 # =========================
 
-# --- 步驟 1：分店 ---
 if st.session_state.step == "select_store":
     st.title("🏠 選擇分店")
     if df_s is not None:
@@ -135,7 +128,6 @@ if st.session_state.step == "select_store":
             if st.button(f"📍 {s}", key=f"s_{s}", use_container_width=True):
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 步驟 2：廠商中心 ---
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
@@ -146,7 +138,8 @@ elif st.session_state.step == "select_vendor":
         for i, v in enumerate(vendors):
             with v_cols[i % 2]:
                 if st.button(v, key=f"v_{v}", use_container_width=True):
-                    st.session_state.vendor = v; st.session_state.history_df = get_cloud_data()
+                    st.session_state.vendor = v; 
+                    st.session_state.history_df = get_cloud_data()
                     st.session_state.step = "fill_items"; st.rerun()
     
     st.markdown('<div class="function-divider"></div>', unsafe_allow_html=True)
@@ -164,9 +157,8 @@ elif st.session_state.step == "select_vendor":
         if st.button(f"📜 查看歷史數據庫", use_container_width=True):
             st.session_state.view_df = get_worksheet_data(history_sheet)
             st.session_state.step = "view_history"; st.rerun()
-    if st.button("⬅️ 返回分店列表", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
+    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
 
-# --- 步驟 3：填寫盤點 (恢復單排佈局) ---
 elif st.session_state.step == "fill_items":
     if "vendor" not in st.session_state: st.session_state.step = "select_vendor"; st.rerun()
     st.markdown("<style>.block-container { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }</style>", unsafe_allow_html=True)
@@ -175,7 +167,6 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 歷史參考區塊
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -189,7 +180,6 @@ elif st.session_state.step == "fill_items":
                 st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
     
     st.write("---")
-    # 💡 欄位配置：維持 5:1.5:1.5 確保手機端不跑位
     h1, h2, h3 = st.columns([5, 1.5, 1.5])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -214,9 +204,9 @@ elif st.session_state.step == "fill_items":
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 st.caption(f"{unit} (前結:{int(p_s+p_p)})")
                 last_item_name = d_n
-            # 💡 恢復 number_input：徹底隱藏 label 防止分兩行
-            with c2: t_s = st.number_input("", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None, label_visibility="collapsed")
-            with c3: t_p = st.number_input("", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None, label_visibility="collapsed")
+            # 💡 鎖定 layout：使用無標籤模式
+            with c2: t_s = st.number_input("庫", key=f"s_{f_id}", min_value=0.0, step=0.1, format="%g", label_visibility="collapsed")
+            with c3: t_p = st.number_input("進", key=f"p_{f_id}", min_value=0.0, step=0.1, format="%g", label_visibility="collapsed")
             
             t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
@@ -226,16 +216,37 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 步驟 4：歷史數據庫 (修正毫秒軸) ---
+elif st.session_state.step == "export":
+    st.title("📋 今日叫貨明細")
+    # 💡 重新獲取數據，確保明細不空白
+    h_df = get_cloud_data()
+    week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
+    deliv_date = st.session_state.record_date + timedelta(days=1)
+    header = f"{deliv_date.month}/{deliv_date.day}({week_map[deliv_date.weekday()]})"
+    if not h_df.empty:
+        recs = h_df[(h_df['店名'] == st.session_state.store) & (h_df['日期'].astype(str) == str(st.session_state.record_date)) & (h_df['本次叫貨'] > 0)]
+        if not recs.empty:
+            out = f"{header}\n"
+            for v in recs['廠商'].unique():
+                out += f"\n{v}\n{st.session_state.store}\n"
+                for _, r in recs[recs['廠商'] == v].iterrows():
+                    v_val = float(r['本次叫貨'])
+                    v_s = int(v_val) if v_val.is_integer() else v_val
+                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
+                out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
+            st.text_area("📱 LINE 複製", value=out, height=350)
+        else: st.info("查無今日叫貨紀錄。")
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 elif st.session_state.step == "view_history":
-    st.title(f"📜 {st.session_state.store} 歷史庫")
+    st.title(f"📜 {st.session_state.store} 歷史紀錄庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
-        t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
+        t1, t2 = st.tabs(["📋 數據明細", "📈 消耗趨勢"])
         with t1:
-            s = st.text_input("🔍 搜尋品項或日期")
+            s = st.text_input("🔍 搜尋品項")
             d_df = v_df.copy()
             if s: d_df = d_df[d_df.astype(str).apply(lambda x: x.str.contains(s)).any(axis=1)]
             st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
@@ -243,21 +254,14 @@ elif st.session_state.step == "view_history":
             if HAS_PLOTLY:
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()))
                 p_df = v_df[v_df['品項名稱'] == tgt].copy()
-                # 💡 修正毫秒亂碼：轉換為純日期格式字串
                 p_df['日期'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
                 p_df = p_df.sort_values('日期')
-                fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 消耗走勢", markers=True)
-                fig.update_layout(xaxis_type='category') # 強制分類軸，防止出現長串時間
+                fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 走勢", markers=True)
+                fig.update_layout(xaxis_type='category')
                 st.plotly_chart(fig, use_container_width=True)
-    # 💡 關鍵修正：修復 NameError 遺漏的冒號
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
-    # ... (分析頁面邏輯保持一致)
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
-
-elif st.session_state.step == "export":
-    st.title("📋 今日叫貨明細")
-    # ... (明細導出邏輯保持一致)
+    # (分析頁面邏輯保持)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
