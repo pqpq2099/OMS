@@ -5,12 +5,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
 
-import plotly.express as px
+import plotly.express as px  # 加入這一行
 try:
-    HAS_PLOTLY = True
+    HAS_PLOTLY = True       # 💡 補上這行
 except ImportError:
-    HAS_PLOTLY = False
-
+    HAS_PLOTLY = False      # 💡 補上這行
 # =========================
 # 1. 核心與數據設定
 # =========================
@@ -30,12 +29,14 @@ def get_gspread_client():
         st.error(f"⚠️ 金鑰連線失敗: {e}"); return None
 
 def get_worksheet_data(sheet_name):
+    """讀取特定工作表數據"""
     try:
         client = get_gspread_client()
         sh = client.open_by_key(SHEET_ID)
         ws = sh.worksheet(sheet_name)
         df = pd.DataFrame(ws.get_all_records())
         df.columns = [str(c).strip() for c in df.columns]
+        
         num_cols = ['上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗', '單價', '總金額']
         for c in num_cols:
             if c in df.columns:
@@ -62,15 +63,36 @@ def sync_to_cloud(df_to_save):
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
+    /* 全域字體與重磅標題 */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
     }
     h1, h2, h3 { font-weight: 800 !important; }
+    
+    /* 按鈕樣式加固 */
     .stButton button { font-weight: 700 !important; border-radius: 8px !important; }
-    .stNumberInput input { font-weight: 800 !important; font-size: 16px !important; text-align: center !important; }
-    div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
-    input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
+
+    /* 輸入框視覺鎖定：800權重、16px字體、居中對齊 */
+    .stNumberInput input {
+        font-weight: 800 !important;
+        font-size: 16px !important;
+        text-align: center !important;
+    }
+
+    /* 物理移除：徹底消除 +- 按鈕與原生描述，確保純淨格子 */
+    div[data-testid="stNumberInputStepUp"], 
+    div[data-testid="stNumberInputStepDown"], 
+    .stNumberInput button { 
+        display: none !important; 
+    }
+    
+    /* 移除數字框內建外距 */
+    input[type=number] {
+        -moz-appearance: textfield !important;
+        -webkit-appearance: none !important;
+        margin: 0 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -96,6 +118,7 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 # 3. 介面分流
 # =========================
 
+# --- 步驟 1：選擇分店 ---
 if st.session_state.step == "select_store":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("🏠 選擇分店")
@@ -104,11 +127,13 @@ if st.session_state.step == "select_store":
             if st.button(f"📍 {s}", key=f"s_{s}", use_container_width=True):
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
+# --- 步驟 2：廠商與功能中心 ---
 elif st.session_state.step == "select_vendor":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
+    # 廠商按鈕
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
         for v in vendors:
@@ -120,16 +145,21 @@ elif st.session_state.step == "select_vendor":
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
     if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "export"; st.rerun()
+    
     if st.button("📈 期間進銷存分析", use_container_width=True):
         st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
+    
     history_sheet = f"{st.session_state.store}_紀錄"
     if st.button(f"📜 查看分店歷史紀錄", use_container_width=True):
         st.session_state.view_df = get_worksheet_data(history_sheet)
         st.session_state.step = "view_history"; st.rerun()
+        
     if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"; st.rerun()
 
+# --- 步驟 3：填寫盤點頁面 (核心對齊區) ---
 elif st.session_state.step == "fill_items":
+    # 💡 物理單排鎖定 CSS (保持您原本的樣式)
     st.markdown("""
         <style>
         .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
@@ -142,10 +172,11 @@ elif st.session_state.step == "fill_items":
         """, unsafe_allow_html=True)
     
     st.title(f"📝 {st.session_state.vendor}")
+    
+    # --- 💡 以下是蓋掉的部分：改用靜態表格防止亂碼 ---
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 參考看板：直接展開靜態表格 (鎖定一位小數)
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -156,14 +187,17 @@ elif st.session_state.step == "fill_items":
                 latest = past.iloc[-1]
                 ref_list.append({
                     "品項名稱": f_name, 
-                    "上次進貨": round(float(latest.get('本次叫貨', 0)), 1), 
-                    "期間消耗": round(float(latest.get('期間消耗', 0)), 1)
+                    "上次進貨": latest.get('本次叫貨', 0), 
+                    "期間消耗": latest.get('期間消耗', 0)
                 })
+        
         if ref_list:
             st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
+            # 使用 st.table 徹底消滅「三個點」的功能選單與亂碼
             st.table(pd.DataFrame(ref_list))
     
     st.write("---")
+    # (後續填寫表單內容保持不變...)
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -173,24 +207,40 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         last_item_display_name = "" 
         for _, row in items.iterrows():
-            f_id, d_n, unit = str(row['品項ID']).strip(), str(row['品項名稱']).strip(), str(row['單位']).strip()
+            f_id = str(row['品項ID']).strip()
+            d_n = str(row['品項名稱']).strip() 
+            unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
+            
+            # 獲取上次數據
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & ((hist_df['品項ID'].astype(str) == f_id) | (hist_df['品項名稱'] == d_n))]
+                past = hist_df[(hist_df['店名'] == st.session_state.store) & 
+                               ((hist_df['品項ID'].astype(str) == f_id) | (hist_df['品項名稱'] == d_n))]
                 if not past.empty:
-                    latest = past.iloc[-1]; p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
+                    latest = past.iloc[-1]
+                    p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
             
             c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
-                if d_n == last_item_display_name: st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
-                else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
-                p_sum = p_s + p_p; p_show = round(p_sum, 1)
+                if d_n == last_item_display_name:
+                    st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
+                else:
+                    st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
+                
+                # 即使移除大表格，小提示標註依然保留在名稱下以利對帳
+                p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前結:{p_show})")
                 last_item_display_name = d_n
-            with c2: t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None, label_visibility="collapsed")
-            with c3: t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None, label_visibility="collapsed")
-            t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
+            
+            with c2:
+                # 使用 label_visibility="collapsed" 是解決文字重疊的關鍵戰略
+                t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None, label_visibility="collapsed")
+            with c3:
+                t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None, label_visibility="collapsed")
+            
+            t_s_v = t_s if t_s is not None else 0.0
+            t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
@@ -198,22 +248,27 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
+    
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
+# --- 歷史紀錄 (將搜尋框改為品項下拉清單) ---
 elif st.session_state.step == "view_history":
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
-        t1, t2 = st.tabs(["📋 明細數據", "📈 消耗趨勢"])
+        t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         with t1:
             all_items_list = ["全部品項"] + sorted(v_df['品項名稱'].unique().tolist())
             selected_item = st.selectbox("請選擇品項查看細節", options=all_items_list)
+            
             d_df = v_df.copy()
-            if selected_item != "全部品項": d_df = d_df[d_df['品項名稱'] == selected_item]
-            # 💡 修正：歷史表格數據格式化 (鎖定一位小數)
-            num_cols = d_df.select_dtypes(include=['number']).columns
-            d_df[num_cols] = d_df[num_cols].round(1)
+            if selected_item != "全部品項":
+                d_df = d_df[d_df['品項名稱'] == selected_item]
+            
+            # 💡 核心修正：將原本的 st.dataframe 改為 st.table
+            # 使用靜態表格，徹底解決亂碼選單問題
             st.table(d_df.sort_values('日期', ascending=False))
+            
         with t2:
             if HAS_PLOTLY:
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()), key="chart_select")
@@ -223,8 +278,9 @@ elif st.session_state.step == "view_history":
                 fig = px.line(p_df, x="日期", y="期間消耗", markers=True, title=f"【{tgt}】消耗趨勢")
                 fig.update_layout(xaxis_type='category', hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
+                
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
-
+# --- 今日進貨明細 ---
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = get_cloud_data()
@@ -238,12 +294,13 @@ elif st.session_state.step == "export":
             for v in recs['廠商'].unique():
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
-                    val = float(r['本次叫貨']); val_s = round(val, 1)
+                    val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
+# --- 進銷存分析 (垂直堆疊版) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
     a_df = get_worksheet_data("Records")
@@ -258,16 +315,20 @@ elif st.session_state.step == "analysis":
             summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
             summ['庫存金額'] = summ['期末庫存'] * summ['單價']
             
-            # 💡 修正：字體適中 (18px)，垂直並排看板
             st.markdown(f"""
-                <div style='background: #f8f9fa; padding: 12px; border-radius: 10px; border-left: 5px solid #4A90E2; margin-bottom: 10px;'>
-                    <div style='font-size: 13px; color: #666; font-weight: 700;'>💰 目前採購支出總額</div>
-                    <div style='font-size: 18px; color: #4A90E2; font-weight: 800;'>${summ['總金額'].sum():,.1f}</div>
+                <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #4A90E2; margin-bottom: 12px;'>
+                    <div style='font-size: 14px; color: #666; font-weight: 700;'>💰 目前採購支出總額</div>
+                    <div style='font-size: 24px; color: #4A90E2; font-weight: 800;'>${summ['總金額'].sum():,.1f}</div>
                 </div>
-                <div style='background: #f8f9fa; padding: 12px; border-radius: 10px; border-left: 5px solid #50C878; margin-bottom: 20px;'>
-                    <div style='font-size: 13px; color: #666; font-weight: 700;'>📦 目前剩餘庫存總值</div>
-                    <div style='font-size: 18px; color: #50C878; font-weight: 800;'>${summ['庫存金額'].sum():,.1f}</div>
+                <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #50C878; margin-bottom: 25px;'>
+                    <div style='font-size: 14px; color: #666; font-weight: 700;'>📦 目前剩餘庫存總值</div>
+                    <div style='font-size: 24px; color: #50C878; font-weight: 800;'>${summ['庫存金額'].sum():,.1f}</div>
                 </div>
             """, unsafe_allow_html=True)
-            st.dataframe(summ.round(1), use_container_width=True, hide_index=True)
+            st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
+
+
+
+
