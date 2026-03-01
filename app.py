@@ -47,26 +47,21 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準
+# 2. 全域視覺標準 (字體重量鎖定)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 全域字體權重鎖定與禁止斜體 */
     html, body, [class*="css"], .stMarkdown, p, span, div {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
         font-style: normal !important;
     }
-    
     h1, h2, h3 { font-weight: 800 !important; }
-    
-    /* 隱藏微調按鈕 */
+    .stNumberInput input { font-weight: 800 !important; font-size: 16px !important; text-align: center !important; }
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
-    
-    /* 輔助文字加粗 */
-    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -123,9 +118,8 @@ elif st.session_state.step == "fill_items":
         [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
         div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 70px !important; min-width: 70px !important; max-width: 70px !important; }
+        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 72px !important; min-width: 72px !important; max-width: 72px !important; }
         div[data-testid="stNumberInput"] label { display: none !important; }
-        .stNumberInput input { font-weight: 800 !important; font-size: 16px !important; padding: 4px 4px !important; text-align: center !important; }
         </style>
         """, unsafe_allow_html=True)
     
@@ -139,29 +133,26 @@ elif st.session_state.step == "fill_items":
             past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
             if not past.empty:
                 latest = past.iloc[-1]
-                # 💡 歷史參考同步除星
-                ref_name = str(item_display_map.get(f_id, f_id)).replace('*', '')
-                ref_data.append({
-                    "品項": ref_name,
-                    "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)
-                })
+                # 💡 歷史表徹底除星 (HTML模式)
+                r_n = str(item_display_map.get(f_id, f_id)).replace('*', '')
+                ref_data.append({"品項": r_n, "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)})
         if ref_data:
             with st.expander("📊 查看上次歷史參考", expanded=True):
                 st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
     
     st.write("---")
+    # 💡 欄位標題：使用 HTML 確保不含任何星號
     h1, h2, h3 = st.columns([6, 1, 1])
-    # 💡 移除標題標記中殘留的星號語法
-    with h1: st.markdown("**品項名稱**")
-    with h2: st.markdown("<div style='text-align:center;'>**庫存**</div>", unsafe_allow_html=True)
-    with h3: st.markdown("<div style='text-align:center;'>**進貨**</div>", unsafe_allow_html=True)
+    h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
+    h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
+    h3.write("<div style='text-align:center;'><b>進貨</b></div>", unsafe_allow_html=True)
 
     with st.form("inventory_form"):
         temp_data = []
         last_item_display_name = "" 
         for _, row in items.iterrows():
             f_id = str(row['品項ID']).strip()
-            # 💡 名稱徹底除星
+            # 💡 品項名稱：徹底除星
             d_n = str(row['品項名稱']).strip().replace('*', '')
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
@@ -176,9 +167,10 @@ elif st.session_state.step == "fill_items":
             c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
                 if d_n == last_item_display_name:
-                    st.markdown(f"<span style='color:gray;'>└ </span> **{unit}**", unsafe_allow_html=True)
+                    st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"**{d_n}**")
+                    st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
+                
                 p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前結:{p_show})")
                 last_item_display_name = d_n
@@ -216,9 +208,9 @@ elif st.session_state.step == "export":
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
-                    # 💡 LINE 報表同步除星
-                    line_name = str(r['品項名稱']).replace('*', '')
-                    output += f"{line_name} {val_s} {r['單位']}\n"
+                    # 💡 報表也徹底除星
+                    l_n = str(r['品項名稱']).replace('*', '')
+                    output += f"{l_n} {val_s} {r['單位']}\n"
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
