@@ -286,7 +286,7 @@ with t1:
             st.table(d_df.sort_values('日期', ascending=False))
             st.markdown('</div>', unsafe_allow_html=True)
             
-        with t2:
+with t2:
             if HAS_PLOTLY:
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()), key="chart_select")
                 p_df = v_df[v_df['品項名稱'] == tgt].copy()
@@ -344,6 +344,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
