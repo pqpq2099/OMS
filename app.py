@@ -45,7 +45,7 @@ def get_worksheet_data(sheet_name):
     except: return pd.DataFrame()
 
 # =========================
-# 2. 終極視覺標準 (CSS 強力去噪)
+# 2. 視覺標準 (極簡淨化)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
@@ -56,7 +56,7 @@ st.markdown("""
         font-weight: 700 !important;
     }
     
-    /* 2. 徹底消滅幽靈文字 (arr_right/down/tag_...) */
+    /* 2. 終極解決重疊文字 (物理性隱藏 Aria 描述標籤) */
     div[data-testid="stNumberInput"] label,
     div[data-testid="stWidgetLabel"],
     [aria-label^="arr_"], [aria-label^="val_"], [aria-label^="tag_"] {
@@ -77,7 +77,7 @@ st.markdown("""
         min-height: 40px !important;
     }
     
-    /* 移除原生 +- 按鈕防止寬度不足分兩行 */
+    /* 移除原生 +- 按鈕防止擠壓寬度 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"] {
         display: none !important;
     }
@@ -106,7 +106,7 @@ if "step" not in st.session_state: st.session_state.step = "select_store"
 if "record_date" not in st.session_state: st.session_state.record_date = date.today()
 
 # =========================
-# 3. 頁面邏輯 (完整回歸)
+# 3. 頁面邏輯
 # =========================
 
 # --- 步驟 1：分店 ---
@@ -117,12 +117,12 @@ if st.session_state.step == "select_store":
             if st.button(f"📍 {s}", key=f"s_{s}", use_container_width=True):
                 st.session_state.store = s; st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 步驟 2：廠商與功能中心 ---
+# --- 步驟 2：廠商中心 ---
 elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
-    st.write("<b>📦 選擇廠商</b>", unsafe_allow_html=True)
+    st.write("<b>📦 選擇作業廠商</b>", unsafe_allow_html=True)
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
         v_cols = st.columns(2)
@@ -134,7 +134,6 @@ elif st.session_state.step == "select_vendor":
                     st.session_state.step = "fill_items"; st.rerun()
     
     st.markdown('<div class="function-divider"></div>', unsafe_allow_html=True)
-    st.write("<b>📊 系統報表功能</b>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         if st.button("📄 產生叫貨明細", type="primary", use_container_width=True):
@@ -149,7 +148,7 @@ elif st.session_state.step == "select_vendor":
     
     if st.button("⬅️ 返回分店列表", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
 
-# --- 步驟 3：盤點填寫頁 (單排對齊) ---
+# --- 步驟 3：填寫頁面 (極簡單排版) ---
 elif st.session_state.step == "fill_items":
     if "vendor" not in st.session_state: st.session_state.step = "select_vendor"; st.rerun()
     st.markdown("<style>.block-container { padding-left: 0.2rem !important; padding-right: 0.2rem !important; }</style>", unsafe_allow_html=True)
@@ -158,22 +157,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 使用 Markdown Table 徹底根除亂碼
-    if not hist_df.empty:
-        ref_list = []
-        for f_id in items['品項ID'].unique():
-            f_n = item_display_map.get(f_id, "")
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_n)))]
-            if not past.empty:
-                latest = past.iloc[-1]
-                ref_list.append([f_n, int(latest.get('本次剩餘', 0)), int(latest.get('本次叫貨', 0))])
-        
-        if ref_list:
-            with st.expander("📊 查看歷史參考 (前結數據)", expanded=True):
-                md_table = "| 品項 | 前剩 | 前進 |\n| :--- | :---: | :---: |\n"
-                for r in ref_list: md_table += f"| {r[0]} | {r[1]} | {r[2]} |\n"
-                st.markdown(md_table)
-    
+    # 💡 遵照指令：徹底拉掉表格，釋放垂直與水平空間
     st.write("---")
     h1, h2, h3 = st.columns([5, 1.5, 1.5])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
@@ -197,6 +181,7 @@ elif st.session_state.step == "fill_items":
                 if d_n == last_item_name: st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 last_item_name = d_n
+            # 💡 終極修復：強制隱藏 Label 以保持單排並移除幽靈文字
             with c2: t_s = st.number_input("", key=f"s_{f_id}", min_value=0.0, step=0.1, format="%g", value=None, label_visibility="collapsed")
             with c3: t_p = st.number_input("", key=f"p_{f_id}", min_value=0.0, step=0.1, format="%g", value=None, label_visibility="collapsed")
             
@@ -225,31 +210,11 @@ elif st.session_state.step == "analysis":
             stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
             summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
             summ['庫存價值'] = summ['期末庫存'] * summ['單價']
-            st.markdown(f"#### 💰 採購總值：${summ['總金額'].sum():,.1f} | 📦 庫存總額：${summ['庫存價值'].sum():,.1f}")
+            st.markdown(f"#### 💰 採購總額：${summ['總金額'].sum():,.1f} | 📦 庫存總值：${summ['庫存價值'].sum():,.1f}")
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 步驟 5：產生叫貨明細 ---
-elif st.session_state.step == "export":
-    st.title("📋 今日叫貨明細")
-    h_df = get_worksheet_data("Records")
-    week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
-    deliv_date = st.session_state.record_date + timedelta(days=1)
-    header = f"{deliv_date.month}/{deliv_date.day}({week_map[deliv_date.weekday()]})"
-    if not h_df.empty:
-        recs = h_df[(h_df['店名'] == st.session_state.store) & (h_df['日期'].astype(str) == str(st.session_state.record_date)) & (h_df['本次叫貨'] > 0)]
-        if not recs.empty:
-            out = f"{header}\n"
-            for v in recs['廠商'].unique():
-                out += f"\n{v}\n{st.session_state.store}\n"
-                for _, r in recs[recs['廠商'] == v].iterrows():
-                    v_val = float(r['本次叫貨']); v_s = int(v_val) if v_val.is_integer() else v_val
-                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
-                out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
-            st.text_area("📱 LINE 複製", value=out, height=350)
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
-
-# --- 步驟 6：歷史趨勢庫 ---
+# --- 步驟 5：歷史庫 (含趨勢圖) ---
 elif st.session_state.step == "view_history":
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
@@ -269,4 +234,24 @@ elif st.session_state.step == "view_history":
                 fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 消耗走勢", markers=True)
                 fig.update_layout(xaxis_type='category')
                 st.plotly_chart(fig, use_container_width=True)
+    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+
+# --- 步驟 6：叫貨明細 ---
+elif st.session_state.step == "export":
+    st.title("📋 今日叫貨明細")
+    h_df = get_worksheet_data("Records")
+    week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
+    deliv_date = st.session_state.record_date + timedelta(days=1)
+    header = f"{deliv_date.month}/{deliv_date.day}({week_map[deliv_date.weekday()]})"
+    if not h_df.empty:
+        recs = h_df[(h_df['店名'] == st.session_state.store) & (h_df['日期'].astype(str) == str(st.session_state.record_date)) & (h_df['本次叫貨'] > 0)]
+        if not recs.empty:
+            out = f"{header}\n"
+            for v in recs['廠商'].unique():
+                out += f"\n{v}\n{st.session_state.store}\n"
+                for _, r in recs[recs['廠商'] == v].iterrows():
+                    v_val = float(r['本次叫貨']); v_s = int(v_val) if v_val.is_integer() else v_val
+                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
+                out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
+            st.text_area("📱 LINE 複製", value=out, height=350)
     st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
