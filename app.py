@@ -159,49 +159,50 @@ elif st.session_state.step == "select_vendor":
 
 # --- 步驟 3：填寫盤點頁面 (核心對齊區) ---
 elif st.session_state.step == "fill_items":
-    # 💡 物理單排鎖定 CSS
+    # 💡 物理單排鎖定 CSS (保持您原本的樣式)
     st.markdown("""
         <style>
         .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
         [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
-        /* 品項名稱欄位彈性延伸 */
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
-        /* 庫存與進貨欄位硬鎖定 72px */
         div[data-testid="stHorizontalBlock"] > div:nth-child(2),
         div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 72px !important; min-width: 72px !important; max-width: 72px !important; }
-        /* 物理移除輸入框內部的隱形 Label */
         div[data-testid="stNumberInput"] label { display: none !important; }
         </style>
         """, unsafe_allow_html=True)
     
     st.title(f"📝 {st.session_state.vendor}")
     
-    # 💡 戰略植入：增加歷史數據參考看板
+    # 💡 戰略植入：直接展開的歷史參考看板
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
     if not hist_df.empty:
         ref_list = []
-        # 只針對當前廠商的品項抓取數據
         for f_id in items['品項ID'].unique():
             f_name = item_display_map.get(f_id, "")
-            # 尋找該店該品項的最後一筆紀錄
             past = hist_df[(hist_df['店名'] == st.session_state.store) & 
                            ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_name)))]
             if not past.empty:
                 latest = past.iloc[-1]
                 ref_list.append({
-                    "品項": f_name, 
-                    "上次叫貨": latest.get('本次叫貨', 0), 
+                    "品項名稱": f_name, 
+                    "上次進貨": latest.get('本次叫貨', 0), 
                     "期間消耗": latest.get('期間消耗', 0)
                 })
         
         if ref_list:
-            with st.expander("📊 參考：上次叫貨與消耗紀錄", expanded=False):
-                # 💡 使用 hide_index 讓表格在手機端更清爽
-                st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
+            st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
+            # 💡 關鍵：直接顯示表格，不使用摺疊，並固定高度防止頁面過長
+            st.dataframe(
+                pd.DataFrame(ref_list), 
+                use_container_width=True, 
+                hide_index=True,
+                height=180 # 固定高度，約顯示 4-5 筆，過多時可於表內滑動
+            )
     
     st.write("---")
+    # (後續填寫表單內容保持不變...)
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -332,4 +333,5 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
