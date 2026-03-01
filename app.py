@@ -58,38 +58,38 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (強力鎖定介面)
+# 2. 全域視覺標準 (強力鎖定介面與消除幽靈文字)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 1. 字體重量鎖定 */
+    /* 1. 字體重量鎖定 (700/800) */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
     }
     
-    /* 2. 終極解決重疊：讓所有 aria-label 與 幽靈文字 完全透明且不佔空間 */
+    /* 2. 終極解決重疊：讓所有 aria-label 與 幽靈文字 完全透明 */
+    /* 針對 stTextInput 與 stNumberInput 的所有隱藏標籤進行清理 */
     div[data-testid="stTextInput"] label, 
-    div[data-testid="stTextInput"] div[data-testid="stWidgetLabel"],
-    div[aria-live="polite"] {
+    div[data-testid="stNumberInput"] label,
+    div[data-testid="stWidgetLabel"],
+    [aria-label^="arr_"], [aria-label^="val_"] {
         display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        font-size: 0 !important;
         color: transparent !important;
+        font-size: 0 !important;
+        height: 0 !important;
     }
 
-    /* 3. 強制單排佈局：優化輸入框間距 */
+    /* 3. 輸入框純淨化：強制置中並移除多餘內距 */
     .stTextInput input {
         font-weight: 800 !important;
         font-size: 16px !important;
         text-align: center !important;
-        padding: 5px !important;
-        margin-top: -10px !important;
+        padding: 6px !important;
     }
 
-    /* 4. 分隔線 */
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; color: #666 !important; }
     .function-divider { margin: 20px 0px; border-top: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
@@ -199,9 +199,9 @@ elif st.session_state.step == "fill_items":
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 st.caption(f"{unit} (前結:{int(p_s+p_p)})")
                 last_item_name = d_n
-            # 💡 鎖定標籤不可見：徹底消除重疊文字並保持單排
-            with c2: t_s_r = st.text_input("庫存", key=f"s_{f_id}", value="0", label_visibility="collapsed")
-            with c3: t_p_r = st.text_input("進貨", key=f"p_{f_id}", value="0", label_visibility="collapsed")
+            # 💡 物理清空隱形文字：使用 collapsed 模式搭配 text_input
+            with c2: t_s_r = st.text_input("", key=f"s_{f_id}", value="0", label_visibility="collapsed")
+            with c3: t_p_r = st.text_input("", key=f"p_{f_id}", value="0", label_visibility="collapsed")
             try: t_s_v = float(t_s_r) if t_s_r else 0.0
             except: t_s_v = 0.0
             try: t_p_v = float(t_p_r) if t_p_r else 0.0
@@ -213,7 +213,7 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
-    if st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
@@ -233,12 +233,12 @@ elif st.session_state.step == "analysis":
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "view_history":
-    st.title(f"📜 {st.session_state.store} 歷史紀錄")
+    st.title(f"📜 {st.session_state.store} 歷史紀錄庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
-        t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
+        t1, t2 = st.tabs(["📋 數據明細", "📈 消耗趨勢"])
         with t1:
-            s = st.text_input("🔍 搜尋品項")
+            s = st.text_input("🔍 搜尋品項或日期")
             d_df = v_df.copy()
             if s: d_df = d_df[d_df.astype(str).apply(lambda x: x.str.contains(s)).any(axis=1)]
             st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
@@ -246,12 +246,13 @@ elif st.session_state.step == "view_history":
             if HAS_PLOTLY:
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()))
                 p_df = v_df[v_df['品項名稱'] == tgt].copy()
-                # 💡 強制修正時間軸：移除精確時間與毫秒
+                # 💡 修正毫秒亂碼：強制轉換為純日期格式字串
                 p_df['日期'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
                 p_df = p_df.sort_values('日期')
                 fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 消耗走勢", markers=True)
-                fig.update_layout(xaxis_type='category') # 💡 強制分類軸，防止時間雜訊
+                fig.update_layout(xaxis_type='category') # 強制分類軸
                 st.plotly_chart(fig, use_container_width=True)
+    # 💡 修正語法錯誤：加入冒號
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 elif st.session_state.step == "export":
