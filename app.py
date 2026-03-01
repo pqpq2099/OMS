@@ -255,11 +255,15 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
 
-            # 💡 物理壓縮：強制縮減動態表格的行高與內部留白
+            # 💡 數據前處理：將日期轉換為「月-日」格式 (移除年份)
+            if '日期' in d_df.columns:
+                d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
+
+            # 💡 物理壓縮：強制縮減行高與留白
             st.markdown("""
                 <style>
                     [data-testid="stDataFrame"] [role="gridcell"] {
-                        padding: 1px 4px !important; /* 極限壓縮上下間距 */
+                        padding: 1px 4px !important;
                         line-height: 1.0 !important;
                     }
                     [data-testid="stDataFrame"] [role="columnheader"] {
@@ -268,22 +272,22 @@ elif st.session_state.step == "view_history":
                 </style>
             """, unsafe_allow_html=True)
 
-            # 💡 戰略隱藏：將不需顯示的欄位設為 None
+            # 💡 戰略隱藏與寬度微調
             st.dataframe(
                 d_df.sort_values('日期', ascending=False),
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "日期": st.column_config.TextColumn(width="small"),
+                    "日期": st.column_config.TextColumn(width="minishort"), # 日期現在更窄了
                     "廠商": st.column_config.TextColumn(width="small"),
                     "品項名稱": st.column_config.TextColumn(width="medium"),
                     "單位": st.column_config.TextColumn(width="minishort"),
-                    # --- 💡 隱藏區：設為 None 就不會顯示在畫面上 ---
+                    # --- 隱藏區 ---
                     "店名": None, 
                     "品項ID": None,
                     "單價": None,
                     "總金額": None,
-                    # ----------------------------------------
+                    # -------------
                     "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
@@ -350,6 +354,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
