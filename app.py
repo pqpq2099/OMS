@@ -5,6 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
 
+import plotly.express as px  # 加入這一行
 # =========================
 # 1. 核心與數據設定
 # =========================
@@ -277,3 +278,4 @@ elif st.session_state.step == "analysis":
             st.markdown(f"#### 💰 採購總額：${summary['總金額'].sum():,.1f} | 📦 庫存總值：${summary['庫存金額'].sum():,.1f}")
             st.dataframe(summary, use_container_width=True)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
+
