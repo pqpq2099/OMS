@@ -47,7 +47,7 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (💡 解決深色模式看不見數字的問題)
+# 2. 全域視覺標準
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
@@ -61,19 +61,11 @@ st.markdown("""
     
     h1, h2, h3 { font-weight: 800 !important; }
     
-    /* 💡 數字輸入框：核心視覺修正 */
-    .stNumberInput input { 
-        font-weight: 800 !important; 
-        font-size: 16px !important; 
-        /* 移除固定顏色，讓系統自動判斷深淺色模式 */
-    }
-    
-    /* 輔助文字 */
-    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
-    
     /* 隱藏微調按鈕 */
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
+    
+    .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -124,14 +116,32 @@ elif st.session_state.step == "select_vendor":
         st.session_state.step = "select_store"; st.rerun()
 
 elif st.session_state.step == "fill_items":
+    # 💡 核心優化：增加輸入框寬度至 70px，並鎖定數字顏色
     st.markdown("""
         <style>
         .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
         [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
+        
+        /* 1. 品項名稱佔據剩餘空間 */
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
+        
+        /* 2. 庫存與進貨格子擴大至 70px */
         div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 52px !important; min-width: 52px !important; max-width: 52px !important; }
+        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { 
+            flex: 0 0 70px !important; 
+            min-width: 70px !important; 
+            max-width: 70px !important; 
+        }
+        
         div[data-testid="stNumberInput"] label { display: none !important; }
+        
+        /* 3. 數字字體加粗與自適應顏色 */
+        .stNumberInput input { 
+            font-weight: 800 !important; 
+            font-size: 16px !important; 
+            padding: 4px 4px !important; 
+            text-align: center !important;
+        }
         </style>
         """, unsafe_allow_html=True)
     
@@ -156,14 +166,16 @@ elif st.session_state.step == "fill_items":
     
     st.write("---")
     h1, h2, h3 = st.columns([6, 1, 1])
-    h1.markdown("**品項名稱**"); h2.markdown("**庫存**"); h3.markdown("**進貨**")
+    # 這裡調整標題位置與寬度對齊
+    with h1: st.markdown("**品項名稱**")
+    with h2: st.markdown("<div style='text-align:center;'>**庫存**</div>", unsafe_allow_html=True)
+    with h3: st.markdown("<div style='text-align:center;'>**進貨**</div>", unsafe_allow_html=True)
 
     with st.form("inventory_form"):
         temp_data = []
         last_item_display_name = "" 
         for _, row in items.iterrows():
             f_id = str(row['品項ID']).strip()
-            # 💡 移除 * 號
             d_n = str(row['品項名稱']).strip().replace('*', '')
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
