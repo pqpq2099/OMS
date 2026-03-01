@@ -52,7 +52,7 @@ def sync_to_cloud(df_to_save):
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 全域字體權重鎖定 */
+    /* 全域字體權重鎖定與禁止斜體 */
     html, body, [class*="css"], .stMarkdown, p, span, div {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
@@ -65,6 +65,7 @@ st.markdown("""
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
     input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
     
+    /* 輔助文字加粗 */
     .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -116,32 +117,15 @@ elif st.session_state.step == "select_vendor":
         st.session_state.step = "select_store"; st.rerun()
 
 elif st.session_state.step == "fill_items":
-    # 💡 核心優化：增加輸入框寬度至 70px，並鎖定數字顏色
     st.markdown("""
         <style>
         .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
         [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
-        
-        /* 1. 品項名稱佔據剩餘空間 */
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
-        
-        /* 2. 庫存與進貨格子擴大至 70px */
         div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { 
-            flex: 0 0 70px !important; 
-            min-width: 70px !important; 
-            max-width: 70px !important; 
-        }
-        
+        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 70px !important; min-width: 70px !important; max-width: 70px !important; }
         div[data-testid="stNumberInput"] label { display: none !important; }
-        
-        /* 3. 數字字體加粗與自適應顏色 */
-        .stNumberInput input { 
-            font-weight: 800 !important; 
-            font-size: 16px !important; 
-            padding: 4px 4px !important; 
-            text-align: center !important;
-        }
+        .stNumberInput input { font-weight: 800 !important; font-size: 16px !important; padding: 4px 4px !important; text-align: center !important; }
         </style>
         """, unsafe_allow_html=True)
     
@@ -155,6 +139,7 @@ elif st.session_state.step == "fill_items":
             past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
             if not past.empty:
                 latest = past.iloc[-1]
+                # 💡 歷史參考同步除星
                 ref_name = str(item_display_map.get(f_id, f_id)).replace('*', '')
                 ref_data.append({
                     "品項": ref_name,
@@ -166,7 +151,7 @@ elif st.session_state.step == "fill_items":
     
     st.write("---")
     h1, h2, h3 = st.columns([6, 1, 1])
-    # 這裡調整標題位置與寬度對齊
+    # 💡 移除標題標記中殘留的星號語法
     with h1: st.markdown("**品項名稱**")
     with h2: st.markdown("<div style='text-align:center;'>**庫存**</div>", unsafe_allow_html=True)
     with h3: st.markdown("<div style='text-align:center;'>**進貨**</div>", unsafe_allow_html=True)
@@ -176,6 +161,7 @@ elif st.session_state.step == "fill_items":
         last_item_display_name = "" 
         for _, row in items.iterrows():
             f_id = str(row['品項ID']).strip()
+            # 💡 名稱徹底除星
             d_n = str(row['品項名稱']).strip().replace('*', '')
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
@@ -230,6 +216,7 @@ elif st.session_state.step == "export":
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
+                    # 💡 LINE 報表同步除星
                     line_name = str(r['品項名稱']).replace('*', '')
                     output += f"{line_name} {val_s} {r['單位']}\n"
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
