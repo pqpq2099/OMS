@@ -187,14 +187,12 @@ elif st.session_state.step == "fill_items":
                 latest = past.iloc[-1]
                 ref_list.append({
                     "品項名稱": f_name, 
-                    "上次進貨": latest.get('本次叫貨', 0), 
-                    "期間消耗": latest.get('期間消耗', 0)
+                    "上次進貨": round(float(latest.get('本次叫貨', 0)), 1), 
+                    "期間消耗": round(float(latest.get('期間消耗', 0)), 1)
                 })
-        
         if ref_list:
             st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
-            # 使用 st.table 徹底消滅「三個點」的功能選單與亂碼
-            st.table(pd.DataFrame(ref_list))
+            st.table(pd.DataFrame(ref_list)) # 💡 這裡改用 st.table 消滅亂碼
     
     st.write("---")
     # (後續填寫表單內容保持不變...)
@@ -327,6 +325,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
