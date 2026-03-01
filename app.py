@@ -47,17 +47,19 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (字體重量鎖定)
+# 2. 全域視覺標準
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    html, body, [class*="css"], .stMarkdown, p, span, div {
+    /* 全域字體權重鎖定 */
+    html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
         font-style: normal !important;
     }
     h1, h2, h3 { font-weight: 800 !important; }
+    .stButton button { font-weight: 700 !important; }
     .stNumberInput input { font-weight: 800 !important; font-size: 16px !important; text-align: center !important; }
     .stCaption { font-weight: 600 !important; font-size: 13px !important; }
     div[data-testid="stNumberInputStepUp"], div[data-testid="stNumberInputStepDown"], .stNumberInput button { display: none !important; }
@@ -77,6 +79,7 @@ def load_csv_safe(path):
     return None
 
 df_s, df_i = load_csv_safe(CSV_STORE), load_csv_safe(CSV_ITEMS)
+# 💡 根據新結構，使用「品項ID」作為唯一映射 Key
 item_display_map = df_i.drop_duplicates('品項ID').set_index('品項ID')['品項名稱'].to_dict()
 
 if "step" not in st.session_state: st.session_state.step = "select_store"
@@ -118,7 +121,7 @@ elif st.session_state.step == "fill_items":
         [data-testid="stHorizontalBlock"] { display: flex !important; flex-flow: row nowrap !important; align-items: center !important; }
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) { flex: 1 1 auto !important; min-width: 0px !important; }
         div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 72px !important; min-width: 72px !important; max-width: 72px !important; }
+        div[data-testid="stHorizontalBlock"] > div:nth-child(3) { flex: 0 0 70px !important; min-width: 70px !important; max-width: 70px !important; }
         div[data-testid="stNumberInput"] label { display: none !important; }
         </style>
         """, unsafe_allow_html=True)
@@ -133,15 +136,15 @@ elif st.session_state.step == "fill_items":
             past = hist_df[(hist_df['店名'] == st.session_state.store) & (hist_df['品項'] == f_id)]
             if not past.empty:
                 latest = past.iloc[-1]
-                # 💡 歷史表徹底除星 (HTML模式)
-                r_n = str(item_display_map.get(f_id, f_id)).replace('*', '')
-                ref_data.append({"品項": r_n, "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)})
+                ref_data.append({
+                    "品項": item_display_map.get(f_id, f_id),
+                    "上剩": latest.get('本次剩餘', 0), "上進": latest.get('本次叫貨', 0), "消耗": latest.get('期間消耗', 0)
+                })
         if ref_data:
             with st.expander("📊 查看上次歷史參考", expanded=True):
                 st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
     
     st.write("---")
-    # 💡 欄位標題：使用 HTML 確保不含任何星號
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -151,9 +154,8 @@ elif st.session_state.step == "fill_items":
         temp_data = []
         last_item_display_name = "" 
         for _, row in items.iterrows():
-            f_id = str(row['品項ID']).strip()
-            # 💡 品項名稱：徹底除星
-            d_n = str(row['品項名稱']).strip().replace('*', '')
+            f_id = str(row['品項ID']).strip() # 💡 唯一識別碼
+            d_n = str(row['品項名稱']).strip() 
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
@@ -170,7 +172,6 @@ elif st.session_state.step == "fill_items":
                     st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else:
                     st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
-                
                 p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
                 st.caption(f"{unit} (前結:{p_show})")
                 last_item_display_name = d_n
@@ -195,6 +196,8 @@ elif st.session_state.step == "export":
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("📋 今日進貨明細")
     hist_df = st.session_state.get('history_df', pd.DataFrame())
+    
+    # 💡 報表日期邏輯：自動進位一天
     week_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
     delivery_date = st.session_state.record_date + timedelta(days=1)
     delivery_weekday = week_map[delivery_date.weekday()]
@@ -208,9 +211,7 @@ elif st.session_state.step == "export":
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); val_s = int(val) if val.is_integer() else val
-                    # 💡 報表也徹底除星
-                    l_n = str(r['品項名稱']).replace('*', '')
-                    output += f"{l_n} {val_s} {r['單位']}\n"
+                    output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{delivery_weekday}到，謝謝\n"
             st.text_area("📱 LINE 複製", value=output, height=400)
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
