@@ -246,7 +246,7 @@ elif st.session_state.step == "view_history":
     st.markdown("""
         <style>
             [data-testid="stMainBlockContainer"] {
-                max-width: 80% !important; /* 將寬度從置中改為佔據 80% 螢幕 */
+                max-width: 90% !important; /* 將寬度從置中改為佔據 90% 螢幕 */
                 padding-left: 1rem !important;
                 padding-right: 1rem !important;
             }
@@ -369,6 +369,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
