@@ -5,7 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
 
-# 💡 繪圖引擎加固載入 (確保紀錄庫圖表正常)
+# 💡 繪圖引擎安全載入 (確保紀錄庫圖表正常)
 try:
     import plotly.express as px
     HAS_PLOTLY = True
@@ -58,50 +58,56 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (終極修復文字重疊)
+# 2. 全域視覺標準 (終極消除重疊文字)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 1. 強制重磅字體 */
+    /* 1. 全域字體與重磅標題 */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
     }
     h1, h2, h3 { font-weight: 800 !important; }
 
-    /* 2. 徹底消滅數字輸入框內建組件 (解決 arr_... 重疊) */
-    /* 針對 Webkit 核心 (Chrome/Safari) */
+    /* 2. 徹底消滅 arr_right, arr_down 等隱藏描述文字與箭頭 */
+    /* 隱藏所有輸入框內的輔助文字標籤 */
+    div[data-testid="stNumberInput"] label,
+    div[data-testid="stNumberInput"] svg,
+    div[data-testid="stNumberInput"] button {
+        display: none !important;
+    }
+    
+    /* 針對手機瀏覽器隱藏原生按鈕 */
     input::-webkit-outer-spin-button,
     input::-webkit-inner-spin-button {
         -webkit-appearance: none !important;
         margin: 0 !important;
     }
-    /* 針對 Firefox */
     input[type=number] {
         -moz-appearance: textfield !important;
         appearance: none !important;
     }
-    /* 隱藏 Streamlit 原生標籤防重疊 */
-    div[data-testid="stNumberInput"] label { display: none !important; }
-    
-    /* 3. 輸入框佈局優化 */
+
+    /* 3. 輸入框樣式精修：確保純淨無雜訊 */
     .stNumberInput input { 
         font-weight: 800 !important; 
         font-size: 16px !important; 
         text-align: center !important; 
-        padding: 4px !important;
-        border-radius: 5px !important;
+        padding: 5px !important;
+        line-height: 1.5 !important;
+        min-height: 40px !important;
     }
-    
-    /* 4. 建立欄位標題與輸入框的垂直安全距離 */
+
+    /* 4. 建立標題與輸入框的絕對間距，防止任何渲染溢出重疊 */
     [data-testid="column"] b {
         display: block !important;
-        margin-bottom: 12px !important;
+        padding-bottom: 8px !important;
+        line-height: 1.2 !important;
     }
 
     .stCaption { font-weight: 600 !important; font-size: 13px !important; }
-    .function-divider { margin: 25px 0px; border-top: 1px solid #eee; }
+    .function-divider { margin: 25px 0px; border-top: 2px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -128,7 +134,7 @@ if "record_date" not in st.session_state: st.session_state.record_date = date.to
 # 3. 介面分流
 # =========================
 
-# --- 步驟 1：選擇分店 ---
+# --- 步驟 1：分店 ---
 if st.session_state.step == "select_store":
     st.title("🏠 選擇分店")
     if df_s is not None:
@@ -163,12 +169,12 @@ elif st.session_state.step == "select_vendor":
                 st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
         
         history_sheet = f"{st.session_state.store}_紀錄"
-        if st.button(f"📜 查看 {st.session_state.store} 歷史紀錄數據庫", use_container_width=True):
+        if st.button(f"📜 查看分店歷史紀錄數據庫", use_container_width=True):
             st.session_state.view_df = get_worksheet_data(history_sheet)
             st.session_state.step = "view_history"; st.rerun()
     if st.button("⬅️ 返回分店列表", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
 
-# --- 步驟 3：填寫頁面 ---
+# --- 步驟 3：填寫盤點 (前結數據正常運作) ---
 elif st.session_state.step == "fill_items":
     if "vendor" not in st.session_state: st.session_state.step = "select_vendor"; st.rerun()
     st.markdown("<style>.block-container { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }</style>", unsafe_allow_html=True)
@@ -177,7 +183,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # 💡 功能復歸：歷史參考區塊
+    # 歷史參考區塊
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -192,7 +198,6 @@ elif st.session_state.step == "fill_items":
                 st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
     
     st.write("---")
-    # 💡 佈局加固：5:1.5:1.5 比例
     h1, h2, h3 = st.columns([5, 1.5, 1.5])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -215,11 +220,11 @@ elif st.session_state.step == "fill_items":
             with c1:
                 if d_n == last_item_name: st.write(f"<span style='color:gray;'>└ </span> <b>{unit}</b>", unsafe_allow_html=True)
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
-                # 💡 功能復歸：前結標註
                 st.caption(f"{unit} (前結:{int(p_s+p_p)})")
                 last_item_name = d_n
-            with c2: t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None)
-            with c3: t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None)
+            # 💡 數字輸入框 (移除標籤與箭頭)
+            with c2: t_s = st.number_input("", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None)
+            with c3: t_p = st.number_input("", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None)
             
             t_s_v = t_s if t_s is not None else 0.0; t_p_v = t_p if t_p is not None else 0.0
             usage = (p_s + p_p) - t_s_v
@@ -229,9 +234,9 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 步驟 4：紀錄庫 (趨勢圖復歸) ---
+# --- 步驟 4：紀錄庫 (趨勢圖正常運作) ---
 elif st.session_state.step == "view_history":
     st.title(f"📜 {st.session_state.store} 紀錄庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
@@ -249,9 +254,9 @@ elif st.session_state.step == "view_history":
                 fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 消耗走勢", markers=True)
                 st.plotly_chart(fig, use_container_width=True)
             else: st.info("💡 趨勢圖模組加載中...")
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 步驟 5：進銷存分析 (金額與庫存價值復歸) ---
+# --- 步驟 5：進銷存分析 (數據計算正常) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析報表")
     a_df = get_cloud_data()
@@ -262,14 +267,13 @@ elif st.session_state.step == "analysis":
         filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
         if not filt.empty:
             summ = filt.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
-            # 💡 金額計算復歸
             last_recs = filt.sort_values('日期').groupby('品項名稱').tail(1)
             stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
             summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
             summ['庫存價值'] = summ['期末庫存'] * summ['單價']
             st.markdown(f"#### 💰 採購總額：${summ['總金額'].sum():,.1f} | 📦 庫存總值：${summ['庫存價值'].sum():,.1f}")
             st.dataframe(summ, use_container_width=True, hide_index=True)
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
 # --- 步驟 6：明細導出 ---
 elif st.session_state.step == "export":
@@ -286,7 +290,7 @@ elif st.session_state.step == "export":
                 out += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
                     val = float(r['本次叫貨']); v_s = int(val) if val.is_integer() else val
-                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
+                    out += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
             st.text_area("LINE 複製", value=out, height=350)
-    st.button("⬅️ 返回廠商中心", on_click=lambda: st.session_state.update(step="select_vendor"))
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
