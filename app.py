@@ -58,28 +58,36 @@ def sync_to_cloud(df_to_save):
     except: return False
 
 # =========================
-# 2. 全域視覺標準 (終極淨化)
+# 2. 全域視覺標準 (強力解決重疊與時間軸)
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
+    /* 1. 全域重磅字體 */
     html, body, [class*="css"], .stMarkdown, p, span, div, b {
         font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif !important;
         font-weight: 700 !important;
     }
     h1, h2, h3 { font-weight: 800 !important; }
+
+    /* 2. 終極除噪：徹底消除 arr_right/down 等描述文字 */
+    /* 將輸入框所有可能的 Aria-label 與描述文字設為透明 */
+    div[data-testid="stTextInput"] label, 
+    div[data-testid="stTextInput"] [aria-label],
+    div[data-testid="stNumberInput"] label {
+        display: none !important;
+        color: transparent !important;
+        font-size: 0 !important;
+    }
     
-    /* 💡 強力淨化：將文字輸入框偽裝成純淨輸入格 */
+    /* 3. 輸入框外觀精修 */
     .stTextInput input {
         font-weight: 800 !important;
         font-size: 16px !important;
         text-align: center !important;
-        padding: 8px !important;
+        padding: 6px !important;
     }
-    
-    /* 移除所有可能產生重疊的 Label 空間 */
-    div[data-testid="stTextInput"] label { display: none !important; }
-    
+
     .stCaption { font-weight: 600 !important; font-size: 13px !important; color: #666 !important; }
     .function-divider { margin: 25px 0px; border-top: 1px solid #eee; }
     </style>
@@ -119,7 +127,7 @@ elif st.session_state.step == "select_vendor":
     st.title(f"🏢 {st.session_state.store}")
     st.session_state.record_date = st.date_input("🗓️ 盤點日期", value=st.session_state.record_date)
     
-    st.write("<b>📦 作業廠商選擇</b>", unsafe_allow_html=True)
+    st.write("<b>📦 選擇廠商</b>", unsafe_allow_html=True)
     if df_i is not None:
         vendors = sorted(df_i['廠商名稱'].unique())
         v_cols = st.columns(2)
@@ -131,7 +139,7 @@ elif st.session_state.step == "select_vendor":
     
     st.markdown('<div class="function-divider"></div>', unsafe_allow_html=True)
     with st.container():
-        st.write("<b>🛠️ 系統功能與紀錄</b>", unsafe_allow_html=True)
+        st.write("<b>🛠️ 系統功能</b>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             if st.button("📄 產生叫貨明細", type="primary", use_container_width=True):
@@ -141,10 +149,10 @@ elif st.session_state.step == "select_vendor":
                 st.session_state.history_df = get_cloud_data(); st.session_state.step = "analysis"; st.rerun()
         
         history_sheet = f"{st.session_state.store}_紀錄"
-        if st.button(f"📜 查看分店歷史數據庫", use_container_width=True):
+        if st.button(f"📜 查看歷史紀錄數據庫", use_container_width=True):
             st.session_state.view_df = get_worksheet_data(history_sheet)
             st.session_state.step = "view_history"; st.rerun()
-    if st.button("⬅️ 返回分店列表", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
+    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_store"; st.rerun()
 
 elif st.session_state.step == "fill_items":
     if "vendor" not in st.session_state: st.session_state.step = "select_vendor"; st.rerun()
@@ -157,13 +165,13 @@ elif st.session_state.step == "fill_items":
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
-            f_name = item_display_map.get(f_id, "")
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_name)))]
+            f_n = item_display_map.get(f_id, "")
+            past = hist_df[(hist_df['店名'] == st.session_state.store) & ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_n)))]
             if not past.empty:
                 latest = past.iloc[-1]
-                ref_list.append({"品項": f_name, "前剩": latest.get('本次剩餘', 0), "前進": latest.get('本次叫貨', 0)})
+                ref_list.append({"品項": f_n, "前剩": latest.get('本次剩餘', 0), "前進": latest.get('本次叫貨', 0)})
         if ref_list:
-            with st.expander("📊 歷史參考數據", expanded=True):
+            with st.expander("📊 查看歷史參考", expanded=True):
                 st.dataframe(pd.DataFrame(ref_list), use_container_width=True, hide_index=True)
     
     st.write("---")
@@ -191,20 +199,17 @@ elif st.session_state.step == "fill_items":
                 else: st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 st.caption(f"{unit} (前結:{int(p_s+p_p)})")
                 last_item_name = d_n
-            
-            # 💡 終極方案：改用 text_input 徹底消除原生瀏覽器重疊文字
-            with c2: t_s_raw = st.text_input("", key=f"s_{f_id}", value="0")
-            with c3: t_p_raw = st.text_input("", key=f"p_{f_id}", value="0")
-            
-            try: t_s_v = float(t_s_raw) if t_s_raw else 0.0
+            # 💡 終極修復文字重疊：鎖定無描述標籤的輸入格
+            with c2: t_s_r = st.text_input("", key=f"s_{f_id}", value="0", label_visibility="collapsed")
+            with c3: t_p_r = st.text_input("", key=f"p_{f_id}", value="0", label_visibility="collapsed")
+            try: t_s_v = float(t_s_r) if t_s_r else 0.0
             except: t_s_v = 0.0
-            try: t_p_v = float(t_p_raw) if t_p_raw else 0.0
+            try: t_p_v = float(t_p_r) if t_p_r else 0.0
             except: t_p_v = 0.0
-            
             usage = (p_s + p_p) - t_s_v
             temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
 
-        if st.form_submit_button("💾 儲存結果", use_container_width=True):
+        if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
@@ -227,41 +232,43 @@ elif st.session_state.step == "analysis":
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-elif st.session_state.step == "export":
-    st.title("📋 今日叫貨明細")
-    h_df = get_cloud_data()
-    week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
-    deliv_date = st.session_state.record_date + timedelta(days=1)
-    header = f"{deliv_date.month}/{deliv_date.day}({week_map[deliv_date.weekday()]})"
-    if not h_df.empty:
-        # 💡 修復 NameError: 使用精確的 filter
-        recs = h_df[(h_df['店名'] == st.session_state.store) & (h_df['日期'].astype(str) == str(st.session_state.record_date)) & (h_df['本次叫貨'] > 0)]
-        if not recs.empty:
-            out = f"{header}\n"
-            for v in recs['廠商'].unique():
-                out += f"\n{v}\n{st.session_state.store}\n"
-                # 💡 關鍵修復：確保變數 r 包含所有必要欄位
-                for _, r in recs[recs['廠商'] == v].iterrows():
-                    v_val = float(r['本次叫貨'])
-                    v_s = int(v_val) if v_val.is_integer() else v_val
-                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
-                out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
-            st.text_area("📱 LINE 複製", value=out, height=350)
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
-
 elif st.session_state.step == "view_history":
-    st.title(f"📜 {st.session_state.store} 歷史庫")
+    st.title(f"📜 {st.session_state.store} 歷史紀錄庫")
     v_df = st.session_state.get('view_df', pd.DataFrame())
     if not v_df.empty:
         t1, t2 = st.tabs(["📋 數據明細", "📈 消耗趨勢"])
         with t1:
-            s = st.text_input("🔍 搜尋品項")
+            s = st.text_input("🔍 搜尋品項或日期")
             d_df = v_df.copy()
             if s: d_df = d_df[d_df.astype(str).apply(lambda x: x.str.contains(s)).any(axis=1)]
             st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
         with t2:
             if HAS_PLOTLY:
                 tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()))
-                p_df = v_df[v_df['品項名稱'] == tgt].sort_values('日期')
-                st.plotly_chart(px.line(p_df, x="日期", y="期間消耗", markers=True), use_container_width=True)
+                p_df = v_df[v_df['品項名稱'] == tgt].copy()
+                # 💡 修正趨勢時間軸：強制轉換為日期格式並排序
+                p_df['日期'] = pd.to_datetime(p_df['日期'])
+                p_df = p_df.sort_values('日期')
+                fig = px.line(p_df, x="日期", y="期間消耗", title=f"{tgt} 消耗走勢", markers=True)
+                st.plotly_chart(fig, use_container_width=True)
+    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
+elif st.session_state.step == "export":
+    st.title("📋 明日進貨明細")
+    h_df = get_cloud_data()
+    week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
+    deliv_date = st.session_state.record_date + timedelta(days=1)
+    header = f"{deliv_date.month}/{deliv_date.day}({week_map[deliv_date.weekday()]})"
+    if not h_df.empty:
+        recs = h_df[(h_df['店名'] == st.session_state.store) & (h_df['日期'].astype(str) == str(st.session_state.record_date)) & (h_df['本次叫貨'] > 0)]
+        if not recs.empty:
+            out = f"{header}\n"
+            for v in recs['廠商'].unique():
+                out += f"\n{v}\n{st.session_state.store}\n"
+                for _, r in recs[recs['廠商'] == v].iterrows():
+                    v_val = float(r['本次叫貨'])
+                    v_s = int(v_val) if v_val.is_integer() else v_val
+                    out += f"{r['品項名稱']} {v_s} {r['單位']}\n"
+                out += f"禮拜{week_map[deliv_date.weekday()]}到，謝謝\n"
+            st.text_area("📱 LINE 複製", value=out, height=350)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
