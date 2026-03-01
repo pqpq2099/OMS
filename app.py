@@ -255,19 +255,39 @@ elif st.session_state.step == "view_history":
             if selected_item != "全部品項":
                 d_df = d_df[d_df['品項名稱'] == selected_item]
 
-            # 💡 戰略設定：使用 column_config 隱藏特定欄位並格式化數字
-            # 這能保證字體不會因為 st.table 的原生限制而顯得粗大
+            # 💡 戰略修正：透過 CSS 強制縮減動態表格的行高與間距
+            st.markdown("""
+                <style>
+                    /* 壓縮動態表格單元格高度 */
+                    [data-testid="stDataFrame"] [role="gridcell"] {
+                        padding: 2px 4px !important;
+                        line-height: 1.1 !important;
+                    }
+                    /* 縮小表頭高度 */
+                    [data-testid="stDataFrame"] [role="columnheader"] {
+                        padding: 4px !important;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+
+            # 💡 使用極簡寬度配置，讓表格在手機螢幕更緊湊
             st.dataframe(
                 d_df.sort_values('日期', ascending=False),
                 use_container_width=True,
-                hide_index=True,  # 💡 徹底移除最左側的序號 (0, 1, 2...)
+                hide_index=True,
                 column_config={
-                    "店名": None,    # 💡 物理隱藏店名
-                    "品項ID": None,  # 💡 物理隱藏品項ID
-                    "單價": st.column_config.NumberColumn(format="%.1f"),
-                    "期間消耗": st.column_config.NumberColumn(format="%.1f"),
-                    "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
-                    "總金額": st.column_config.NumberColumn(format="%.1f")
+                    "日期": st.column_config.TextColumn(width="small"),
+                    "廠商": st.column_config.TextColumn(width="small"),
+                    "品項名稱": st.column_config.TextColumn(width="medium"),
+                    "單位": st.column_config.TextColumn(width="minishort"), # 極窄
+                    "店名": None, "品項ID": None, # 繼續隱藏雜訊
+                    "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "單價": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "總金額": st.column_config.NumberColumn(format="%.1f", width="small"),
                 }
             )
             
@@ -330,6 +350,7 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
 
