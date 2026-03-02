@@ -383,7 +383,8 @@ elif st.session_state.step == "export":
     delivery_date = st.session_state.record_date + timedelta(days=1)
     header_date = f"{delivery_date.month}/{delivery_date.day}({week_map[delivery_date.weekday()]})"
     
-    if not hist_df.empty:
+if not hist_df.empty:
+        # 1. 篩選今日叫貨數據
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & 
                        (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & 
                        (hist_df['本次叫貨'] > 0)]
@@ -398,12 +399,11 @@ elif st.session_state.step == "export":
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             
-            # 1. 這是原本就有的預覽框
+            # 顯示預覽框
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
             
-            # 💡 2. 這是「戰略插入」的發送按鈕：放在預覽框的正下方
+            # 💡 戰略發送按鈕
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
-                # 這裡會扣下扳機，呼叫上面的 send_line_message
                 if send_line_message(output):
                     st.success("✅ 已成功推送至 LINE 官方帳號！")
                 else:
@@ -411,10 +411,10 @@ elif st.session_state.step == "export":
         else:
             st.info("💡 今日尚無叫貨紀錄。")
             
-    # 返回選單按鈕放在最下面
-    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)True)
+    # 💡 修正點：確保返回按鈕語法正確且縮排對齊 (移除多餘的 True)True))
+    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_btn_export")
 
-# --- 進銷存分析 (加入廠商篩選維度) ---
+# --- 💡 這裡必須緊接在上面的 if/elif 結構中 ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
     a_df = get_worksheet_data("Records")
@@ -426,9 +426,7 @@ elif st.session_state.step == "analysis":
     
     if not a_df.empty:
         a_df['日期'] = pd.to_datetime(a_df['日期']).dt.date
-        # 初步時間與店名過濾
         filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
-        
         if not filt.empty:
             # 💡 核心新增：在日期下方建立廠商下拉選單
             all_v = ["全部廠商"] + sorted(filt['廠商'].unique().tolist())
@@ -477,6 +475,7 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
