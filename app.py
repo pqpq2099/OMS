@@ -694,11 +694,18 @@ if a_df.empty:
         & (a_df["日期"] <= end)
     ].copy()
 
-    if filt.empty:
-        st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
-        st.("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-        return
+if filt.empty:
+    st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
 
+    if st.button(
+        "⬅️ 返回選單",
+        use_container_width=True,
+        key="back_from_analysis_no_data"
+    ):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+    return
     # ============================================================
     # [E6.3] Vendor / Item Dropdown Filters
     # ============================================================
@@ -894,6 +901,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
