@@ -62,21 +62,35 @@ def sync_to_cloud(df_to_save):
 # =========================
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
-    <style>
-    /* 💡 修正手機端標題看不見的問題：強制顯色 */
-    [data-testid="stTable"] th {
-        font-weight: 600 !important;
-        background-color: #f0f2f6 !important; /* 淺灰色背景 */
-        color: #1f77b4 !important;           /* 💡 強制深藍色文字，確保白底能看見 */
-        text-align: left !important;
-        padding: 6px 4px !important;
+<style>
+    /* 1. 物理移除：所有表格的最左側序號 (0, 1, 2...) */
+    [data-testid="stTable"] td:nth-child(1), 
+    [data-testid="stTable"] th:nth-child(1),
+    [data-testid="stDataFrame"] [role="row"] [role="gridcell"]:first-child {
+        display: none !important;
     }
 
-    /* 同步修正動態表格 (st.dataframe) 的表頭顏色 */
+    /* 2. 歷史紀錄與庫存表格：縮小、變細、極度緊湊 */
+    [data-testid="stTable"] td, 
+    [data-testid="stTable"] th,
+    [data-testid="stDataFrame"] [role="gridcell"],
     [data-testid="stDataFrame"] [role="columnheader"] {
-        background-color: #f0f2f6 !important;
-        color: #1f77b4 !important;           /* 💡 確保動態表頭也是深藍色 */
+        font-size: 11px !important;
+        font-weight: 400 !important;
+        padding: 4px 2px !important;
+        line-height: 1.1 !important;
     }
+
+    /* 3. 表頭文字：稍微加重結構感，但不強制背景色以避免看不見字 */
+    [data-testid="stTable"] th,
+    [data-testid="stDataFrame"] [role="columnheader"] {
+        font-weight: 600 !important;
+    }
+
+    /* 4. 移除數字框內建按鈕與外距 (維持原本的物理鎖定) */
+    div[data-testid="stNumberInputStepUp"], 
+    div[data-testid="stNumberInputStepDown"] { display: none !important; }
+    input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -375,5 +389,6 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
 
