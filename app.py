@@ -751,27 +751,26 @@ with t_trend:
                 fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
                 st.plotly_chart(fig1, use_container_width=True)
 
-        # 2) 品項採購金額排行（Top 20）
-        if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
-            rank_df = (
-                final_filt.groupby("品項名稱", as_index=False)["總金額"]
-                .sum()
-                .sort_values("總金額", ascending=False)
-                .head(20)
-            )
+if final_filt.empty:
+    st.info("💡 此篩選條件下沒有資料。")
+    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+    return
 
-            if rank_df.empty:
-                st.info("💡 此篩選條件下沒有可排行的資料。")
-            else:
-                fig2 = px.bar(rank_df, x="品項名稱", y="總金額", title="📊 品項採購金額排行（Top 20）")
-                fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
-                st.plotly_chart(fig2, use_container_width=True)
-  
-            if final_filt.empty:
-                st.info("💡 此篩選條件下沒有資料。")
-                st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-                return
+# 2) 品項採購金額排行（Top 20）
+if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
+    rank_df = (
+        final_filt.groupby("品項名稱", as_index=False)["總金額"]
+        .sum()
+        .sort_values("總金額", ascending=False)
+        .head(20)
+    )
 
+    if rank_df.empty:
+        st.info("💡 此篩選條件下沒有可排行的資料。")
+    else:
+        fig2 = px.bar(rank_df, x="品項名稱", y="總金額", title="📊 品項採購金額排行（Top 20）")
+        fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
+        st.plotly_chart(fig2, use_container_width=True)
     # ============================================================
     # [E6.7] Back
     # ============================================================
@@ -824,6 +823,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
