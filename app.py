@@ -475,21 +475,27 @@ def page_view_history():
         unsafe_allow_html=True,
     )
 
+def page_view_history():
+
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get("view_df", pd.DataFrame())
 
+    # ===== 沒資料 =====
     if v_df.empty:
         st.info("💡 尚無歷史紀錄可供查看。")
-if st.button(
-    "⬅️ 返回",
-    use_container_width=True,
-    key="back_from_history_empty"
-):
-st.session_state.step = "select_vendor"
-st.rerun()
 
-return
-def page_view_history():
+        if st.button(
+            "⬅️ 返回",
+            use_container_width=True,
+            key="back_from_history_empty"
+        ):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+
+        return
+
+    # ===== 有資料 =====
+    c_h_date1, c_h_date2 = st.columns(2)
 
     st.title(f"📜 {st.session_state.store} 歷史庫")
     v_df = st.session_state.get("view_df", pd.DataFrame())
@@ -860,6 +866,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
