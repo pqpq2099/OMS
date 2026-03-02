@@ -722,6 +722,7 @@ def page_analysis():
 # ============================================================
 # Plotly 報表模式（只留圖片與下載）
 # ============================================================
+
 PLOTLY_CONFIG = {
     "displayModeBar": True,
     "displaylogo": False,
@@ -736,6 +737,11 @@ PLOTLY_CONFIG = {
         "toggleSpikelines"
     ]
 }
+
+# ⭐ 這裡不能縮排
+if not HAS_PLOTLY:
+    st.info("💡 Plotly 未啟用，無法顯示圖表。")
+else:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未啟用，無法顯示圖表。")
         else:
@@ -831,6 +837,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
