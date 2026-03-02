@@ -654,103 +654,51 @@ def page_analysis():
         st.info("💡 此篩選條件下沒有資料。")
         st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
         return
+# ============================================================
+# [E6.4] KPI Cards（放在 tabs 上方，兩邊共用）
+# ============================================================
+# 防呆：確保金額欄位是數字
+if "總金額" in final_filt.columns:
+    final_filt["總金額"] = pd.to_numeric(final_filt["總金額"], errors="coerce").fillna(0)
+if "單價" in final_filt.columns:
+    final_filt["單價"] = pd.to_numeric(final_filt["單價"], errors="coerce").fillna(0)
+if "本次剩餘" in final_filt.columns:
+    final_filt["本次剩餘"] = pd.to_numeric(final_filt["本次剩餘"], errors="coerce").fillna(0)
 
-    # ============================================================
-    # [E6.4] KPI Cards
-    # ============================================================
-    # 防呆：確保金額欄位是數字
-    if "總金額" in final_filt.columns:
-        final_filt["總金額"] = pd.to_numeric(final_filt["總金額"], errors="coerce").fillna(0)
-    if "單價" in final_filt.columns:
-        final_filt["單價"] = pd.to_numeric(final_filt["單價"], errors="coerce").fillna(0)
-    if "本次剩餘" in final_filt.columns:
-        final_filt["本次剩餘"] = pd.to_numeric(final_filt["本次剩餘"], errors="coerce").fillna(0)
+total_buy = final_filt["總金額"].sum() if "總金額" in final_filt.columns else 0.0
 
-    total_buy = final_filt["總金額"].sum() if "總金額" in final_filt.columns else 0.0
+# 期末庫存殘值：每品項取最後一筆（依日期排序）
+if "日期" in final_filt.columns and "品項名稱" in final_filt.columns:
+    last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
+else:
+    last_stock = final_filt.copy()
 
-    # 期末庫存殘值：每品項取最後一筆（依日期排序）
-    if "日期" in final_filt.columns and "品項名稱" in final_filt.columns:
-        last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
-    else:
-        last_stock = final_filt.copy()
+total_stock_value = 0.0
+if ("本次剩餘" in last_stock.columns) and ("單價" in last_stock.columns):
+    total_stock_value = (last_stock["本次剩餘"] * last_stock["單價"]).sum()
 
-    total_stock_value = 0.0
-    if ("本次剩餘" in last_stock.columns) and ("單價" in last_stock.columns):
-        total_stock_value = (last_stock["本次剩餘"] * last_stock["單價"]).sum()
-
-    st.markdown(
-        f"""
-        <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
-            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
-                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總額 ({selected_v})</div>
-                <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${total_buy:,.1f}</div>
-            </div>
-            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
-                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
-                <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
-            </div>
+st.markdown(
+    f"""
+    <div style='display: flex; gap: 10px; margin-bottom: 12px;'>
+        <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
+            <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總額 ({selected_v})</div>
+            <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${total_buy:,.1f}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
+            <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
+            <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-    # ============================================================
-    # [E6.5] Charts (Plotly) - 金額趨勢 + 品項排行
-    # ============================================================
-    st.write("---")
-    st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
+# ============================================================
+# [E6.5] Tabs - 明細 / 趨勢（像歷史庫一樣用點選切換）
+# ============================================================
+t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
 
-    # 1) 依日期的採購金額趨勢
-    if HAS_PLOTLY and ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
-        trend_df = final_filt.copy()
-        trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
-
-        trend_daily = (
-            trend_df.dropna(subset=["日期_dt"])
-            .groupby("日期_dt", as_index=False)["總金額"]
-            .sum()
-            .sort_values("日期_dt")
-        )
-
-        if trend_daily.empty:
-            st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
-        else:
-            fig1 = px.line(
-                trend_daily,
-                x="日期_dt",
-                y="總金額",
-                markers=True,
-                title="📈 採購金額趨勢（依日期）",
-            )
-            fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
-            st.plotly_chart(fig1, use_container_width=True)
-    else:
-        st.info("💡 Plotly 未啟用或缺少欄位（日期 / 總金額），因此不顯示圖表。")
-
-    # 2) 品項採購金額排行（Top 20）
-    if HAS_PLOTLY and ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
-        rank_df = (
-            final_filt.groupby("品項名稱", as_index=False)["總金額"]
-            .sum()
-            .sort_values("總金額", ascending=False)
-            .head(20)
-        )
-
-        if rank_df.empty:
-            st.info("💡 此篩選條件下沒有可排行的資料。")
-        else:
-            fig2 = px.bar(
-                rank_df,
-                x="品項名稱",
-                y="總金額",
-                title="📊 品項採購金額排行（Top 20）",
-            )
-            fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
-            st.plotly_chart(fig2, use_container_width=True)
-
-    # ============================================================
-    # [E6.6] Summary Table (原本表格保留)
-    # ============================================================
+with t_detail:
     st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
 
     required_cols = {"廠商", "品項名稱", "單位", "單價", "期間消耗", "本次叫貨", "總金額"}
@@ -762,6 +710,7 @@ def page_analysis():
             .agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"})
             .reset_index()
         )
+
         # 期末庫存：用 last_stock 對應
         if "品項名稱" in last_stock.columns and "本次剩餘" in last_stock.columns:
             stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict()
@@ -781,6 +730,47 @@ def page_analysis():
                 "期末庫存": st.column_config.NumberColumn(format="%.1f"),
             },
         )
+
+with t_trend:
+    st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
+
+    if not HAS_PLOTLY:
+        st.info("💡 Plotly 未啟用，無法顯示圖表。")
+    else:
+        # 1) 依日期採購金額趨勢
+        if ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
+            trend_df = final_filt.copy()
+            trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
+
+            trend_daily = (
+                trend_df.dropna(subset=["日期_dt"])
+                .groupby("日期_dt", as_index=False)["總金額"]
+                .sum()
+                .sort_values("日期_dt")
+            )
+
+            if trend_daily.empty:
+                st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
+            else:
+                fig1 = px.line(trend_daily, x="日期_dt", y="總金額", markers=True, title="📈 採購金額趨勢（依日期）")
+                fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
+                st.plotly_chart(fig1, use_container_width=True)
+
+        # 2) 品項採購金額排行（Top 20）
+        if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
+            rank_df = (
+                final_filt.groupby("品項名稱", as_index=False)["總金額"]
+                .sum()
+                .sort_values("總金額", ascending=False)
+                .head(20)
+            )
+
+            if rank_df.empty:
+                st.info("💡 此篩選條件下沒有可排行的資料。")
+            else:
+                fig2 = px.bar(rank_df, x="品項名稱", y="總金額", title="📊 品項採購金額排行（Top 20）")
+                fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
+                st.plotly_chart(fig2, use_container_width=True)
 
     # ============================================================
     # [E6.7] Back
@@ -834,3 +824,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
