@@ -259,7 +259,7 @@ def page_select_store(df_s: pd.DataFrame | None):
         return
 
     for s in df_s["分店名稱"].unique():
-        if st.button(f"📍 {s}", key=f"s_{s}", use_container_width=True):
+        if st.(f"📍 {s}", key=f"s_{s}", use_container_width=True):
             st.session_state.store = s
             st.session_state.step = "select_vendor"
             st.rerun()
@@ -283,7 +283,7 @@ def page_select_vendor(df_i: pd.DataFrame | None):
 
             with cols[0]:
                 v_left = vendors[i]
-                if st.button(f"📦 {v_left}", key=f"v_{v_left}", use_container_width=True):
+                if st.(f"📦 {v_left}", key=f"v_{v_left}", use_container_width=True):
                     st.session_state.vendor = v_left
                     st.session_state.history_df = get_cloud_data()
                     st.session_state.step = "fill_items"
@@ -292,34 +292,34 @@ def page_select_vendor(df_i: pd.DataFrame | None):
             if i + 1 < len(vendors):
                 with cols[1]:
                     v_right = vendors[i + 1]
-                    if st.button(f"📦 {v_right}", key=f"v_{v_right}", use_container_width=True):
+                    if st.(f"📦 {v_right}", key=f"v_{v_right}", use_container_width=True):
                         st.session_state.vendor = v_right
                         st.session_state.history_df = get_cloud_data()
                         st.session_state.step = "fill_items"
                         st.rerun()
 
-    # 功能中心
-    st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
+# 功能中心
+st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
-    if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
-        st.session_state.history_df = get_cloud_data()
-        st.session_state.step = "export"
-        st.rerun()
+if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
+    st.session_state.history_df = get_cloud_data()
+    st.session_state.step = "export"
+    st.rerun()
 
-    if st.button("📈 期間進銷存分析", use_container_width=True):
-        st.session_state.history_df = get_cloud_data()
-        st.session_state.step = "analysis"
-        st.rerun()
+if st.button("📈 期間進銷存分析", use_container_width=True):
+    st.session_state.history_df = get_cloud_data()
+    st.session_state.step = "analysis"
+    st.rerun()
 
-    history_sheet = f"{st.session_state.store}_紀錄"
-    if st.button("📜 查看分店歷史紀錄", use_container_width=True):
-        st.session_state.view_df = get_worksheet_data(history_sheet)
-        st.session_state.step = "view_history"
-        st.rerun()
+history_sheet = f"{st.session_state.store}_紀錄"
+if st.button("📜 查看分店歷史紀錄", use_container_width=True):
+    st.session_state.view_df = get_worksheet_data(history_sheet)
+    st.session_state.step = "view_history"
+    st.rerun()
 
-    if st.button("⬅️ 返回分店列表", use_container_width=True):
-        st.session_state.step = "select_store"
-        st.rerun()
+if st.button("⬅️ 返回分店列表", use_container_width=True):
+    st.session_state.step = "select_store"
+    st.rerun()
         
 # ============================================================
 # [E3] fill_items - 盤點輸入 / 叫貨核心
@@ -453,7 +453,7 @@ def page_fill_items(df_i: pd.DataFrame | None, df_pr: pd.DataFrame | None, item_
                 st.session_state.step = "select_vendor"
                 st.rerun()
 
-    st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
+    st.("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
 
 # ============================================================
 # [E4] view_history - 歷史紀錄查詢
@@ -476,7 +476,7 @@ def page_view_history():
 
     if v_df.empty:
         st.info("💡 尚無歷史紀錄可供查看。")
-        st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+        st.("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
         return
 
     c_h_date1, c_h_date2 = st.columns(2)
@@ -550,7 +550,7 @@ def page_view_history():
                 fig.update_layout(xaxis_type="category", hovermode="x unified", xaxis_title="日期")
                 st.plotly_chart(fig, use_container_width=True)
 
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_hist_final")
+    st.("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_hist_final")
 
 # ============================================================
 # [E5] export - 今日進貨明細輸出
@@ -584,7 +584,7 @@ def page_export():
 
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-            if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
+            if st.("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
                 if send_line_message(output):
                     st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
                 else:
@@ -610,7 +610,7 @@ def page_analysis():
 
     if a_df.empty:
         st.error("❌ 無法從 Google Sheets 讀取 Records 資料。")
-        st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+        st.("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
         return
 
     # ============================================================
@@ -627,7 +627,7 @@ def page_analysis():
 
     if filt.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
-        st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+        st.("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
         return
 
     # ============================================================
@@ -723,7 +723,7 @@ def page_analysis():
             "displaylogo": False,
             "scrollZoom": False,
             "doubleClick": False,
-            "modeBarButtonsToRemove": [
+            "modeBarsToRemove": [
                 "zoom2d","pan2d","select2d","lasso2d",
                 "zoomIn2d","zoomOut2d",
                 "autoScale2d","resetScale2d",
@@ -779,11 +779,10 @@ def page_analysis():
         st.divider()
 
         st.warning("DEBUG: reached bottom of t_trend")  # 這行一定會出現
-        st.write("DEBUG step:", st.session_state.get("step"))
-
-                if st.button("⬅️ 返回選單", use_container_width=True, key=f"back_{st.session_state.get('step')}_trend"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
+        st.divider()
+if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
+    st.session_state.step = "select_vendor"
+    st.rerun()
 # ============================================================
 # [F1] Router - 不改你原本 step 架構，只是集中管理
 # ============================================================
@@ -826,4 +825,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
