@@ -396,12 +396,13 @@ elif st.session_state.step == "export":
     header_date = f"{delivery_date.month}/{delivery_date.day}({week_map[delivery_date.weekday()]})"
     
     if not hist_df.empty:
+        # A. 數據過濾
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & 
                        (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & 
                        (hist_df['本次叫貨'] > 0)]
         
-if not recs.empty:
-            # 💡 戰略修正：移除圖示與「進貨通知」，僅保留店名作為抬頭
+        if not recs.empty:
+            # B. 建立純淨版抬頭
             output = f"【{st.session_state.store}】\n" + f"{header_date}\n"
             
             for v in recs['廠商'].unique():
@@ -412,17 +413,20 @@ if not recs.empty:
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             
+            # C. 顯示預覽
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
             
-            # 💡 這裡會根據你目前的 st.session_state.store 去 Secrets 找對應群組
+            # D. 發送按鈕 (這是在 if not recs.empty 之內)
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
                 if send_line_message(output):
                     st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
                 else:
-                    st.error("❌ 發送失敗，請確認該店 ID 已填入 Secrets 且機器人在群組內。")
+                    st.error("❌ 發送失敗，請檢查該店 ID 已填入 Secrets 且機器人在群組內。")
         else:
+            # 💡 修正點：這個 else 必須跟 if not recs.empty: 完全對齊
             st.info("💡 今日尚無叫貨紀錄。")
             
+    # E. 返回按鈕 (這是在 if not hist_df.empty 之外，與 if 對齊)
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
     
 # --- 步驟 5：進銷存分析 ---
@@ -486,6 +490,7 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
