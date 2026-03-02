@@ -329,24 +329,49 @@ elif st.session_state.step == "view_history":
 
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         
-        with t1:
+with t1:
             # A. 時間維度過濾
             v_df['日期_dt'] = pd.to_datetime(v_df['日期']).dt.date
-            d_df = v_df[(v_df['日期_dt'] >= h_start) & (v_df['日期_dt'] <= h_end)].copy()
+            temp_filt = v_df[(v_df['日期_dt'] >= h_start) & (v_df['日期_dt'] <= h_end)].copy()
             
-            # B. 廠商篩選 (明細)
-            all_vendors = ["全部廠商"] + sorted(d_df['廠商'].unique().tolist())
-            selected_v = st.selectbox("請選擇廠商查看細節", options=all_vendors, key="h_v_detail_sel")
-            
-            if selected_v != "全部廠商":
-                d_df = d_df[d_df['廠商'] == selected_v]
+            if not temp_filt.empty:
+                # 💡 戰略核心：雙層連動篩選 (同步對齊趨勢圖邏輯)
+                col_v, col_i = st.columns(2)
+                
+                # 1. 廠商下拉選單
+                all_v_list = ["全部廠商"] + sorted(temp_filt['廠商'].unique().tolist())
+                selected_v_m = col_v.selectbox("📦 1. 選擇廠商", options=all_v_list, key="h_v_m_sel")
+                
+                # 2. 根據廠商過濾品項清單
+                if selected_v_m != "全部廠商":
+                    v_specific_df = temp_filt[temp_filt['廠商'] == selected_v_m]
+                    all_i_list = ["全部品項"] + sorted(v_specific_df['品項名稱'].unique().tolist())
+                    final_df = v_specific_df
+                else:
+                    all_i_list = ["全部品項"]
+                    final_df = temp_filt
+                
+                selected_i_m = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i_list, key="h_i_m_sel")
+                
+                # 3. 執行最終過濾
+                if selected_i_m != "全部品項":
+                    final_df = final_df[final_df['品項名稱'] == selected_i_m]
 
-            if '日期' in d_df.columns:
-                d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
-            
-            # 💡 隱藏不需要的後端欄位
-            st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True,
-                column_config={"店名": None, "品項ID": None, "單價": None, "總金額": None, "日期_dt": None})
+                # 4. 格式化日期與隱藏欄位 (保持介面簡潔)
+                display_df = final_df.copy()
+                if '日期' in display_df.columns:
+                    display_df['日期'] = pd.to_datetime(display_df['日期']).dt.strftime('%m-%d')
+                
+                st.dataframe(
+                    display_df.sort_values('日期', ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "店名": None, "品項ID": None, "單價": None, "總金額": None, "日期_dt": None
+                    }
+                )
+            else:
+                st.info("💡 此區間內無紀錄。")
 
         with t2:
             if HAS_PLOTLY:
@@ -482,6 +507,7 @@ elif st.session_state.step == "analysis":
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
