@@ -55,14 +55,12 @@ def sync_to_cloud(df_to_save):
         ws = sh.worksheet("Records")
         ws.append_rows(df_to_save.values.tolist())
         return True
-    except: return False
-        import requests
-import json
+except: return False
 
+# 💡 戰略新增：LINE Messaging API 發送函式
 def send_line_message(message):
-    """💡 戰略串接：使用 Messaging API 推送進貨明細"""
     try:
-        # 從 Secrets 讀取鑰匙，確保安全性
+        # 從你剛才設定的 Secrets 隔層中抓取鑰匙
         token = st.secrets["line_bot"]["channel_access_token"]
         user_id = st.secrets["line_bot"]["user_id"]
         
@@ -76,12 +74,16 @@ def send_line_message(message):
             "messages": [{"type": "text", "text": message}]
         }
         
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        # 執行發送
+        response = requests.post(url, headers=headers, json=payload)
         return response.status_code == 200
     except Exception as e:
         st.error(f"❌ LINE 推送錯誤: {e}")
         return False
 
+# =========================
+# 2. 全域視覺標準
+# =========================
 # =========================
 # 2. 全域視覺標準
 # =========================
@@ -452,6 +454,7 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
