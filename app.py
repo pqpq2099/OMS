@@ -272,13 +272,23 @@ elif st.session_state.step == "fill_items":
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
+# --- 🚀 戰略強化：嚴格數據歸位邏輯 (完整覆蓋版) ---
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
-                past = hist_df[(hist_df['店名'] == st.session_state.store) & 
-                               ((hist_df['品項ID'].astype(str) == f_id) | (hist_df['品項名稱'] == d_n))]
+                # 💡 核心修正：使用 .strip() 排除所有隱藏空格，並使用 .copy() 隔離數據
+                # 確保店名、品項ID、品項名稱都進行乾淨的字串比對
+                past = hist_df[
+                    (hist_df['店名'].astype(str).str.strip() == str(st.session_state.store).strip()) & 
+                    ((hist_df['品項ID'].astype(str).str.strip() == str(f_id).strip()) | 
+                     (hist_df['品項名稱'].astype(str).str.strip() == str(d_n).strip()))
+                ].copy()
+                
                 if not past.empty:
                     latest = past.iloc[-1]
-                    p_s = float(latest.get('本次剩餘', 0)); p_p = float(latest.get('本次叫貨', 0))
+                    # 💡 核心修正：強制轉換型別，並設定預設值 0.0 防止抓到空值
+                    p_s = float(latest.get('本次剩餘', 0.0))
+                    p_p = float(latest.get('本次叫貨', 0.0))
+            # -----------------------------------------------
             
             c1, c2, c3 = st.columns([6, 1, 1])
             with c1:
@@ -539,4 +549,5 @@ elif st.session_state.step == "analysis":
             )
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
+
 
