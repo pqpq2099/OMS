@@ -429,69 +429,82 @@ elif st.session_state.step == "export":
     # E. 返回按鈕 (這是在 if not hist_df.empty 之外，與 if 對齊)
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
     
-# --- 步驟 5：進銷存分析 ---
+# --- 步驟 5：進銷存分析 (連動篩選升級版) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
     a_df = get_worksheet_data("Records")
     
     # 1. 建立日期篩選佈局
     c_date1, c_date2 = st.columns(2)
-    start = c_date1.date_input("起始", value=date.today()-timedelta(7))
-    end = c_date2.date_input("結束", value=date.today())
+    start = c_date1.date_input("起始日期", value=date.today()-timedelta(7))
+    end = c_date2.date_input("結束日期", value=date.today())
     
     if not a_df.empty:
+        # A. 時間與店別初步過濾
         a_df['日期'] = pd.to_datetime(a_df['日期']).dt.date
         filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
+        
         if not filt.empty:
-            # 💡 核心新增：在日期下方建立廠商下拉選單
-            all_v = ["全部廠商"] + sorted(filt['廠商'].unique().tolist())
-            selected_v = st.selectbox("🎯 篩選特定廠商 (連動下方金額)", options=all_v)
+            st.markdown("---")
+            # B. 核心戰略：連動式篩選佈局
+            col_v, col_i = st.columns(2)
             
-            # 根據選擇過濾數據
-            if selected_v != "全部廠商":
-                filt = filt[filt['廠商'] == selected_v]
+            # 第一層：選擇廠商
+            all_v = sorted(filt['廠商'].unique().tolist())
+            selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v)
             
-            # 重新計算匯總數據
-            summ = filt.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
-            last_recs = filt.sort_values('日期').groupby('品項名稱').tail(1)
-            stock_map = last_recs.set_index('品項名稱')['本次剩餘'].to_dict()
-            summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
-            summ['庫存金額'] = summ['期末庫存'] * summ['單價']
+            # 第二層：根據廠商過濾品項
+            v_filt = filt[filt['廠商'] == selected_v]
+            all_items = sorted(v_filt['品項名稱'].unique().tolist())
+            selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_items)
             
-            # 💡 看板金額將隨篩選自動跳動
+            # C. 數據匯總計算 (僅針對選定廠商，讓看板連動)
+            summ = v_filt.groupby(['品項名稱', '單位', '單價']).agg({
+                '期間消耗': 'sum', 
+                '本次叫貨': 'sum', 
+                '總金額': 'sum'
+            }).reset_index()
+            
+            # D. 視覺看板：顯示該廠商的財務概況
             st.markdown(f"""
                 <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
                     <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
-                        <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 {"選定廠商" if selected_v != "全部廠商" else "目前"}採購支出</div>
+                        <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 {selected_v} 採購總計</div>
                         <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${summ['總金額'].sum():,.1f}</div>
                     </div>
                     <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
-                        <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 {"選定廠商" if selected_v != "全部廠商" else "目前"}庫存殘值</div>
-                        <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${summ['庫存金額'].sum():,.1f}</div>
+                        <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📉 {selected_item} 累積消耗</div>
+                        <div style='font-size: 18px; font-weight: 800; color: #50C878;'>{v_filt[v_filt['品項名稱']==selected_item]['期間消耗'].sum():,.1f}</div>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-            # 數據表格
-            st.dataframe(
-                summ.sort_values('總金額', ascending=False), 
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    "單價": st.column_config.NumberColumn(format="%.1f"),
-                    "期間消耗": st.column_config.NumberColumn(format="%.1f"),
-                    "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
-                    "總金額": st.column_config.NumberColumn(format="%.1f"),
-                    "期末庫存": st.column_config.NumberColumn(format="%.1f"),
-                    "庫存金額": st.column_config.NumberColumn(format="%.1f")
-                }
-            )
+            # E. 趨勢圖表：僅針對選定品項
+            if HAS_PLOTLY:
+                p_df = v_filt[v_filt['品項名稱'] == selected_item].copy()
+                p_df = p_df.sort_values('日期')
+                # 確保日期格式整齊
+                p_df['日期顯示'] = p_df['日期'].apply(lambda x: x.strftime('%m-%d'))
+                
+                fig = px.line(p_df, x="日期顯示", y="期間消耗", markers=True, 
+                              title=f"📈 【{selected_item}】消耗趨勢 (單位: {p_df['單位'].iloc[0] if not p_df.empty else ''})")
+                fig.update_layout(xaxis_title="日期", yaxis_title="消耗量", hovermode="x unified")
+                st.plotly_chart(fig, use_container_width=True)
+
+            # F. 詳細數據表
+            with st.expander(f"查看 {selected_v} 所有品項明細"):
+                st.dataframe(
+                    summ.sort_values('總金額', ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "單價": st.column_config.NumberColumn(format="%.1f"),
+                        "期間消耗": st.column_config.NumberColumn(format="%.1f"),
+                        "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
+                        "總金額": st.column_config.NumberColumn(format="%.1f")
+                    }
+                )
         else:
-            st.warning("⚠️ 此區間尚無數據紀錄")
+            st.warning("⚠️ 此日期區間內尚無進銷存數據紀錄")
     
-    st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-
-
-
-
-
+    st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_analysis")
