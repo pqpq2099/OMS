@@ -203,13 +203,14 @@ elif st.session_state.step == "fill_items":
                     "期間消耗": round(float(latest.get('期間消耗', 0)), 1)
                 })
         
-        if ref_list:
+if ref_list:
             st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
-            
-            # 轉換為 DataFrame 並強制再次確認數據類型
             display_ref_df = pd.DataFrame(ref_list)
             
-            # 使用 st.table 渲染，這會繼承您頂部定義的「隱藏序號」CSS
+            # 💡 關鍵修正：將數字欄位轉為「一位小數的字串」，徹底消滅 1.0000
+            for col in ["上次叫貨", "期間消耗"]:
+                display_ref_df[col] = display_ref_df[col].apply(lambda x: f"{x:.1f}")
+            
             st.table(display_ref_df)
     # (後續填寫表單內容保持不變...)
     h1, h2, h3 = st.columns([6, 1, 1])
@@ -305,6 +306,11 @@ elif st.session_state.step == "view_history":
             # 💡 日期精簡處理
             if '日期' in d_df.columns:
                 d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
+# 💡 關鍵修正：確保數值欄位是真正的 float 類型，%.1f 才會生效
+            num_cols = ["上次剩餘", "上次叫貨", "本次剩餘", "本次叫貨", "期間消耗"]
+            for col in num_cols:
+                if col in d_df.columns:
+                    d_df[col] = pd.to_numeric(d_df[col], errors='coerce').fillna(0)
 
             # 💡 極窄化動態表格配置
             st.dataframe(
@@ -316,7 +322,7 @@ elif st.session_state.step == "view_history":
                     "廠商": st.column_config.TextColumn(width="small"),
                     "品項名稱": st.column_config.TextColumn(width="medium"),
                     "單位": st.column_config.TextColumn(width="minishort"),
-                    "店名": None, "品項ID": None, "單價": None, "總金額": None, # 隱藏雜訊
+                    "店名": None, "品項ID": None, "單價": None, "總金額": None,
                     "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
@@ -383,8 +389,3 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
-
-
-
-
-
