@@ -717,7 +717,7 @@ def page_analysis():
             )
 
     with t_trend:
-    st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
+        st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
 
     PLOTLY_CONFIG = {
         "displayModeBar": True,
@@ -839,6 +839,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
