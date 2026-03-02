@@ -660,28 +660,37 @@ if st.button(
 # [E6] analysis - 進銷存分析中心（含圖表）
 # ============================================================
 def page_analysis():
+
     st.title("📊 進銷存分析")
 
-    # ============================================================
-    # [E6.1] Load Data + Date Range
-    # ============================================================
+    # Load Data
     a_df = get_worksheet_data("Records")
+
     c_date1, c_date2 = st.columns(2)
-    start = c_date1.date_input("起始日期", value=date.today() - timedelta(14), key="ana_start")
-    end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
+    start = c_date1.date_input(
+        "起始日期",
+        value=date.today() - timedelta(14),
+        key="ana_start"
+    )
+    end = c_date2.date_input(
+        "結束日期",
+        value=date.today(),
+        key="ana_end"
+    )
 
-if a_df.empty:
-    st.error("❌ 無法從 Google Sheets 讀取 Records 資料。")
+    # ===== 空資料 =====
+    if a_df.empty:
+        st.error("❌ 無法從 Google Sheets 讀取 Records 資料。")
 
-    if st.button(
-        "⬅️ 返回選單",
-        use_container_width=True,
-        key="back_from_analysis_empty"
-    ):
-        st.session_state.step = "select_vendor"
-        st.rerun()
+        if st.button(
+            "⬅️ 返回選單",
+            use_container_width=True,
+            key="back_from_analysis_empty"
+        ):
+            st.session_state.step = "select_vendor"
+            st.rerun()
 
-    return
+        return
     # ============================================================
     # [E6.2] Clean + Filter by Store + Date
     # ============================================================
@@ -901,6 +910,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
