@@ -308,7 +308,7 @@ elif st.session_state.step == "view_history":
                 if col in d_df.columns:
                     d_df[col] = pd.to_numeric(d_df[col], errors='coerce').fillna(0)
 
-            # 💡 渲染表格 (排除店名、品項ID、金額等雜訊)
+           # 💡 渲染表格 (排除店名、品項ID、金額以及後端邏輯欄位 日期_dt)
             st.dataframe(
                 d_df.sort_values('日期', ascending=False),
                 use_container_width=True,
@@ -318,7 +318,13 @@ elif st.session_state.step == "view_history":
                     "廠商": st.column_config.TextColumn(width="small"),
                     "品項名稱": st.column_config.TextColumn(width="medium"),
                     "單位": st.column_config.TextColumn(width="minishort"),
-                    "店名": None, "品項ID": None, "單價": None, "總金額": None,
+                    # --- 💡 核心修正：將不需顯示的欄位全部設為 None ---
+                    "店名": None, 
+                    "品項ID": None, 
+                    "單價": None, 
+                    "總金額": None,
+                    "日期_dt": None, # 徹底移除最後一欄的邏輯日期
+                    # ------------------------------------------
                     "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                     "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
@@ -421,4 +427,5 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
