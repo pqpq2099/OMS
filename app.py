@@ -678,14 +678,14 @@ def page_analysis():
         key="ana_end"
     )
 
-    # ===== 空資料 =====
-    if a_df.empty:
-        st.error("❌ 無法從 Google Sheets 讀取 Records 資料。")
+    # ===== 篩選 =====
+    if filt.empty:
+        st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
 
         if st.button(
             "⬅️ 返回選單",
             use_container_width=True,
-            key="back_from_analysis_empty"
+            key="back_from_analysis_no_data"
         ):
             st.session_state.step = "select_vendor"
             st.rerun()
@@ -910,6 +910,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
