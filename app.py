@@ -374,15 +374,32 @@ elif st.session_state.step == "view_history":
                     "期間消耗": st.column_config.NumberColumn(format="%.1f", width="minishort"),
                 }
             )
-        with t2:
+with t2:
             if HAS_PLOTLY:
-                tgt = st.selectbox("分析品項", options=sorted(v_df['品項名稱'].unique()), key="chart_select")
-                p_df = v_df[v_df['品項名稱'] == tgt].copy()
+                # 💡 戰略核心：建立雙層連動篩選，避免直接顯示所有品項
+                col_v, col_i = st.columns(2)
+                
+                # 1. 第一層：選擇廠商 (從歷史數據中提取)
+                all_v_hist = sorted(v_df['廠商'].unique().tolist())
+                selected_v_h = col_v.selectbox("📦 1. 選擇廠商", options=all_v_hist, key="h_v_sel_unique")
+                
+                # 2. 第二層：根據【選定廠商】動態顯示品項
+                v_filtered_df = v_df[v_df['廠商'] == selected_v_h]
+                all_i_hist = sorted(v_filtered_df['品項名稱'].unique().tolist())
+                selected_i_h = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i_hist, key="h_i_sel_unique")
+                
+                # 3. 數據準備與圖表繪製
+                p_df = v_filtered_df[v_filtered_df['品項名稱'] == selected_i_h].copy()
                 p_df['日期'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
                 p_df = p_df.sort_values('日期')
-                fig = px.line(p_df, x="日期", y="期間消耗", markers=True, title=f"【{tgt}】消耗趨勢")
-                fig.update_layout(xaxis_type='category', hovermode="x unified")
-                st.plotly_chart(fig, use_container_width=True)
+                
+                if not p_df.empty:
+                    fig = px.line(p_df, x="日期", y="期間消耗", markers=True, 
+                                  title=f"📈 【{selected_i_h}】消耗趨勢")
+                    fig.update_layout(xaxis_type='category', hovermode="x unified")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("💡 目前選擇的區間內尚無消耗數據。")
                 
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 # --- 💡 覆蓋到此結束 ---r"))
@@ -480,3 +497,4 @@ elif st.session_state.step == "analysis":
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
