@@ -266,27 +266,14 @@ elif st.session_state.step == "fill_items":
     
     if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
 
-# --- 💡 修正後的位置：從這裡開始整塊覆蓋 ---
+# --- 歷史紀錄 (加入日期與廠商雙重篩選) ---
 elif st.session_state.step == "view_history":
-    # 💡 強力寬幅戰略：確保在手機上橫向空間最大化
+    # (此處保留原本的寬幅 CSS 樣式...)
     st.markdown("""
         <style>
-            /* 針對歷史紀錄頁面強力拉寬 */
-            [data-testid="stMainBlockContainer"] {
-                max-width: 95% !important; 
-                padding-left: 0.5rem !important;
-                padding-right: 0.5rem !important;
-            }
-            /* 極致壓縮表格間距 */
-            [data-testid="stDataFrame"] [role="gridcell"] {
-                padding: 1px 2px !important;
-                line-height: 1.0 !important;
-            }
-            /* 讓表頭也變小 */
-            [data-testid="stDataFrame"] [role="columnheader"] {
-                padding: 2px 2px !important;
-                font-size: 10px !important;
-            }
+            [data-testid="stMainBlockContainer"] { max-width: 95% !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+            [data-testid="stDataFrame"] [role="gridcell"] { padding: 1px 2px !important; line-height: 1.0 !important; }
+            [data-testid="stDataFrame"] [role="columnheader"] { padding: 2px 2px !important; font-size: 10px !important; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -294,26 +281,34 @@ elif st.session_state.step == "view_history":
     v_df = st.session_state.get('view_df', pd.DataFrame())
     
     if not v_df.empty:
+        # 💡 1. 建立日期篩選佈局 (對齊進銷存風格)
+        c_h_date1, c_h_date2 = st.columns(2)
+        h_start = c_h_date1.date_input("起始日期", value=date.today()-timedelta(7), key="h_start")
+        h_end = c_h_date2.date_input("結束日期", value=date.today(), key="h_end")
+
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         with t1:
-            # 1. 取得所有不重複的「廠商」清單
-            all_vendors = ["全部廠商"] + sorted(v_df['廠商'].unique().tolist())
+            # 💡 2. 進行時間維度過濾
+            v_df['日期_dt'] = pd.to_datetime(v_df['日期']).dt.date
+            d_df = v_df[(v_df['日期_dt'] >= h_start) & (v_df['日期_dt'] <= h_end)].copy()
             
-            # 2. 修改下拉清單顯示文字與選項
+            # 💡 3. 廠商下拉選單 (僅顯示該日期區間內的廠商)
+            all_vendors = ["全部廠商"] + sorted(d_df['廠商'].unique().tolist())
             selected_v = st.selectbox("請選擇廠商查看細節", options=all_vendors)
             
-            d_df = v_df.copy()
-            
-            # 3. 修改過濾條件：改用廠商欄位過濾
             if selected_v != "全部廠商":
                 d_df = d_df[d_df['廠商'] == selected_v]
-# 💡 關鍵修正：確保數值欄位是真正的 float 類型，%.1f 才會生效
+
+            # 💡 4. 數據格式化 (移除年份、轉化數值類型)
+            if '日期' in d_df.columns:
+                d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
+            
             num_cols = ["上次剩餘", "上次叫貨", "本次剩餘", "本次叫貨", "期間消耗"]
             for col in num_cols:
                 if col in d_df.columns:
                     d_df[col] = pd.to_numeric(d_df[col], errors='coerce').fillna(0)
 
-            # 💡 極窄化動態表格配置
+            # 💡 渲染表格 (排除店名、品項ID、金額等雜訊)
             st.dataframe(
                 d_df.sort_values('日期', ascending=False),
                 use_container_width=True,
@@ -426,3 +421,4 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
