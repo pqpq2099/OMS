@@ -797,7 +797,7 @@ def page_analysis():
             
             # ✅ 永遠顯示：放在最後一行（不要縮進任何 if/else）
             st.warning("DEBUG: button block reached")
-st.write("DEBUG step:", st.session_state.get("step"))
+            st.write("DEBUG step:", st.session_state.get("step"))
             st.button(
                 "⬅️ 返回選單",
                 on_click=lambda: st.session_state.update(step="select_vendor"),
@@ -846,6 +846,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
