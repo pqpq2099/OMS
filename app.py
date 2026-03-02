@@ -296,16 +296,17 @@ elif st.session_state.step == "view_history":
     if not v_df.empty:
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         with t1:
-            all_items_list = ["全部品項"] + sorted(v_df['品項名稱'].unique().tolist())
-            selected_item = st.selectbox("請選擇品項查看細節", options=all_items_list)
+            # 1. 取得所有不重複的「廠商」清單
+            all_vendors = ["全部廠商"] + sorted(v_df['廠商'].unique().tolist())
+            
+            # 2. 修改下拉清單顯示文字與選項
+            selected_v = st.selectbox("請選擇廠商查看細節", options=all_vendors)
             
             d_df = v_df.copy()
-            if selected_item != "全部品項":
-                d_df = d_df[d_df['品項名稱'] == selected_item]
-
-            # 💡 日期精簡處理
-            if '日期' in d_df.columns:
-                d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
+            
+            # 3. 修改過濾條件：改用廠商欄位過濾
+            if selected_v != "全部廠商":
+                d_df = d_df[d_df['廠商'] == selected_v]
 # 💡 關鍵修正：確保數值欄位是真正的 float 類型，%.1f 才會生效
             num_cols = ["上次剩餘", "上次叫貨", "本次剩餘", "本次叫貨", "期間消耗"]
             for col in num_cols:
@@ -414,4 +415,5 @@ elif st.session_state.step == "analysis":
             )
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
