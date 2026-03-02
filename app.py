@@ -738,37 +738,38 @@ PLOTLY_CONFIG = {
     ]
 }
 
-# ⭐ 這裡不能縮排
 if not HAS_PLOTLY:
     st.info("💡 Plotly 未啟用，無法顯示圖表。")
 else:
-        if not HAS_PLOTLY:
-            st.info("💡 Plotly 未啟用，無法顯示圖表。")
-        else:
-# 1) 依日期採購金額趨勢
-if ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
-    trend_df = final_filt.copy()
-    trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
+    # 1) 依日期採購金額趨勢
+    if ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
+        trend_df = final_filt.copy()
+        trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
 
-    trend_daily = (
-        trend_df.dropna(subset=["日期_dt"])
-        .groupby("日期_dt", as_index=False)["總金額"]
-        .sum()
-        .sort_values("日期_dt")
-    )
-
-    if trend_daily.empty:
-        st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
-    else:
-        fig1 = px.line(trend_daily, x="日期_dt", y="總金額", markers=True, title="📈 採購金額趨勢（依日期）")
-        fig1.update_layout(
-            hovermode="x unified",
-            xaxis_title="日期",
-            yaxis_title="採購金額",
-            dragmode=False
+        trend_daily = (
+            trend_df.dropna(subset=["日期_dt"])
+            .groupby("日期_dt", as_index=False)["總金額"]
+            .sum()
+            .sort_values("日期_dt")
         )
-        st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
+        if trend_daily.empty:
+            st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
+        else:
+            fig1 = px.line(
+                trend_daily,
+                x="日期_dt",
+                y="總金額",
+                markers=True,
+                title="📈 採購金額趨勢（依日期）"
+            )
+            fig1.update_layout(
+                hovermode="x unified",
+                xaxis_title="日期",
+                yaxis_title="採購金額",
+                dragmode=False
+            )
+            st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 # 2) 品項採購金額排行（Top 20）
 if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
     rank_df = (
@@ -837,6 +838,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
