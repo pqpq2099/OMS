@@ -703,18 +703,19 @@ def page_analysis():
         & (a_df["日期"] <= end)
     ].copy()
 
+# 這段必須在 def page_analysis(): 裡面，且在 if filt.empty: 這個區塊內
 if filt.empty:
     st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
 
-if st.button(
-    "⬅️ 返回選單",
-    use_container_width=True,
-    key="back_from_analysis_no_data"
-):
-    st.session_state.step = "select_vendor"
-    st.rerun()
+    if st.button(
+        "⬅️ 返回選單",
+        use_container_width=True,
+        key="back_from_analysis_no_data"
+    ):
+        st.session_state.step = "select_vendor"
+        st.rerun()
 
-        return
+    return
     # ============================================================
     # [E6.3] Vendor / Item Dropdown Filters
     # ============================================================
@@ -910,6 +911,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
