@@ -306,16 +306,27 @@ elif st.session_state.step == "fill_items":
             with c3:
                 t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None, label_visibility="collapsed")
             
+# --- 核心計算與數據封裝 ---
             t_s_v = t_s if t_s is not None else 0.0
             t_p_v = t_p if t_p is not None else 0.0
-            usage = (p_s + p_p) - t_s_v
-            temp_data.append([str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))])
+            usage = p_s - t_s_v  # 💡 戰略修正：消耗 = 上次結餘 - 本次庫存
+            
+            temp_data.append([
+                str(st.session_state.record_date), st.session_state.store, st.session_state.vendor, 
+                f_id, d_n, unit, p_s, p_p, t_s_v, t_p_v, usage, float(price), float(round(t_p_v * price, 1))
+            ])
 
+        # --- 儲存觸發區 (必須在 for 迴圈外，但在 form 之內) ---
         if st.form_submit_button("💾 儲存並同步數據", use_container_width=True):
-            valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
+            # 💡 戰略強化：放寬門檻，只要「有填寫庫存(不為None)」或「有進貨」就存檔，確保數據鏈連續
+            valid = [d for d in temp_data if d[8] >= 0 or d[9] > 0]
+            
             if valid and sync_to_cloud(pd.DataFrame(valid)):
-                st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
+                st.success("✅ 儲存成功")
+                st.session_state.step = "select_vendor"
+                st.rerun()
                 
+    # --- 導覽區 (必須在 form 之外) ---
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
     
 # --- 歷史紀錄 (全覽優先 + 日期置前版) ---
@@ -549,6 +560,7 @@ elif st.session_state.step == "analysis":
             )
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
+
 
 
 
