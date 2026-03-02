@@ -375,6 +375,8 @@ elif st.session_state.step == "view_history":
 # --- 💡 覆蓋到此結束 ---r"))
 # --- 今日進貨明細 (強化發送版) ---
 elif st.session_state.step == "export":
+    # --- 今日進貨明細 (確認按鈕放在預覽區域下方) ---
+elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = get_cloud_data()
     week_map = {0:'一', 1:'二', 2:'三', 3:'四', 4:'五', 5:'六', 6:'日'}
@@ -382,7 +384,6 @@ elif st.session_state.step == "export":
     header_date = f"{delivery_date.month}/{delivery_date.day}({week_map[delivery_date.weekday()]})"
     
     if not hist_df.empty:
-        # 過濾出當天且有叫貨的紀錄
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & 
                        (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & 
                        (hist_df['本次叫貨'] > 0)]
@@ -397,12 +398,12 @@ elif st.session_state.step == "export":
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             
-            # 1. 顯示預覽區域
+            # 1. 這是原本就有的預覽框
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
             
-            # 💡 2. 戰略按鈕：一鍵推播至 LINE (新加入)
+            # 💡 2. 這是「戰略插入」的發送按鈕：放在預覽框的正下方
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
-                # 這裡會呼叫我們剛才寫好的 send_line_message 函式
+                # 這裡會扣下扳機，呼叫上面的 send_line_message
                 if send_line_message(output):
                     st.success("✅ 已成功推送至 LINE 官方帳號！")
                 else:
@@ -410,7 +411,8 @@ elif st.session_state.step == "export":
         else:
             st.info("💡 今日尚無叫貨紀錄。")
             
-    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+    # 返回選單按鈕放在最下面
+    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)True)
 
 # --- 進銷存分析 (加入廠商篩選維度) ---
 elif st.session_state.step == "analysis":
@@ -475,6 +477,7 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
