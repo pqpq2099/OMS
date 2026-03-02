@@ -329,24 +329,46 @@ elif st.session_state.step == "view_history":
 
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         
-        with t1:
+with t1:
             # A. 時間維度過濾
             v_df['日期_dt'] = pd.to_datetime(v_df['日期']).dt.date
             d_df = v_df[(v_df['日期_dt'] >= h_start) & (v_df['日期_dt'] <= h_end)].copy()
             
-            # B. 廠商下拉選單
+            # B. 廠商下拉選單 (僅顯示該日期區間內的廠商)
             all_vendors = ["全部廠商"] + sorted(d_df['廠商'].unique().tolist())
             selected_v = st.selectbox("請選擇廠商查看細節", options=all_vendors, key="h_v_detail_sel")
             
             if selected_v != "全部廠商":
                 d_df = d_df[d_df['廠商'] == selected_v]
 
-            # C. 格式化日期顯示
+            # C. 數據格式化與顯示處理
             if '日期' in d_df.columns:
                 d_df['日期'] = pd.to_datetime(d_df['日期']).dt.strftime('%m-%d')
             
-            st.dataframe(d_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True)
-
+            # 💡 戰略回溯：物理隱藏不必要的後端與金額欄位，維持介面清爽
+            st.dataframe(
+                d_df.sort_values('日期', ascending=False),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "日期": st.column_config.TextColumn(width="minishort"),
+                    "廠商": st.column_config.TextColumn(width="small"),
+                    "品項名稱": st.column_config.TextColumn(width="medium"),
+                    "單位": st.column_config.TextColumn(width="minishort"),
+                    # --- 💡 核心回溯：徹底移除不需要顯示的欄位 ---
+                    "店名": None, 
+                    "品項ID": None, 
+                    "單價": None, 
+                    "總金額": None,
+                    "日期_dt": None, # 徹底隱藏導致混亂的邏輯日期欄位
+                    # ------------------------------------------
+                    "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                }
+            )
         with t2:
             if HAS_PLOTLY:
                 # 💡 戰略核心：雙層連動佈局
@@ -478,4 +500,5 @@ elif st.session_state.step == "analysis":
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
