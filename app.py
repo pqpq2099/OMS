@@ -767,10 +767,10 @@ with t_trend:
                 fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
                 st.plotly_chart(fig2, use_container_width=True)
   
-    if final_filt.empty:
-        st.info("💡 此篩選條件下沒有資料。")
-        st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-        return
+            if final_filt.empty:
+                st.info("💡 此篩選條件下沒有資料。")
+            st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+                return
 
     # ============================================================
     # [E6.7] Back
@@ -824,5 +824,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
