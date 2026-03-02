@@ -429,48 +429,54 @@ elif st.session_state.step == "export":
     # E. 返回按鈕 (這是在 if not hist_df.empty 之外，與 if 對齊)
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
     
-# --- 步驟 5：進銷存分析 (最終偵錯版) ---
+# --- 步驟 5：進銷存分析 (連動診斷版) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
-    a_df = get_worksheet_data("Records")
     
-    # 1. 建立日期篩選
+    # 1. 抓取數據與設定日期
+    a_df = get_worksheet_data("Records")
     c_date1, c_date2 = st.columns(2)
-    start = c_date1.date_input("起始日期", value=date.today()-timedelta(14)) # 預設拉長到14天
-    end = c_date2.date_input("結束日期", value=date.today())
+    # 💡 戰略調整：預設起始日期拉長到 14 天前，確保能抓到資料
+    start = c_date1.date_input("起始日期", value=date.today()-timedelta(14), key="ana_start")
+    end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
     
     if a_df.empty:
-        st.error("❌ 無法從資料庫讀取 Records，請檢查 Google Sheets 名稱是否正確。")
+        st.error("❌ 無法從 Google Sheets 讀取 Records 資料，請檢查工作表名稱。")
     else:
-        # A. 數據標準化
+        # A. 數據清洗
         a_df['日期'] = pd.to_datetime(a_df['日期']).dt.date
-        a_df['店名'] = a_df['店名'].astype(str).str.strip()
-        
-        # B. 執行過濾
         current_store = str(st.session_state.store).strip()
-        filt = a_df[(a_df['店名'] == current_store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)].copy()
         
-        # 💡 偵錯工具：如果沒資料，告訴我們為什麼
+        # B. 執行過濾 (店名 + 日期)
+        filt = a_df[(a_df['店名'].astype(str).str.strip() == current_store) & 
+                       (a_df['日期'] >= start) & (a_df['日期'] <= end)].copy()
+        
+        # 🔍 診斷模式：如果沒資料，顯示原因
         if filt.empty:
-            st.warning(f"⚠️ 在 {start} 到 {end} 之間，【{current_store}】沒有任何紀錄。")
-            st.info("請檢查：1. 資料庫日期格式是否為 YYYY-MM-DD 2. 店名是否完全吻合")
+            st.warning(f"⚠️ 在 {start} 到 {end} 之間，【{current_store}】查無紀錄。")
+            st.info(f"💡 系統偵測到 Records 總共有 {len(a_df)} 筆資料，請確認 Google Sheets 裡的「店名」是否真的叫「{current_store}」（包含空格）。")
         else:
             st.markdown("---")
-            # C. 雙層連動選單
+            # C. 雙層連動選單 (解決「沒有清單」的關鍵)
             all_v = sorted(filt['廠商'].unique().tolist())
-            selected_v = st.selectbox("📦 1. 選擇廠商", options=all_v, key="v_sel")
             
+            # 💡 戰略布局：將選單放在 Column 中確保視覺穩定
+            v_col, i_col = st.columns(2)
+            selected_v = v_col.selectbox("📦 1. 選擇廠商", options=all_v, key="v_select_box")
+            
+            # 根據廠商過濾品項
             v_filt = filt[filt['廠商'] == selected_v].copy()
             all_items = sorted(v_filt['品項名稱'].unique().tolist())
-            selected_item = st.selectbox("🏷️ 2. 選擇品項", options=all_items, key="i_sel")
+            selected_item = i_col.selectbox("🏷️ 2. 選擇品項", options=all_items, key="i_select_box")
             
-            # D. 圖表與看板
+            # D. 趨勢圖表顯示
             if HAS_PLOTLY and not v_filt.empty:
                 p_df = v_filt[v_filt['品項名稱'] == selected_item].sort_values('日期')
                 p_df['日期顯示'] = p_df['日期'].apply(lambda x: x.strftime('%m-%d'))
                 
                 fig = px.line(p_df, x="日期顯示", y="期間消耗", markers=True, 
                               title=f"📈 【{selected_item}】消耗趨勢")
+                fig.update_layout(xaxis_title="日期", yaxis_title="消耗量", hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
 
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
