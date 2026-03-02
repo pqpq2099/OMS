@@ -670,11 +670,18 @@ def page_analysis():
     start = c_date1.date_input("起始日期", value=date.today() - timedelta(14), key="ana_start")
     end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
 
-    if a_df.empty:
-        st.error("❌ 無法從 Google Sheets 讀取 Records 資料。")
-        st.("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-        return
+if a_df.empty:
+    st.error("❌ 無法從 Google Sheets 讀取 Records 資料。")
 
+    if st.button(
+        "⬅️ 返回選單",
+        use_container_width=True,
+        key="back_from_analysis_empty"
+    ):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+    return
     # ============================================================
     # [E6.2] Clean + Filter by Store + Date
     # ============================================================
@@ -887,6 +894,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
