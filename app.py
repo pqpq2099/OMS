@@ -631,11 +631,15 @@ def page_export():
 
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-            if st.("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
-                if send_line_message(output):
-                    st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
-                else:
-                    st.error("❌ 發送失敗，請檢查該店 ID 已填入 Secrets 且機器人在群組內。")
+if st.button(
+    "🚀 直接發送明細至 LINE",
+    type="primary",
+    use_container_width=True
+):
+    if send_line_message(output):
+        st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
+    else:
+        st.error("❌ 發送失敗，請檢查該店 ID 已填入 Secrets 且機器人在群組內。")
         else:
             st.info("💡 今日尚無叫貨紀錄。")
 
@@ -872,6 +876,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
