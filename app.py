@@ -280,22 +280,22 @@ def page_select_vendor(df_i: pd.DataFrame | None):
         for i in range(0, len(vendors), 2):
             cols = st.columns(2)
 
-            with cols[0]:
-                v_left = vendors[i]
-                if st.(f"📦 {v_left}", key=f"v_{v_left}", use_container_width=True):
-                    st.session_state.vendor = v_left
-                    st.session_state.history_df = get_cloud_data()
-                    st.session_state.step = "fill_items"
-                    st.rerun()
+with cols[0]:
+    v_left = vendors[i]
+    if st.button(f"📦 {v_left}", key=f"v_{v_left}", use_container_width=True):
+        st.session_state.vendor = v_left
+        st.session_state.history_df = get_cloud_data()
+        st.session_state.step = "fill_items"
+        st.rerun()
 
-            if i + 1 < len(vendors):
-                with cols[1]:
-                    v_right = vendors[i + 1]
-                    if st.(f"📦 {v_right}", key=f"v_{v_right}", use_container_width=True):
-                        st.session_state.vendor = v_right
-                        st.session_state.history_df = get_cloud_data()
-                        st.session_state.step = "fill_items"
-                        st.rerun()
+if i + 1 < len(vendors):
+    with cols[1]:
+        v_right = vendors[i + 1]
+        if st.button(f"📦 {v_right}", key=f"v_{v_right}", use_container_width=True):
+            st.session_state.vendor = v_right
+            st.session_state.history_df = get_cloud_data()
+            st.session_state.step = "fill_items"
+            st.rerun()
 
 # 功能中心
 st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
@@ -824,6 +824,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
