@@ -631,20 +631,31 @@ def page_export():
 
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-if st.button(
-    "🚀 直接發送明細至 LINE",
-    type="primary",
-    use_container_width=True
-):
-    if send_line_message(output):
-        st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
-    else:
-        st.error("❌ 發送失敗，請檢查該店 ID 已填入 Secrets 且機器人在群組內。")
+# 有叫貨紀錄時才顯示發送按鈕
+if not recs.empty:
+
+    if st.button(
+        "🚀 直接發送明細至 LINE",
+        type="primary",
+        use_container_width=True
+    ):
+        if send_line_message(output):
+            st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
         else:
-            st.info("💡 今日尚無叫貨紀錄。")
+            st.error("❌ 發送失敗，請檢查該店 ID 已填入 Secrets 且機器人在群組內。")
 
-    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
+else:
+    st.info("💡 今日尚無叫貨紀錄。")
 
+
+# 返回鍵（獨立，不要塞進 else）
+if st.button(
+    "⬅️ 返回選單",
+    use_container_width=True,
+    key="back_to_vendor_export"
+):
+    st.session_state.step = "select_vendor"
+    st.rerun()
 # ============================================================
 # [E6] analysis - 進銷存分析中心（含圖表）
 # ============================================================
@@ -876,6 +887,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
