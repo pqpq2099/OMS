@@ -625,14 +625,14 @@ def page_analysis():
     col_v, col_i = st.columns(2)
 
     all_v = ["全部廠商"] + sorted(filt["廠商"].unique().tolist())
-    selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_v_box")
+    selected_v = col_v.selectbox(...)
 
     v_filt = filt.copy()
     if selected_v != "全部廠商":
         v_filt = v_filt[v_filt["廠商"] == selected_v]
 
     all_i = ["全部品項"] + sorted(v_filt["品項名稱"].unique().tolist())
-    selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_i_box")
+    selected_item = col_i.selectbox(...)
 
     final_filt = v_filt.copy()
     if selected_item != "全部品項":
@@ -657,7 +657,55 @@ def page_analysis():
         """,
         unsafe_allow_html=True,
     )
+# ============================================================
+# [E6.4] Charts - 採購金額圖表（依你的篩選結果 final_filt）
+# ============================================================
+st.write("---")
+st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
 
+# (1) 依日期：採購金額趨勢
+trend_df = final_filt.copy()
+trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
+
+trend_daily = (
+    trend_df.dropna(subset=["日期_dt"])
+    .groupby("日期_dt", as_index=False)["總金額"]
+    .sum()
+    .sort_values("日期_dt")
+)
+
+if trend_daily.empty:
+    st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
+else:
+    fig1 = px.line(
+        trend_daily,
+        x="日期_dt",
+        y="總金額",
+        markers=True,
+        title="📈 採購金額趨勢（依日期）"
+    )
+    fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
+    st.plotly_chart(fig1, use_container_width=True)
+
+# (2) 期間內：品項採購金額排行（Top 20）
+rank_df = (
+    final_filt.groupby("品項名稱", as_index=False)["總金額"]
+    .sum()
+    .sort_values("總金額", ascending=False)
+    .head(20)
+)
+
+if rank_df.empty:
+    st.info("💡 此篩選條件下沒有可排行的資料。")
+else:
+    fig2 = px.bar(
+        rank_df,
+        x="品項名稱",
+        y="總金額",
+        title="📊 品項採購金額排行（Top 20）"
+    )
+    fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
+    st.plotly_chart(fig2, use_container_width=True)
     summ_df = final_filt.groupby(["廠商", "品項名稱", "單位", "單價"]).agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"}).reset_index()
     stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict()
     summ_df["期末庫存"] = summ_df["品項名稱"].map(stock_map).fillna(0)
@@ -721,6 +769,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
