@@ -715,32 +715,32 @@ if filt.empty:
         st.session_state.step = "select_vendor"
         st.rerun()
 
-    return
-    # ============================================================
-    # [E6.3] Vendor / Item Dropdown Filters
-    # ============================================================
-    st.markdown("---")
-    col_v, col_i = st.columns(2)
+return
+# ============================================================
+# [E6.3] Vendor / Item Dropdown Filters
+# ============================================================
+st.markdown("---")
+col_v, col_i = st.columns(2)
 
-    all_v = ["全部廠商"] + sorted(filt["廠商"].dropna().unique().tolist())
-    selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_v_box")
+all_v = ["全部廠商"] + sorted(filt["廠商"].dropna().unique().tolist())
+selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_v_box")
 
-    v_filt = filt.copy()
-    if selected_v != "全部廠商":
-        v_filt = v_filt[v_filt["廠商"] == selected_v]
+v_filt = filt.copy()
+if selected_v != "全部廠商":
+    v_filt = v_filt[v_filt["廠商"] == selected_v]
 
-    all_i = ["全部品項"] + sorted(v_filt["品項名稱"].dropna().unique().tolist())
-    selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_i_box")
+all_i = ["全部品項"] + sorted(v_filt["品項名稱"].dropna().unique().tolist())
+selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_i_box")
 
-    final_filt = v_filt.copy()
-    if selected_item != "全部品項":
+final_filt = v_filt.copy()
+if selected_item != "全部品項":
         final_filt = final_filt[final_filt["品項名稱"] == selected_item]
 
-    # ============================================================
-    # [E6.4] Summary Cards
-    # ============================================================
-    total_buy = final_filt["總金額"].sum() if "總金額" in final_filt.columns else 0
-    last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
+# ============================================================
+# [E6.4] Summary Cards
+# ============================================================
+total_buy = final_filt["總金額"].sum() if "總金額" in final_filt.columns else 0
+last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
     total_stock_value = (
         (last_stock["本次剩餘"] * last_stock["單價"]).sum()
         if ("本次剩餘" in last_stock.columns and "單價" in last_stock.columns)
@@ -911,6 +911,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
