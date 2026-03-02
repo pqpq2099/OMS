@@ -308,7 +308,7 @@ elif st.session_state.step == "fill_items":
                 
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
     
-# --- 歷史紀錄 (最終結構對齊版) ---
+# --- 歷史紀錄 (全覽優先 + 日期置前版) ---
 elif st.session_state.step == "view_history":
     st.markdown("""
         <style>
@@ -330,63 +330,81 @@ elif st.session_state.step == "view_history":
         t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
         
         with t1:
-            # 💡 明細分頁邏輯
+            # A. 數據清洗與時間過濾
             v_df['日期_dt'] = pd.to_datetime(v_df['日期']).dt.date
             temp_filt = v_df[(v_df['日期_dt'] >= h_start) & (v_df['日期_dt'] <= h_end)].copy()
             
             if not temp_filt.empty:
                 col_v, col_i = st.columns(2)
-                # 廠商篩選
-                all_v_m = ["全部廠商"] + sorted(temp_filt['廠商'].unique().tolist())
-                sel_v_m = col_v.selectbox("📦 1. 選擇廠商", options=all_v_m, key="h_v_m_sel")
                 
-                # 品項篩選連動
+                # 💡 戰略要求 1：預設全部廠商
+                all_v_m = ["全部廠商"] + sorted(temp_filt['廠商'].unique().tolist())
+                sel_v_m = col_v.selectbox("📦 1. 選擇廠商", options=all_v_m, index=0, key="h_v_m_sel")
+                
+                # 💡 戰略要求 1：預設全部品項 (建立連動)
                 f_df = temp_filt.copy()
                 if sel_v_m != "全部廠商":
                     f_df = f_df[f_df['廠商'] == sel_v_m]
                 
                 all_i_m = ["全部品項"] + sorted(f_df['品項名稱'].unique().tolist())
-                sel_i_m = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i_m, key="h_i_m_sel")
+                sel_i_m = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i_m, index=0, key="h_i_m_sel")
                 
                 if sel_i_m != "全部品項":
                     f_df = f_df[f_df['品項名稱'] == sel_i_m]
 
+                # 💡 戰略要求 2：日期格式化 (只顯示月日) 並置於首位
                 if '日期' in f_df.columns:
-                    f_df['日期顯示'] = pd.to_datetime(f_df['日期']).dt.strftime('%m-%d')
+                    # 先將日期轉為月-日字串，並新增一欄「顯示日期」
+                    f_df['顯示日期'] = pd.to_datetime(f_df['日期']).dt.strftime('%m-%d')
                 
-                st.dataframe(f_df.sort_values('日期', ascending=False), use_container_width=True, hide_index=True,
-                            column_config={"店名": None, "品項ID": None, "單價": None, "總金額": None, "日期_dt": None, "日期": None})
+                # 重新定義顯示欄位順序：顯示日期置於第一個
+                cols_order = ['顯示日期', '廠商', '品項名稱', '單位', '上次剩餘', '上次叫貨', '本次剩餘', '本次叫貨', '期間消耗']
+                # 只選取存在的欄位
+                final_cols = [c for c in cols_order if c in f_df.columns]
+                
+                st.dataframe(
+                    f_df[final_cols].sort_values('顯示日期', ascending=False), 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "顯示日期": st.column_config.TextColumn("日期", width="minishort"),
+                        "廠商": st.column_config.TextColumn(width="small"),
+                        "品項名稱": st.column_config.TextColumn(width="medium"),
+                        "單位": st.column_config.TextColumn(width="minishort"),
+                        "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                        "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                        "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                        "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                        "期間消耗": st.column_config.NumberColumn(format="%.1f", width="minishort"),
+                    }
+                )
             else:
                 st.info("💡 此區間內無紀錄。")
 
         with t2:
-            # 💡 趨勢圖分頁邏輯
             if HAS_PLOTLY:
                 col_v_h, col_i_h = st.columns(2)
-                # 1. 廠商選單
                 all_v_h = sorted(v_df['廠商'].unique().tolist())
                 sel_v_h = col_v_h.selectbox("📦 1. 選擇廠商", options=all_v_h, key="h_v_t2")
                 
-                # 2. 品項選單
                 v_filtered = v_df[v_df['廠商'] == sel_v_h]
                 all_i_h = sorted(v_filtered['品項名稱'].unique().tolist())
                 sel_i_h = col_i_h.selectbox("🏷️ 2. 選擇品項", options=all_i_h, key="h_i_t2")
                 
-                # 3. 繪圖 (年月日鎖定)
                 p_df = v_filtered[v_filtered['品項名稱'] == sel_i_h].copy()
-                p_df['日期顯示'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
-                p_df = p_df.sort_values('日期')
+                # 趨勢圖仍保留年份確保排序正確，但顯示可優化
+                p_df['日期標記'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
+                p_df = p_df.sort_values('日期標記')
                 
                 if not p_df.empty:
-                    fig = px.line(p_df, x="日期顯示", y="期間消耗", markers=True, title=f"📈 【{sel_i_h}】消耗趨勢")
-                    fig.update_layout(xaxis_type='category', hovermode="x unified")
+                    fig = px.line(p_df, x="日期標記", y="期間消耗", markers=True, title=f"📈 【{sel_i_h}】消耗趨勢")
+                    fig.update_layout(xaxis_type='category', hovermode="x unified", xaxis_title="日期")
                     st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("💡 尚無歷史紀錄可供查看。")
 
-    # 🚀 返回按鈕 (確保對齊 elif 層級)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_hist_final")
-# --- 💡 覆蓋到此結束 ---r"))
+    
 # --- 今日進貨明細 (強化發送版) ---
 # --- 步驟 4：今日進貨明細 (智慧對照版) ---
 elif st.session_state.step == "export":
@@ -490,6 +508,7 @@ elif st.session_state.step == "analysis":
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
