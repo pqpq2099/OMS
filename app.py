@@ -485,16 +485,41 @@ if st.button(
     use_container_width=True,
     key="back_from_history_empty"
 ):
-    st.session_state.step = "select_vendor"
-    st.rerun()
+st.session_state.step = "select_vendor"
+st.rerun()
 
 return
+def page_view_history():
+
+    st.title(f"📜 {st.session_state.store} 歷史庫")
+    v_df = st.session_state.get("view_df", pd.DataFrame())
+
+    # ===== 沒資料 =====
+    if v_df.empty:
+        st.info("💡 尚無歷史紀錄可供查看。")
+
+        if st.button("⬅️ 返回", use_container_width=True):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+
+        return   # ← 只結束 if 區塊流程
+
+    # ===== 有資料（這裡不能縮排）=====
     c_h_date1, c_h_date2 = st.columns(2)
-    h_start = c_h_date1.date_input("起始日期", value=date.today() - timedelta(7), key="h_start")
-    h_end = c_h_date2.date_input("結束日期", value=date.today(), key="h_end")
+
+    h_start = c_h_date1.date_input(
+        "起始日期",
+        value=date.today() - timedelta(7),
+        key="h_start"
+    )
+
+    h_end = c_h_date2.date_input(
+        "結束日期",
+        value=date.today(),
+        key="h_end"
+    )
 
     t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
-
     with t1:
         v_df["日期_dt"] = pd.to_datetime(v_df["日期"]).dt.date
         temp_filt = v_df[(v_df["日期_dt"] >= h_start) & (v_df["日期_dt"] <= h_end)].copy()
@@ -835,6 +860,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
