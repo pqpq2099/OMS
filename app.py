@@ -719,46 +719,76 @@ def page_analysis():
     with t_trend:
         st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
 
+# ============================================================
+# Plotly 報表模式（只留圖片與下載）
+# ============================================================
+PLOTLY_CONFIG = {
+    "displayModeBar": True,
+    "displaylogo": False,
+    "scrollZoom": False,
+    "doubleClick": False,
+    "modeBarButtonsToRemove": [
+        "zoom2d", "pan2d", "select2d", "lasso2d",
+        "zoomIn2d", "zoomOut2d",
+        "autoScale2d", "resetScale2d",
+        "hoverClosestCartesian",
+        "hoverCompareCartesian",
+        "toggleSpikelines"
+    ]
+}
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未啟用，無法顯示圖表。")
         else:
-            # 1) 依日期採購金額趨勢
-            if ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
-                trend_df = final_filt.copy()
-                trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
+# 1) 依日期採購金額趨勢
+if ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
+    trend_df = final_filt.copy()
+    trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
 
-                trend_daily = (
-                    trend_df.dropna(subset=["日期_dt"])
-                    .groupby("日期_dt", as_index=False)["總金額"]
-                    .sum()
-                    .sort_values("日期_dt")
-                )
+    trend_daily = (
+        trend_df.dropna(subset=["日期_dt"])
+        .groupby("日期_dt", as_index=False)["總金額"]
+        .sum()
+        .sort_values("日期_dt")
+    )
 
-                if trend_daily.empty:
-                    st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
-                else:
-                    fig1 = px.line(trend_daily, x="日期_dt", y="總金額", markers=True, title="📈 採購金額趨勢（依日期）")
-                    fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
-                    st.plotly_chart(fig1, use_container_width=True)
+    if trend_daily.empty:
+        st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
+    else:
+        fig1 = px.line(trend_daily, x="日期_dt", y="總金額", markers=True, title="📈 採購金額趨勢（依日期）")
+        fig1.update_layout(
+            hovermode="x unified",
+            xaxis_title="日期",
+            yaxis_title="採購金額",
+            dragmode=False
+        )
+        st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
-            # 2) 品項採購金額排行（Top 20）
-            if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
-                rank_df = (
-                    final_filt.groupby("品項名稱", as_index=False)["總金額"]
-                    .sum()
-                    .sort_values("總金額", ascending=False)
-                    .head(20)
-                )
+# 2) 品項採購金額排行（Top 20）
+if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
+    rank_df = (
+        final_filt.groupby("品項名稱", as_index=False)["總金額"]
+        .sum()
+        .sort_values("總金額", ascending=False)
+        .head(20)
+    )
 
-                if rank_df.empty:
-                    st.info("💡 此篩選條件下沒有可排行的資料。")
-                else:
-                    fig2 = px.bar(rank_df, x="品項名稱", y="總金額", title="📊 品項採購金額排行（Top 20）")
-                    fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
-                    st.plotly_chart(fig2, use_container_width=True)
+    if rank_df.empty:
+        st.info("💡 此篩選條件下沒有可排行的資料。")
+    else:
+        fig2 = px.bar(rank_df, x="品項名稱", y="總金額", title="📊 品項採購金額排行（Top 20）")
+        fig2.update_layout(
+            xaxis_title="品項",
+            yaxis_title="採購金額",
+            dragmode=False
+        )
+        st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 
-    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
-    
+st.button(
+    "⬅️ 返回選單",
+    on_click=lambda: st.session_state.update(step="select_vendor"),
+    use_container_width=True,
+    key="back_ana_v2"
+)    
 # ============================================================
 # [F1] Router - 不改你原本 step 架構，只是集中管理
 # ============================================================
@@ -801,6 +831,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
