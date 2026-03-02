@@ -769,7 +769,7 @@ with t_trend:
   
             if final_filt.empty:
                 st.info("💡 此篩選條件下沒有資料。")
-            st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+                st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
                 return
 
     # ============================================================
@@ -824,6 +824,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
