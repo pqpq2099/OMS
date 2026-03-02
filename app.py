@@ -167,7 +167,7 @@ elif st.session_state.step == "select_vendor":
 
 # --- 步驟 3：填寫盤點頁面 (核心對齊區) ---
 elif st.session_state.step == "fill_items":
-    # 💡 物理單排鎖定 CSS (保持您原本的樣式)
+    # 💡 物理單排鎖定 CSS
     st.markdown("""
         <style>
         .block-container { padding-top: 2rem !important; padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
@@ -181,11 +181,10 @@ elif st.session_state.step == "fill_items":
     
     st.title(f"📝 {st.session_state.vendor}")
     
-    # --- 💡 以下是蓋掉的部分：改用靜態表格防止亂碼 ---
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-# --- 💡 庫存頁面：上次數據參考表格 (鎖定小數點一位) ---
+    # --- 💡 庫存頁面：上次數據參考表格 (鎖定小數點一位) ---
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -194,25 +193,22 @@ elif st.session_state.step == "fill_items":
                            ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_name)))]
             if not past.empty:
                 latest = past.iloc[-1]
-                
-                # 💡 核心修正：強制轉換為 float，並使用 round(1) 鎖定一位小數
-                # 解決截圖中出現 1.0000 的問題
                 ref_list.append({
                     "品項名稱": f_name, 
                     "上次叫貨": round(float(latest.get('本次叫貨', 0)), 1), 
                     "期間消耗": round(float(latest.get('期間消耗', 0)), 1)
                 })
         
-if ref_list:
+        if ref_list:
             st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
             display_ref_df = pd.DataFrame(ref_list)
-            
-            # 💡 關鍵修正：將數字欄位轉為「一位小數的字串」，徹底消滅 1.0000
+            # 💡 強制轉換為字串鎖定一位小數，防止 1.0000 出現
             for col in ["上次叫貨", "期間消耗"]:
                 display_ref_df[col] = display_ref_df[col].apply(lambda x: f"{x:.1f}")
-            
             st.table(display_ref_df)
-    # (後續填寫表單內容保持不變...)
+
+    st.write("---")
+    # 💡 這裡就是您報錯的地方，現在已經精確對齊
     h1, h2, h3 = st.columns([6, 1, 1])
     h1.write("<b>品項名稱</b>", unsafe_allow_html=True)
     h2.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
@@ -227,7 +223,6 @@ if ref_list:
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
-            # 獲取上次數據
             p_s, p_p = 0.0, 0.0
             if not hist_df.empty:
                 past = hist_df[(hist_df['店名'] == st.session_state.store) & 
@@ -243,13 +238,11 @@ if ref_list:
                 else:
                     st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 
-                # 即使移除大表格，小提示標註依然保留在名稱下以利對帳
-                p_sum = p_s + p_p; p_show = int(p_sum) if p_sum.is_integer() else round(p_sum, 1)
-                st.caption(f"{unit} (前結:{p_show})")
+                p_sum = p_s + p_p; p_show = round(p_sum, 1)
+                st.caption(f"{unit} (前結:{p_show:.1f})") # 這裡也同步小數點一位
                 last_item_display_name = d_n
             
             with c2:
-                # 使用 label_visibility="collapsed" 是解決文字重疊的關鍵戰略
                 t_s = st.number_input("庫", min_value=0.0, step=0.1, key=f"s_{f_id}", format="%g", value=None, label_visibility="collapsed")
             with c3:
                 t_p = st.number_input("進", min_value=0.0, step=0.1, key=f"p_{f_id}", format="%g", value=None, label_visibility="collapsed")
@@ -389,3 +382,4 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
