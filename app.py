@@ -63,26 +63,19 @@ def sync_to_cloud(df_to_save):
 st.set_page_config(page_title="OMS 系統", layout="centered")
 st.markdown("""
     <style>
-    /* 💡 強力壓制：隱藏序號列並強制表格縮小、變細 */
-    [data-testid="stTable"] td:nth-child(1), 
-    [data-testid="stTable"] th:nth-child(1) {
-        display: none !important;
-    }
-
-    /* 強制字體 11px、權重 400 (變細)、間距壓縮 */
-    [data-testid="stTable"] td, 
-    [data-testid="stTable"] th {
-        font-size: 11px !important;
-        font-weight: 400 !important;
-        padding: 4px 2px !important;
-        line-height: 1.1 !important;
-        letter-spacing: -0.2px !important;
-    }
-
-    /* 確保標題不要太粗 */
+    /* 💡 修正手機端標題看不見的問題：強制顯色 */
     [data-testid="stTable"] th {
         font-weight: 600 !important;
+        background-color: #f0f2f6 !important; /* 淺灰色背景 */
+        color: #1f77b4 !important;           /* 💡 強制深藍色文字，確保白底能看見 */
+        text-align: left !important;
+        padding: 6px 4px !important;
+    }
+
+    /* 同步修正動態表格 (st.dataframe) 的表頭顏色 */
+    [data-testid="stDataFrame"] [role="columnheader"] {
         background-color: #f0f2f6 !important;
+        color: #1f77b4 !important;           /* 💡 確保動態表頭也是深藍色 */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -382,4 +375,5 @@ elif st.session_state.step == "analysis":
             """, unsafe_allow_html=True)
             st.dataframe(summ, use_container_width=True, hide_index=True)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
+
 
