@@ -754,7 +754,7 @@ with t_trend:
 if final_filt.empty:
     st.info("💡 此篩選條件下沒有資料。")
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-    return
+        return
 
 # 2) 品項採購金額排行（Top 20）
 if ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
@@ -823,6 +823,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
