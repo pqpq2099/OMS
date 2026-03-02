@@ -458,18 +458,24 @@ elif st.session_state.step == "analysis":
             all_items = sorted(v_filt['品項名稱'].unique().tolist())
             selected_item = i_col.selectbox("🏷️ 2. 選擇品項", options=all_items, key="i_select_box")
             
-            # D. 趨勢圖表顯示
+            # D. 趨勢圖表顯示 (年月日格式鎖定版)
             if HAS_PLOTLY and not v_filt.empty:
-                p_df = v_filt[v_filt['品項名稱'] == selected_item].sort_values('日期')
-                p_df['日期顯示'] = p_df['日期'].apply(lambda x: x.strftime('%m-%d'))
+                p_df = v_filt[v_filt['品項名稱'] == selected_item].copy()
+                # 💡 核心修正 1：確保日期轉為 datetime 格式後，再轉為 年-月-日 文字
+                p_df['日期顯示'] = pd.to_datetime(p_df['日期']).dt.strftime('%Y-%m-%d')
+                p_df = p_df.sort_values('日期')
                 
                 fig = px.line(p_df, x="日期顯示", y="期間消耗", markers=True, 
                               title=f"📈 【{selected_item}】消耗趨勢")
-                fig.update_layout(xaxis_title="日期", yaxis_title="消耗量", hovermode="x unified")
+                
+                # 💡 核心修正 2：強制 X 軸為 category 模式，確保只顯示有數據的日期
+                fig.update_layout(
+                    xaxis_title="日期", 
+                    yaxis_title="消耗量", 
+                    hovermode="x unified",
+                    xaxis_type='category'  # 這是防止時間軸亂跳的關鍵
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-
-
-
 
