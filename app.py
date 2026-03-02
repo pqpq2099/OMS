@@ -400,7 +400,7 @@ elif st.session_state.step == "export":
                        (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & 
                        (hist_df['本次叫貨'] > 0)]
         
-       if not recs.empty:
+if not recs.empty:
             # 💡 戰略修正：移除圖示與「進貨通知」，僅保留店名作為抬頭
             output = f"【{st.session_state.store}】\n" + f"{header_date}\n"
             
@@ -486,6 +486,7 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
