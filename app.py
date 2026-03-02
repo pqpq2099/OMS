@@ -452,7 +452,12 @@ def page_fill_items(df_i: pd.DataFrame | None, df_pr: pd.DataFrame | None, item_
                 st.session_state.step = "select_vendor"
                 st.rerun()
 
-    st.("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
+st.button(
+    "⬅️ 返回功能選單",
+    on_click=lambda: st.session_state.update(step="select_vendor"),
+    use_container_width=True,
+    key="back_from_fill"
+)
 
 # ============================================================
 # [E4] view_history - 歷史紀錄查詢
@@ -824,6 +829,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
