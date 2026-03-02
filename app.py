@@ -656,109 +656,6 @@ def page_analysis():
         st.info("💡 尚未產生分析資料")
         return
 
-    # ============================================================
-    # [E6.5] Tabs - 明細 / 趨勢
-    # ============================================================
-    t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
-
-    # ----------------------------
-    # 明細（只表格）
-    # ----------------------------
-    with t_detail:
-        st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
-
-        required_cols = {"廠商", "品項名稱", "單位", "單價", "期間消耗", "本次叫貨", "總金額"}
-
-        if not required_cols.issubset(set(final_filt.columns)):
-            st.warning("⚠️ Records 欄位不足")
-        else:
-            summ_df = (
-                final_filt.groupby(["廠商", "品項名稱", "單位", "單價"])
-                .agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"})
-                .reset_index()
-            )
-
-            st.dataframe(
-                summ_df.sort_values("總金額", ascending=False),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    # ----------------------------
-    # 趨勢（Plotly）
-    # ----------------------------
-    with t_trend:
-        st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
-
-        PLOTLY_CONFIG = {
-            "displayModeBar": True,
-            "displaylogo": False,
-            "scrollZoom": False,
-            "doubleClick": False,
-            "modeBarButtonsToRemove": [
-                "zoom2d","pan2d","select2d","lasso2d",
-                "zoomIn2d","zoomOut2d",
-                "autoScale2d","resetScale2d",
-                "hoverClosestCartesian",
-                "hoverCompareCartesian",
-                "toggleSpikelines"
-            ],
-        }
-
-        if HAS_PLOTLY:
-
-            # 趨勢圖
-            if {"日期","總金額"}.issubset(final_filt.columns):
-                trend_df = final_filt.copy()
-                trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
-
-                trend_daily = (
-                    trend_df.dropna(subset=["日期_dt"])
-                    .groupby("日期_dt", as_index=False)["總金額"]
-                    .sum()
-                    .sort_values("日期_dt")
-                )
-
-                if not trend_daily.empty:
-                    fig1 = px.line(
-                        trend_daily,
-                        x="日期_dt",
-                        y="總金額",
-                        markers=True,
-                        title="📈 採購金額趨勢（依日期）"
-                    )
-                    fig1.update_layout(dragmode=False)
-                    st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
-
-            # Top20
-            if {"品項名稱","總金額"}.issubset(final_filt.columns):
-                rank_df = (
-                    final_filt.groupby("品項名稱", as_index=False)["總金額"]
-                    .sum()
-                    .sort_values("總金額", ascending=False)
-                    .head(20)
-                )
-
-                if not rank_df.empty:
-                    fig2 = px.bar(rank_df, x="品項名稱", y="總金額",
-                                  title="📊 品項採購金額排行（Top 20）")
-                    fig2.update_layout(dragmode=False)
-                    st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
-
-        else:
-            st.info("💡 Plotly 未啟用")
-
-        st.divider()
-
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_ana_v2"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
-        # ============================================================
-    # 確保 final_filt 一定存在
-    # ============================================================
-    if final_filt is None or len(final_filt) == 0:
-        st.info("💡 尚未產生分析資料")
-        return
 
     # ============================================================
     # [E6.5] Tabs - 明細 / 趨勢
@@ -968,6 +865,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
