@@ -474,12 +474,3 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-
-
-
-
-
-
-
-
-
