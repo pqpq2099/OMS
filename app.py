@@ -306,8 +306,6 @@ elif st.session_state.step == "fill_items":
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
     
-    if st.button("⬅️ 返回", use_container_width=True): st.session_state.step = "select_vendor"; st.rerun()
-
 # --- 歷史紀錄 (加入日期與廠商雙重篩選) ---
 elif st.session_state.step == "view_history":
     # (此處保留原本的寬幅 CSS 樣式...)
@@ -497,4 +495,5 @@ elif st.session_state.step == "analysis":
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
