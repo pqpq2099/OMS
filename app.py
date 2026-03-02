@@ -298,10 +298,6 @@ elif st.session_state.step == "fill_items":
                     st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 
                 p_sum = p_s + p_p; p_show = round(p_sum, 1)
-                
-                # 🔍 戰略偵訊：放在 st.caption 之前
-            if p_s > 0:
-                st.error(f"⚠️ 偵測到幻影數據！品項: {d_n} | 來自店名: {st.session_state.store} | ID: {f_id}")
                 st.caption(f"{unit} (前結:{p_show:.1f})") # 這裡也同步小數點一位
                 last_item_display_name = d_n
             
@@ -553,6 +549,7 @@ elif st.session_state.step == "analysis":
             )
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
+
 
 
 
