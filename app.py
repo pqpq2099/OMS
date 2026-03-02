@@ -186,17 +186,17 @@ def get_price_by_date(item_id: str, target_date: date, price_df: pd.DataFrame | 
 
     df["品項ID"] = df["品項ID"].astype(str).str.strip()
     df["單價"] = pd.to_numeric(df["單價"], errors="coerce").fillna(0)
-    df["生效日"] = pd.to_datetime(df["生效日"], errors="coerce").dt.date
-    df["結束日"] = pd.to_datetime(df["結束日"], errors="coerce").dt.date
+    target_ts = pd.Timestamp(target_date)
 
-    item_id = str(item_id).strip()
+    df["生效日"] = pd.to_datetime(df["生效日"], errors="coerce")
+    df["結束日"] = pd.to_datetime(df["結束日"], errors="coerce")
 
-    matched = df[
-        (df["品項ID"] == item_id)
-        & (df["生效日"].notna())
-        & (df["生效日"] <= target_date)
-        & (df["結束日"].isna() | (df["結束日"] >= target_date))
-    ].sort_values("生效日")
+matched = df[
+    (df["品項ID"] == item_id)
+    & (df["生效日"].notna())
+    & (df["生效日"] <= target_ts)
+    & (df["結束日"].isna() | (df["結束日"] >= target_ts))
+].sort_values("生效日")
 
     if matched.empty:
         return 0.0
@@ -685,3 +685,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
