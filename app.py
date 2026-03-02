@@ -778,7 +778,10 @@ def page_analysis():
 
         st.divider()
 
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_ana_v2"):
+        st.warning("DEBUG: reached bottom of t_trend")  # 這行一定會出現
+        st.write("DEBUG step:", st.session_state.get("step"))
+
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_ana_v2_trend"):
             st.session_state.step = "select_vendor"
             st.rerun()
 # ============================================================
@@ -823,6 +826,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
