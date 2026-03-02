@@ -637,26 +637,7 @@ def page_analysis():
     final_filt = v_filt.copy()
     if selected_item != "全部品項":
         final_filt = final_filt[final_filt["品項名稱"] == selected_item]
-
-    total_buy = final_filt["總金額"].sum()
-    last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
-    total_stock_value = (last_stock["本次剩餘"] * last_stock["單價"]).sum()
-
-    st.markdown(
-        f"""
-        <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
-            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
-                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總額 ({selected_v})</div>
-                <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${total_buy:,.1f}</div>
-            </div>
-            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
-                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
-                <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        
 # ============================================================
 # [E6.4] Charts - 採購金額圖表（依你的篩選結果 final_filt）
 # ============================================================
@@ -706,6 +687,27 @@ else:
     )
     fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
     st.plotly_chart(fig2, use_container_width=True)
+    
+    total_buy = final_filt["總金額"].sum()
+    last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
+    total_stock_value = (last_stock["本次剩餘"] * last_stock["單價"]).sum()
+
+    st.markdown(
+        f"""
+        <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
+            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
+                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總額 ({selected_v})</div>
+                <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${total_buy:,.1f}</div>
+            </div>
+            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
+                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
+                <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     summ_df = final_filt.groupby(["廠商", "品項名稱", "單位", "單價"]).agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"}).reset_index()
     stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict()
     summ_df["期末庫存"] = summ_df["品項名稱"].map(stock_map).fillna(0)
@@ -769,6 +771,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
