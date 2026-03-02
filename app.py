@@ -233,24 +233,36 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # --- 💡 庫存頁面：上次數據參考 (升級為摺疊式，預設關閉) ---
+# --- 💡 庫存頁面：上次數據參考 (完整覆蓋：加入自動過濾邏輯) ---
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
             f_name = item_display_map.get(f_id, "")
-            past = hist_df[(hist_df['店名'] == st.session_state.store) & 
-                           ((hist_df['品項ID'].astype(str) == str(f_id)) | (hist_df['品項名稱'] == str(f_name)))]
+            
+            # 1. 執行嚴格對位過濾
+            past = hist_df[
+                (hist_df['店名'].astype(str).str.strip() == str(st.session_state.store).strip()) & 
+                ((hist_df['品項ID'].astype(str).str.strip() == str(f_id).strip()) | 
+                 (hist_df['品項名稱'].astype(str).str.strip() == str(f_name).strip()))
+            ]
+            
+            # 2. 🚀 戰略過濾：只有「歷史上有紀錄」且「數值不為0」的才加入表格
             if not past.empty:
                 latest = past.iloc[-1]
-                ref_list.append({
-                    "品項名稱": f_name, 
-                    "上次叫貨": round(float(latest.get('本次叫貨', 0)), 1), 
-                    "期間消耗": round(float(latest.get('期間消耗', 0)), 1)
-                })
+                p_p_val = pd.to_numeric(latest.get('本次叫貨', 0), errors='coerce')
+                p_u_val = pd.to_numeric(latest.get('期間消耗', 0), errors='coerce')
+                
+                # 只有當真的有叫貨或消耗過，才顯示在參考清單中
+                if p_p_val > 0 or p_u_val > 0:
+                    ref_list.append({
+                        "品項名稱": f_name, 
+                        "上次叫貨": round(float(p_p_val), 1), 
+                        "期間消耗": round(float(p_u_val), 1)
+                    })
         
+        # 3. 介面呈現
         if ref_list:
-            # 🚀 戰略優化：使用 expander 封裝，預設為 False (收合)
-            with st.expander("📊 查看上次叫貨/消耗參考 (點擊展開)", expanded=False):
+            with st.expander("📊 查看上次叫貨/消耗參考 (已自動隱藏無紀錄品項)", expanded=False):
                 display_ref_df = pd.DataFrame(ref_list)
                 for col in ["上次叫貨", "期間消耗"]:
                     display_ref_df[col] = display_ref_df[col].apply(lambda x: f"{x:.1f}")
@@ -560,6 +572,7 @@ elif st.session_state.step == "analysis":
             )
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
+
 
 
 
