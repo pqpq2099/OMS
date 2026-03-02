@@ -781,9 +781,9 @@ def page_analysis():
         st.warning("DEBUG: reached bottom of t_trend")  # 這行一定會出現
         st.write("DEBUG step:", st.session_state.get("step"))
 
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_ana_v2_trend"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
+        if st.button("⬅️ 返回選單", use_container_width=True, key=f"back_{st.session_state.get('step')}_trend"):
+    st.session_state.step = "select_vendor"
+    st.rerun()
 # ============================================================
 # [F1] Router - 不改你原本 step 架構，只是集中管理
 # ============================================================
@@ -826,32 +826,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
