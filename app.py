@@ -387,7 +387,7 @@ elif st.session_state.step == "view_history":
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 # --- 💡 覆蓋到此結束 ---r"))
 # --- 今日進貨明細 (強化發送版) ---
-# --- 步驟 4：今日進貨明細 (修正縮排版) ---
+# --- 步驟 4：今日進貨明細 (智慧對照版) ---
 elif st.session_state.step == "export":
     st.title("📋 今日進貨明細")
     hist_df = get_cloud_data()
@@ -396,13 +396,14 @@ elif st.session_state.step == "export":
     header_date = f"{delivery_date.month}/{delivery_date.day}({week_map[delivery_date.weekday()]})"
     
     if not hist_df.empty:
-        # 過濾出當天且有叫貨的紀錄
         recs = hist_df[(hist_df['店名'] == st.session_state.store) & 
                        (hist_df['日期'].astype(str) == str(st.session_state.record_date)) & 
                        (hist_df['本次叫貨'] > 0)]
         
         if not recs.empty:
-            output = f"{header_date}\n"
+            # 💡 戰略修正：在開頭加入【店名】，並換行 (對齊你的 [line_groups] 戰略)
+            output = f"🏪 【{st.session_state.store}】進貨通知\n" + f"{header_date}\n"
+            
             for v in recs['廠商'].unique():
                 output += f"\n{v}\n{st.session_state.store}\n"
                 for _, r in recs[recs['廠商'] == v].iterrows():
@@ -411,21 +412,19 @@ elif st.session_state.step == "export":
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             
-            # 1. 顯示預覽
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
             
-            # 2. 戰略發送按鈕 (確保在 if 內部縮排)
+            # 💡 這裡會根據你目前的 st.session_state.store 去 Secrets 找對應群組
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
                 if send_line_message(output):
-                    st.success("✅ 已成功推送至 LINE 官方帳號！")
+                    st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
                 else:
-                    st.error("❌ 發送失敗，請確認 Secrets 設定與好友狀態。")
+                    st.error("❌ 發送失敗，請確認該店 ID 已填入 Secrets 且機器人在群組內。")
         else:
             st.info("💡 今日尚無叫貨紀錄。")
             
-    # 💡 返回按鈕必須與 if hist_df.empty 對齊
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
-
+    
 # --- 步驟 5：進銷存分析 ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
@@ -487,4 +486,5 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
