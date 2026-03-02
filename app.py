@@ -718,12 +718,21 @@ def page_analysis():
 
     with t_trend:
         st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
+# ============================================================
+# 確保 final_filt 一定存在（Tabs 之前就要先擋）
+# ============================================================
+if "final_filt" not in locals() or final_filt is None:
+    st.info("💡 尚未產生分析資料")
+    return
 
 # ============================================================
 # [E6.5] Tabs - 明細 / 趨勢
 # ============================================================
 t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
 
+# ----------------------------
+# Tab 1：明細（不放圖片）
+# ----------------------------
 with t_detail:
     st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
 
@@ -737,7 +746,11 @@ with t_detail:
             .reset_index()
         )
 
-        stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict() if ("本次剩餘" in last_stock.columns) else {}
+        stock_map = (
+            last_stock.set_index("品項名稱")["本次剩餘"].to_dict()
+            if ("本次剩餘" in last_stock.columns)
+            else {}
+        )
         summ_df["期末庫存"] = summ_df["品項名稱"].map(stock_map).fillna(0)
 
         st.dataframe(
@@ -753,10 +766,12 @@ with t_detail:
             },
         )
 
+# ----------------------------
+# Tab 2：趨勢（Plotly 報表模式）
+# ----------------------------
 with t_trend:
     st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
 
-    # Plotly 報表模式（只留圖片與下載）
     PLOTLY_CONFIG = {
         "displayModeBar": True,
         "displaylogo": False,
@@ -768,8 +783,8 @@ with t_trend:
             "autoScale2d", "resetScale2d",
             "hoverClosestCartesian",
             "hoverCompareCartesian",
-            "toggleSpikelines"
-        ]
+            "toggleSpikelines",
+        ],
     }
 
     if not HAS_PLOTLY:
@@ -791,14 +806,17 @@ with t_trend:
                 st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
             else:
                 fig1 = px.line(
-                    trend_daily, x="日期_dt", y="總金額",
-                    markers=True, title="📈 採購金額趨勢（依日期）"
+                    trend_daily,
+                    x="日期_dt",
+                    y="總金額",
+                    markers=True,
+                    title="📈 採購金額趨勢（依日期）",
                 )
                 fig1.update_layout(
                     hovermode="x unified",
                     xaxis_title="日期",
                     yaxis_title="採購金額",
-                    dragmode=False
+                    dragmode=False,
                 )
                 st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
         else:
@@ -820,7 +838,7 @@ with t_trend:
                 fig2.update_layout(
                     xaxis_title="品項",
                     yaxis_title="採購金額",
-                    dragmode=False
+                    dragmode=False,
                 )
                 st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
         else:
@@ -872,6 +890,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
