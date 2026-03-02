@@ -793,12 +793,12 @@ def page_analysis():
                     )
                     st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
         
-        st.button(
-            "⬅️ 返回選單",
-            on_click=lambda: st.session_state.update(step="select_vendor"),
-            use_container_width=True,
-            key="back_ana_v2"
-        )
+                    st.button(
+                        "⬅️ 返回選單",
+                        on_click=lambda: st.session_state.update(step="select_vendor"),
+                        use_container_width=True,
+                        key="back_ana_v2"
+                    )
 # ============================================================
 # [F1] Router - 不改你原本 step 架構，只是集中管理
 # ============================================================
@@ -841,6 +841,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
