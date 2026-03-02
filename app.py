@@ -595,12 +595,14 @@ def page_export():
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
 
 # ============================================================
-# [E6] analysis - 進銷存分析中心
+# [E6] analysis - 進銷存分析中心（含圖表）
 # ============================================================
-
 def page_analysis():
     st.title("📊 進銷存分析")
 
+    # ============================================================
+    # [E6.1] Load Data + Date Range
+    # ============================================================
     a_df = get_worksheet_data("Records")
     c_date1, c_date2 = st.columns(2)
     start = c_date1.date_input("起始日期", value=date.today() - timedelta(14), key="ana_start")
@@ -611,86 +613,70 @@ def page_analysis():
         st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
         return
 
-    a_df["日期"] = pd.to_datetime(a_df["日期"]).dt.date
+    # ============================================================
+    # [E6.2] Clean + Filter (Store + Date)
+    # ============================================================
+    a_df["日期"] = pd.to_datetime(a_df["日期"], errors="coerce").dt.date
     current_store = str(st.session_state.store).strip()
 
-    filt = a_df[(a_df["店名"].astype(str).str.strip() == current_store) & (a_df["日期"] >= start) & (a_df["日期"] <= end)].copy()
+    filt = a_df[
+        (a_df["店名"].astype(str).str.strip() == current_store)
+        & (a_df["日期"] >= start)
+        & (a_df["日期"] <= end)
+    ].copy()
 
     if filt.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
         st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
         return
 
+    # ============================================================
+    # [E6.3] Dropdown Filters (Vendor + Item)
+    # ============================================================
     st.markdown("---")
     col_v, col_i = st.columns(2)
 
-    all_v = ["全部廠商"] + sorted(filt["廠商"].unique().tolist())
-    selected_v = col_v.selectbox(...)
+    all_v = ["全部廠商"] + sorted(filt["廠商"].dropna().astype(str).unique().tolist())
+    selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_v_box")
 
     v_filt = filt.copy()
     if selected_v != "全部廠商":
-        v_filt = v_filt[v_filt["廠商"] == selected_v]
+        v_filt = v_filt[v_filt["廠商"].astype(str) == str(selected_v)]
 
-    all_i = ["全部品項"] + sorted(v_filt["品項名稱"].unique().tolist())
-    selected_item = col_i.selectbox(...)
+    all_i = ["全部品項"] + sorted(v_filt["品項名稱"].dropna().astype(str).unique().tolist())
+    selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_i_box")
 
     final_filt = v_filt.copy()
     if selected_item != "全部品項":
-        final_filt = final_filt[final_filt["品項名稱"] == selected_item]
-        
-# ============================================================
-# [E6.4] Charts - 採購金額圖表（依你的篩選結果 final_filt）
-# ============================================================
-st.write("---")
-st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
+        final_filt = final_filt[final_filt["品項名稱"].astype(str) == str(selected_item)]
 
-# (1) 依日期：採購金額趨勢
-trend_df = final_filt.copy()
-trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
+    if final_filt.empty:
+        st.info("💡 此篩選條件下沒有資料。")
+        st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+        return
 
-trend_daily = (
-    trend_df.dropna(subset=["日期_dt"])
-    .groupby("日期_dt", as_index=False)["總金額"]
-    .sum()
-    .sort_values("日期_dt")
-)
+    # ============================================================
+    # [E6.4] KPI Cards
+    # ============================================================
+    # 防呆：確保金額欄位是數字
+    if "總金額" in final_filt.columns:
+        final_filt["總金額"] = pd.to_numeric(final_filt["總金額"], errors="coerce").fillna(0)
+    if "單價" in final_filt.columns:
+        final_filt["單價"] = pd.to_numeric(final_filt["單價"], errors="coerce").fillna(0)
+    if "本次剩餘" in final_filt.columns:
+        final_filt["本次剩餘"] = pd.to_numeric(final_filt["本次剩餘"], errors="coerce").fillna(0)
 
-if trend_daily.empty:
-    st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
-else:
-    fig1 = px.line(
-        trend_daily,
-        x="日期_dt",
-        y="總金額",
-        markers=True,
-        title="📈 採購金額趨勢（依日期）"
-    )
-    fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
-    st.plotly_chart(fig1, use_container_width=True)
+    total_buy = final_filt["總金額"].sum() if "總金額" in final_filt.columns else 0.0
 
-# (2) 期間內：品項採購金額排行（Top 20）
-rank_df = (
-    final_filt.groupby("品項名稱", as_index=False)["總金額"]
-    .sum()
-    .sort_values("總金額", ascending=False)
-    .head(20)
-)
+    # 期末庫存殘值：每品項取最後一筆（依日期排序）
+    if "日期" in final_filt.columns and "品項名稱" in final_filt.columns:
+        last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
+    else:
+        last_stock = final_filt.copy()
 
-if rank_df.empty:
-    st.info("💡 此篩選條件下沒有可排行的資料。")
-else:
-    fig2 = px.bar(
-        rank_df,
-        x="品項名稱",
-        y="總金額",
-        title="📊 品項採購金額排行（Top 20）"
-    )
-    fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
-    st.plotly_chart(fig2, use_container_width=True)
-    
-    total_buy = final_filt["總金額"].sum()
-    last_stock = final_filt.sort_values("日期").groupby("品項名稱").tail(1)
-    total_stock_value = (last_stock["本次剩餘"] * last_stock["單價"]).sum()
+    total_stock_value = 0.0
+    if ("本次剩餘" in last_stock.columns) and ("單價" in last_stock.columns):
+        total_stock_value = (last_stock["本次剩餘"] * last_stock["單價"]).sum()
 
     st.markdown(
         f"""
@@ -708,26 +694,103 @@ else:
         unsafe_allow_html=True,
     )
 
-    summ_df = final_filt.groupby(["廠商", "品項名稱", "單位", "單價"]).agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"}).reset_index()
-    stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict()
-    summ_df["期末庫存"] = summ_df["品項名稱"].map(stock_map).fillna(0)
+    # ============================================================
+    # [E6.5] Charts (Plotly) - 金額趨勢 + 品項排行
+    # ============================================================
+    st.write("---")
+    st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
 
+    # 1) 依日期的採購金額趨勢
+    if HAS_PLOTLY and ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
+        trend_df = final_filt.copy()
+        trend_df["日期_dt"] = pd.to_datetime(trend_df["日期"], errors="coerce")
+
+        trend_daily = (
+            trend_df.dropna(subset=["日期_dt"])
+            .groupby("日期_dt", as_index=False)["總金額"]
+            .sum()
+            .sort_values("日期_dt")
+        )
+
+        if trend_daily.empty:
+            st.info("💡 此篩選條件下沒有可畫趨勢的資料。")
+        else:
+            fig1 = px.line(
+                trend_daily,
+                x="日期_dt",
+                y="總金額",
+                markers=True,
+                title="📈 採購金額趨勢（依日期）",
+            )
+            fig1.update_layout(hovermode="x unified", xaxis_title="日期", yaxis_title="採購金額")
+            st.plotly_chart(fig1, use_container_width=True)
+    else:
+        st.info("💡 Plotly 未啟用或缺少欄位（日期 / 總金額），因此不顯示圖表。")
+
+    # 2) 品項採購金額排行（Top 20）
+    if HAS_PLOTLY and ("品項名稱" in final_filt.columns) and ("總金額" in final_filt.columns):
+        rank_df = (
+            final_filt.groupby("品項名稱", as_index=False)["總金額"]
+            .sum()
+            .sort_values("總金額", ascending=False)
+            .head(20)
+        )
+
+        if rank_df.empty:
+            st.info("💡 此篩選條件下沒有可排行的資料。")
+        else:
+            fig2 = px.bar(
+                rank_df,
+                x="品項名稱",
+                y="總金額",
+                title="📊 品項採購金額排行（Top 20）",
+            )
+            fig2.update_layout(xaxis_title="品項", yaxis_title="採購金額")
+            st.plotly_chart(fig2, use_container_width=True)
+
+    # ============================================================
+    # [E6.6] Summary Table (原本表格保留)
+    # ============================================================
     st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
-    st.dataframe(
-        summ_df.sort_values("總金額", ascending=False),
+
+    required_cols = {"廠商", "品項名稱", "單位", "單價", "期間消耗", "本次叫貨", "總金額"}
+    if not required_cols.issubset(set(final_filt.columns)):
+        st.warning(f"⚠️ Records 欄位不足，缺少：{sorted(list(required_cols - set(final_filt.columns)))}")
+    else:
+        summ_df = (
+            final_filt.groupby(["廠商", "品項名稱", "單位", "單價"])
+            .agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"})
+            .reset_index()
+        )
+        # 期末庫存：用 last_stock 對應
+        if "品項名稱" in last_stock.columns and "本次剩餘" in last_stock.columns:
+            stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict()
+            summ_df["期末庫存"] = summ_df["品項名稱"].map(stock_map).fillna(0)
+        else:
+            summ_df["期末庫存"] = 0
+
+        st.dataframe(
+            summ_df.sort_values("總金額", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "單價": st.column_config.NumberColumn(format="%.1f"),
+                "期間消耗": st.column_config.NumberColumn(format="%.1f"),
+                "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
+                "總金額": st.column_config.NumberColumn("採購金額", format="$%.1f"),
+                "期末庫存": st.column_config.NumberColumn(format="%.1f"),
+            },
+        )
+
+    # ============================================================
+    # [E6.7] Back
+    # ============================================================
+    st.button(
+        "⬅️ 返回選單",
+        on_click=lambda: st.session_state.update(step="select_vendor"),
         use_container_width=True,
-        hide_index=True,
-        column_config={
-            "單價": st.column_config.NumberColumn(format="%.1f"),
-            "期間消耗": st.column_config.NumberColumn(format="%.1f"),
-            "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
-            "總金額": st.column_config.NumberColumn("採購金額", format="$%.1f"),
-            "期末庫存": st.column_config.NumberColumn(format="%.1f"),
-        },
+        key="back_ana_v2",
     )
-
-    st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
-
 
 # ============================================================
 # [F1] Router - 不改你原本 step 架構，只是集中管理
@@ -771,9 +834,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
