@@ -591,7 +591,13 @@ def page_view_history():
                 fig.update_layout(xaxis_type="category", hovermode="x unified", xaxis_title="日期")
                 st.plotly_chart(fig, use_container_width=True)
 
-    st.("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_hist_final")
+if st.button(
+    "⬅️ 返回",
+    use_container_width=True,
+    key="back_hist_final"
+):
+    st.session_state.step = "select_vendor"
+    st.rerun()
 
 # ============================================================
 # [E5] export - 今日進貨明細輸出
@@ -866,6 +872,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
