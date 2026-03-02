@@ -284,11 +284,13 @@ elif st.session_state.step == "fill_items":
             unit = str(row['單位']).strip()
             price = pd.to_numeric(row.get('單價', 0), errors='coerce')
             
-# --- 🚀 戰略強化：嚴格數據歸位邏輯 (完整覆蓋版) ---
+# --- 🚀 戰略強化：智慧建議叫貨與數據歸位邏輯 ---
             p_s, p_p = 0.0, 0.0
+            avg_usage = 0.0
+            suggest_qty = 0.0
+            
             if not hist_df.empty:
-                # 💡 核心修正：使用 .strip() 排除所有隱藏空格，並使用 .copy() 隔離數據
-                # 確保店名、品項ID、品項名稱都進行乾淨的字串比對
+                # 1. 精確對位：抓取該店該品項的歷史紀錄
                 past = hist_df[
                     (hist_df['店名'].astype(str).str.strip() == str(st.session_state.store).strip()) & 
                     ((hist_df['品項ID'].astype(str).str.strip() == str(f_id).strip()) | 
@@ -297,9 +299,15 @@ elif st.session_state.step == "fill_items":
                 
                 if not past.empty:
                     latest = past.iloc[-1]
-                    # 💡 核心修正：強制轉換型別，並設定預設值 0.0 防止抓到空值
                     p_s = float(latest.get('本次剩餘', 0.0))
                     p_p = float(latest.get('本次叫貨', 0.0))
+                    
+                    # 💡 智慧算法：取最近 3 筆消耗算日均值
+                    recent_usage = past['期間消耗'].tail(3).astype(float)
+                    avg_usage = recent_usage.mean() if not recent_usage.empty else 0.0
+                    
+                    # 💡 建議叫貨公式：(日均消耗 * 1.5倍安全量) - 當前剩餘
+                    suggest_qty = max(0.0, (avg_usage * 1.5) - p_s)
             # -----------------------------------------------
             
             c1, c2, c3 = st.columns([6, 1, 1])
@@ -310,7 +318,8 @@ elif st.session_state.step == "fill_items":
                     st.write(f"<b>{d_n}</b>", unsafe_allow_html=True)
                 
                 p_sum = p_s + p_p; p_show = round(p_sum, 1)
-                st.caption(f"{unit} (前結:{p_show:.1f})") # 這裡也同步小數點一位
+                # 💡 視覺強化：除了前結，多顯示建議叫貨量
+                st.caption(f"{unit} (前結:{p_s:.1f} | 💡 建議:{suggest_qty:.1f})")
                 last_item_display_name = d_n
             
             with c2:
@@ -572,6 +581,7 @@ elif st.session_state.step == "analysis":
             )
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
+
 
 
 
