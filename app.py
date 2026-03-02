@@ -305,6 +305,8 @@ elif st.session_state.step == "fill_items":
             valid = [d for d in temp_data if d[8] > 0 or d[9] > 0]
             if valid and sync_to_cloud(pd.DataFrame(valid)):
                 st.success("✅ 儲存成功"); st.session_state.step = "select_vendor"; st.rerun()
+                
+    st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
     
 # --- 歷史紀錄 (精確對齊與雙層篩選版) ---
 elif st.session_state.step == "view_history":
@@ -467,6 +469,7 @@ elif st.session_state.step == "analysis":
                 st.plotly_chart(fig, use_container_width=True)
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
 
 
 
