@@ -792,7 +792,6 @@ def page_analysis():
                         dragmode=False
                     )
                     st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
-        
                     st.button(
                         "⬅️ 返回選單",
                         on_click=lambda: st.session_state.update(step="select_vendor"),
@@ -841,6 +840,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
