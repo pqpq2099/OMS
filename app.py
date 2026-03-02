@@ -8,12 +8,12 @@
 # [B2] LINE Messaging
 # [C1] CSV Loader
 # [D1] Shared Tools
-# [E1] select_store
-# [E2] select_vendor
-# [E3] fill_items
-# [E4] view_history
-# [E5] export
-# [E6] analysis
+# [E1] select_store - 分店選擇頁
+# [E2] select_vendor - 廠商與功能中心
+# [E3] fill_items - 盤點輸入 / 叫貨核心
+# [E4] view_history - 歷史紀錄查詢
+# [E5] export - 今日進貨明細輸出
+# [E6] analysis - 進銷存分析中心
 # [F1] Router
 # [G1] Main
 # =====================================================
@@ -248,7 +248,7 @@ def init_session():
 
 
 # ============================================================
-# [E1] Pages (每個 step 一個函式，之後你要改就找這裡)
+# [E1] select_store - 分店選擇頁
 # ============================================================
 def page_select_store(df_s: pd.DataFrame | None):
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
@@ -264,6 +264,9 @@ def page_select_store(df_s: pd.DataFrame | None):
             st.session_state.step = "select_vendor"
             st.rerun()
 
+# ============================================================
+# [E2] select_vendor - 廠商與功能中心
+# ============================================================
 
 def page_select_vendor(df_i: pd.DataFrame | None):
     st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
@@ -317,7 +320,10 @@ def page_select_vendor(df_i: pd.DataFrame | None):
     if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"
         st.rerun()
-
+        
+# ============================================================
+# [E3] fill_items - 盤點輸入 / 叫貨核心
+# ============================================================
 
 def page_fill_items(df_i: pd.DataFrame | None, df_pr: pd.DataFrame | None, item_display_map: dict):
     # 單排鎖定 CSS
@@ -449,6 +455,9 @@ def page_fill_items(df_i: pd.DataFrame | None, df_pr: pd.DataFrame | None, item_
 
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_from_fill")
 
+# ============================================================
+# [E4] view_history - 歷史紀錄查詢
+# ============================================================
 
 def page_view_history():
     st.markdown(
@@ -543,6 +552,9 @@ def page_view_history():
 
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_hist_final")
 
+# ============================================================
+# [E5] export - 今日進貨明細輸出
+# ============================================================
 
 def page_export():
     st.title("📋 今日進貨明細")
@@ -582,6 +594,9 @@ def page_export():
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_to_vendor_export")
 
+# ============================================================
+# [E6] analysis - 進銷存分析中心
+# ============================================================
 
 def page_analysis():
     st.title("📊 進銷存分析")
@@ -706,6 +721,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
