@@ -258,12 +258,11 @@ def page_select_store(df_s: pd.DataFrame | None):
         st.warning("⚠️ 分店資料讀取失敗或缺少欄位：分店名稱")
         return
 
-    for s in df_s["分店名稱"].unique():
-        if st.(f"📍 {s}", key=f"s_{s}", use_container_width=True):
-            st.session_state.store = s
-            st.session_state.step = "select_vendor"
-            st.rerun()
-
+for s in df_s["分店名稱"].unique():
+    if st.button(f"📍 {s}", key=f"s_{s}", use_container_width=True):
+        st.session_state.store = s
+        st.session_state.step = "select_vendor"
+        st.rerun()
 # ============================================================
 # [E2] select_vendor - 廠商與功能中心
 # ============================================================
@@ -825,5 +824,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
