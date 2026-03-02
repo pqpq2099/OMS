@@ -480,9 +480,15 @@ def page_view_history():
 
     if v_df.empty:
         st.info("💡 尚無歷史紀錄可供查看。")
-        st.("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
-        return
+if st.button(
+    "⬅️ 返回",
+    use_container_width=True,
+    key="back_from_history_empty"
+):
+    st.session_state.step = "select_vendor"
+    st.rerun()
 
+return
     c_h_date1, c_h_date2 = st.columns(2)
     h_start = c_h_date1.date_input("起始日期", value=date.today() - timedelta(7), key="h_start")
     h_end = c_h_date2.date_input("結束日期", value=date.today(), key="h_end")
@@ -829,6 +835,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
