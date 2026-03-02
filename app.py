@@ -679,18 +679,18 @@ def page_analysis():
     )
 
     # ===== 篩選 =====
-    if filt.empty:
-        st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
-
-        if st.button(
-            "⬅️ 返回選單",
-            use_container_width=True,
-            key="back_from_analysis_no_data"
-        ):
-            st.session_state.step = "select_vendor"
-            st.rerun()
-
-        return
+            if filt.empty:
+                st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
+        
+                if st.button(
+                    "⬅️ 返回選單",
+                    use_container_width=True,
+                    key="back_from_analysis_no_data"
+                ):
+                    st.session_state.step = "select_vendor"
+                    st.rerun()
+        
+                return
     # ============================================================
     # [E6.2] Clean + Filter by Store + Date
     # ============================================================
@@ -910,6 +910,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
