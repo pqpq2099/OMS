@@ -714,7 +714,7 @@ if filt.empty:
         st.session_state.step = "select_vendor"
         st.rerun()
 
-        return
+            return
     # ============================================================
     # [E6.3] Vendor / Item Dropdown Filters
     # ============================================================
@@ -910,6 +910,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
