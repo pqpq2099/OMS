@@ -362,14 +362,20 @@ elif st.session_state.step == "export":
             st.text_area("📱 LINE 複製", value=output, height=400)
     st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-# --- 進銷存分析 (垂直堆疊版) ---
+# --- 進銷存分析 (精簡雙列版) ---
 elif st.session_state.step == "analysis":
     st.title("📊 進銷存分析")
     a_df = get_worksheet_data("Records")
-    start = st.date_input("起始", value=date.today()-timedelta(7)); end = st.date_input("結束", value=date.today())
+    
+    # 建立日期篩選與返回按鈕的並排布局
+    c_date1, c_date2 = st.columns(2)
+    start = c_date1.date_input("起始", value=date.today()-timedelta(7))
+    end = c_date2.date_input("結束", value=date.today())
+    
     if not a_df.empty:
         a_df['日期'] = pd.to_datetime(a_df['日期']).dt.date
         filt = a_df[(a_df['店名'] == st.session_state.store) & (a_df['日期'] >= start) & (a_df['日期'] <= end)]
+        
         if not filt.empty:
             summ = filt.groupby(['廠商', '品項名稱', '單位', '單價']).agg({'期間消耗': 'sum', '本次叫貨': 'sum', '總金額': 'sum'}).reset_index()
             last_recs = filt.sort_values('日期').groupby('品項名稱').tail(1)
@@ -377,18 +383,34 @@ elif st.session_state.step == "analysis":
             summ['期末庫存'] = summ['品項名稱'].map(stock_map).fillna(0)
             summ['庫存金額'] = summ['期末庫存'] * summ['單價']
             
+            # 💡 戰略修正：看板改為雙列並排，縮小字體與內距
+            # 使用更細的線條感，並讓背景隨主題變化（或透明）
             st.markdown(f"""
-                <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #4A90E2; margin-bottom: 12px;'>
-                    <div style='font-size: 14px; color: #666; font-weight: 700;'>💰 目前採購支出總額</div>
-                    <div style='font-size: 24px; color: #4A90E2; font-weight: 800;'>${summ['總金額'].sum():,.1f}</div>
-                </div>
-                <div style='background: #f8f9fa; padding: 15px; border-radius: 12px; border-left: 6px solid #50C878; margin-bottom: 25px;'>
-                    <div style='font-size: 14px; color: #666; font-weight: 700;'>📦 目前剩餘庫存總值</div>
-                    <div style='font-size: 24px; color: #50C878; font-weight: 800;'>${summ['庫存金額'].sum():,.1f}</div>
+                <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
+                    <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
+                        <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總支出</div>
+                        <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${summ['總金額'].sum():,.1f}</div>
+                    </div>
+                    <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
+                        <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存總殘值</div>
+                        <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${summ['庫存金額'].sum():,.1f}</div>
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
-            st.dataframe(summ, use_container_width=True, hide_index=True)
-    st.button("⬅️ 返回", on_click=lambda: st.session_state.update(step="select_vendor"))
 
-
-
+            # 💡 同步優化下方的數據表格 (隱藏序號列並縮小字體)
+            st.dataframe(
+                summ.sort_values('總金額', ascending=False), 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "單價": st.column_config.NumberColumn(format="%.1f"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f"),
+                    "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
+                    "總金額": st.column_config.NumberColumn(format="%.1f"),
+                    "期末庫存": st.column_config.NumberColumn(format="%.1f"),
+                    "庫存金額": st.column_config.NumberColumn(format="%.1f")
+                }
+            )
+    
+    st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
