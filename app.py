@@ -690,7 +690,7 @@ def page_analysis():
             st.session_state.step = "select_vendor"
             st.rerun()
         
-         return
+        return
     # ============================================================
     # [E6.2] Clean + Filter by Store + Date
     # ============================================================
@@ -910,6 +910,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
