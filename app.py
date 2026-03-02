@@ -719,6 +719,44 @@ def page_analysis():
     with t_trend:
         st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
 
+# ============================================================
+# [E6.5] Tabs - 明細 / 趨勢
+# ============================================================
+t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
+
+with t_detail:
+    st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
+
+    required_cols = {"廠商", "品項名稱", "單位", "單價", "期間消耗", "本次叫貨", "總金額"}
+    if not required_cols.issubset(set(final_filt.columns)):
+        st.warning(f"⚠️ Records 欄位不足，缺少：{sorted(list(required_cols - set(final_filt.columns)))}")
+    else:
+        summ_df = (
+            final_filt.groupby(["廠商", "品項名稱", "單位", "單價"])
+            .agg({"期間消耗": "sum", "本次叫貨": "sum", "總金額": "sum"})
+            .reset_index()
+        )
+
+        stock_map = last_stock.set_index("品項名稱")["本次剩餘"].to_dict() if ("本次剩餘" in last_stock.columns) else {}
+        summ_df["期末庫存"] = summ_df["品項名稱"].map(stock_map).fillna(0)
+
+        st.dataframe(
+            summ_df.sort_values("總金額", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "單價": st.column_config.NumberColumn(format="%.1f"),
+                "期間消耗": st.column_config.NumberColumn(format="%.1f"),
+                "本次叫貨": st.column_config.NumberColumn(format="%.1f"),
+                "總金額": st.column_config.NumberColumn("採購金額", format="$%.1f"),
+                "期末庫存": st.column_config.NumberColumn(format="%.1f"),
+            },
+        )
+
+with t_trend:
+    st.write("<b>📈 採購金額圖表</b>", unsafe_allow_html=True)
+
+    # Plotly 報表模式（只留圖片與下載）
     PLOTLY_CONFIG = {
         "displayModeBar": True,
         "displaylogo": False,
@@ -736,8 +774,6 @@ def page_analysis():
 
     if not HAS_PLOTLY:
         st.info("💡 Plotly 未啟用，無法顯示圖表。")
-    elif "final_filt" not in locals() or final_filt is None:
-        st.info("💡 尚未產生 final_filt（請先完成篩選/載入資料）。")
     else:
         # 1) 依日期採購金額趨勢
         if ("日期" in final_filt.columns) and ("總金額" in final_filt.columns):
@@ -790,10 +826,7 @@ def page_analysis():
         else:
             st.info("💡 欄位不足，無法繪製排行圖。")
 
-    # ✅ 永遠顯示：一定要在 with t_trend 內，且不縮進上面的 else
-    st.warning("DEBUG: button block reached")
-    st.write("DEBUG step:", st.session_state.get("step"))
-
+    st.divider()
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_ana_v2"):
         st.session_state.step = "select_vendor"
         st.rerun()
@@ -839,6 +872,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
