@@ -58,14 +58,28 @@ def sync_to_cloud(df_to_save):
     except: # 💡 這裡之前遺失了縮排與對應，導致 SyntaxError
         return False
 
-# 💡 戰略新增：LINE Messaging API 發送函式 (確保縮排與 def 對齊)
+# 💡 戰略升級：多群組自動對位發送系統
 def send_line_message(message):
     import requests
     import json
     try:
-        # 從你設定的 Secrets 隔層中抓取鑰匙
+        # 1. 抓取通訊密鑰
         token = st.secrets["line_bot"]["channel_access_token"]
-        user_id = st.secrets["line_bot"]["user_id"]
+        
+        # 2. 核心對位：抓取當前分店名稱
+        current_store = st.session_state.get('store', '')
+        
+        # 3. 從 [line_groups] 表格中檢索對應 ID (支援你剛設的 "師大店" 等)
+        # 如果找不到對應 ID，則嘗試回退到 user_id (個人) 作為保險
+        target_id = st.secrets.get("line_groups", {}).get(current_store)
+        
+        if not target_id:
+            # 如果群組表找不到，才考慮發給個人，或報錯
+            target_id = st.secrets["line_bot"].get("user_id")
+            
+        if not target_id:
+            st.error(f"❌ 找不到【{current_store}】的發送目標 (Group ID)，請檢查 Secrets 設定。")
+            return False
         
         url = "https://api.line.me/v2/bot/message/push"
         headers = {
@@ -73,11 +87,10 @@ def send_line_message(message):
             "Authorization": f"Bearer {token}"
         }
         payload = {
-            "to": user_id,
+            "to": target_id,
             "messages": [{"type": "text", "text": message}]
         }
         
-        # 執行發送
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         return response.status_code == 200
     except Exception as e:
@@ -474,3 +487,4 @@ elif st.session_state.step == "analysis":
             st.warning("⚠️ 此區間尚無數據紀錄")
     
     st.button("⬅️ 返回功能選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True)
+
