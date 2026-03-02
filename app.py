@@ -1,3 +1,24 @@
+# =====================================================
+# OMS SYSTEM MAP (TOC)
+# =====================================================
+# [A0] Imports
+# [A1] Config
+# [A2] Global UI Style
+# [B1] Google Sheets IO
+# [B2] LINE Messaging
+# [C1] CSV Loader
+# [D1] Shared Tools
+# [E1] select_store
+# [E2] select_vendor
+# [E3] fill_items
+# [E4] view_history
+# [E5] export
+# [E6] analysis
+# [F1] Router
+# [G1] Main
+# =====================================================
+
+
 # ============================================================
 # [A0] Imports
 # ============================================================
@@ -7,14 +28,8 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
-
-# Plotly (optional)
-try:
-    import plotly.express as px
-    HAS_PLOTLY = True
-except Exception:
-    HAS_PLOTLY = False
-
+import plotly.express as px
+HAS_PLOTLY = True
 
 # ============================================================
 # [A1] Config - 你最常改的地方都放這裡
@@ -691,5 +706,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
