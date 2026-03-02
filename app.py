@@ -233,7 +233,7 @@ elif st.session_state.step == "fill_items":
     items = df_i[df_i['廠商名稱'] == st.session_state.vendor]
     hist_df = st.session_state.get('history_df', pd.DataFrame())
     
-    # --- 💡 庫存頁面：上次數據參考表格 (鎖定小數點一位) ---
+    # --- 💡 庫存頁面：上次數據參考 (升級為摺疊式，預設關閉) ---
     if not hist_df.empty:
         ref_list = []
         for f_id in items['品項ID'].unique():
@@ -249,12 +249,12 @@ elif st.session_state.step == "fill_items":
                 })
         
         if ref_list:
-            st.write("<b>📊 上次數據參考</b>", unsafe_allow_html=True)
-            display_ref_df = pd.DataFrame(ref_list)
-            # 💡 強制轉換為字串鎖定一位小數，防止 1.0000 出現
-            for col in ["上次叫貨", "期間消耗"]:
-                display_ref_df[col] = display_ref_df[col].apply(lambda x: f"{x:.1f}")
-            st.table(display_ref_df)
+            # 🚀 戰略優化：使用 expander 封裝，預設為 False (收合)
+            with st.expander("📊 查看上次叫貨/消耗參考 (點擊展開)", expanded=False):
+                display_ref_df = pd.DataFrame(ref_list)
+                for col in ["上次叫貨", "期間消耗"]:
+                    display_ref_df[col] = display_ref_df[col].apply(lambda x: f"{x:.1f}")
+                st.table(display_ref_df)
 
     st.write("---")
     # 💡 這裡就是您報錯的地方，現在已經精確對齊
@@ -539,3 +539,4 @@ elif st.session_state.step == "analysis":
             )
 
     st.button("⬅️ 返回選單", on_click=lambda: st.session_state.update(step="select_vendor"), use_container_width=True, key="back_ana_v2")
+
