@@ -1,48 +1,31 @@
-from __future__ import annotations
-
-from pathlib import Path
 import pandas as pd
-import streamlit as st
+from pathlib import Path
 
-# ============================================================
-# CSV paths
-# ============================================================
-CSV_ITEMS = Path("data/品項總覽.xlsx - 品項.csv")
-CSV_STORE = Path("data/品項總覽.xlsx - 分店.csv")
-CSV_PRICE = Path("data/品項總覽.xlsx - 價格歷史.csv")
+DATA_DIR = Path("data")
+CSV_ITEMS = DATA_DIR / "品項總覽.xlsx - 品項.csv"
+CSV_STORE = DATA_DIR / "品項總覽.xlsx - 分店.csv"
+CSV_PRICE = DATA_DIR / "品項總覽.xlsx - 價格歷史.csv"
 
+def load_csv_safe(path: Path) -> pd.DataFrame | None:
+    for enc in ["utf-8-sig", "utf-8", "cp950", "big5"]:
+        try:
+            df = pd.read_csv(path, encoding=enc)
+            return df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
+        except Exception:
+            continue
+    return None
 
-def _assert_exists(p: Path) -> None:
-    if not p.exists():
-        raise FileNotFoundError(f"找不到檔案：{p.as_posix()}")
+def load_master_data():
+    df_s = load_csv_safe(CSV_STORE)
+    df_i = load_csv_safe(CSV_ITEMS)
+    df_pr = load_csv_safe(CSV_PRICE)
 
+    item_display_map = {}
+    if df_i is not None and not df_i.empty and {"品項ID","品項名稱"}.issubset(df_i.columns):
+        item_display_map = (
+            df_i.drop_duplicates("品項ID")
+               .set_index("品項ID")["品項名稱"]
+               .to_dict()
+        )
 
-@st.cache_data(show_spinner=False)
-def load_items_df() -> pd.DataFrame:
-    _assert_exists(CSV_ITEMS)
-    return pd.read_csv(CSV_ITEMS)
-
-
-@st.cache_data(show_spinner=False)
-def load_store_df() -> pd.DataFrame:
-    _assert_exists(CSV_STORE)
-    return pd.read_csv(CSV_STORE)
-
-
-@st.cache_data(show_spinner=False)
-def load_price_df() -> pd.DataFrame:
-    _assert_exists(CSV_PRICE)
-    return pd.read_csv(CSV_PRICE)
-
-
-def guess_store_name_col(df: pd.DataFrame) -> str:
-    """
-    用「最不容易壞」的方式猜分店名稱欄位。
-    找不到就用第一欄。
-    """
-    candidates = ["分店", "分店名稱", "門市", "門市名稱", "store", "store_name", "name"]
-    cols = list(df.columns)
-    for c in candidates:
-        if c in cols:
-            return c
-    return cols[0] if cols else ""
+    return df_s, df_i, df_pr, item_display_map
