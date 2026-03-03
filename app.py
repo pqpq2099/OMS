@@ -7,7 +7,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, timedelta
 from pathlib import Path
-
+from core.data_sources import load_items_df, load_store_df, load_price_df
 # Plotly (optional)
 try:
     import plotly.express as px
@@ -20,9 +20,9 @@ except Exception:
 # ============================================================
 SHEET_ID = "1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc"
 
-CSV_ITEMS = Path("data/品項總覽.xlsx - 品項.csv")
-CSV_STORE = Path("data/品項總覽.xlsx - 分店.csv")
-CSV_PRICE = Path("data/品項總覽.xlsx - 價格歷史.csv")
+items_df = load_items_df()
+store_df = load_store_df()
+price_df = load_price_df()
 
 # ============================================================
 # [A2] Global UI Style
@@ -718,4 +718,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
