@@ -1,13 +1,9 @@
 import streamlit as st
+from core.ui_style import apply_global_style
+from core.session import init_session
 
-st.set_page_config(page_title="OMS", layout="wide")
+apply_global_style()
+init_session()
 
-# 這裡不要放任何業務邏輯
-# 2.0 原則：app.py 只當入口與導航提示
-
-st.title("OMS 2.0（develop）")
-
-st.info(
-    "✅ 系統已啟動。請從左側選單進入 Home。\n\n"
-    "接下來你會把 1.0 的功能逐步搬到 pages/ 與 core/。"
-)
+st.title("OMS 2.0")
+st.caption("請使用左側側欄進入：Home / Inventory / Export / Analysis / History")
