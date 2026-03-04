@@ -657,7 +657,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             st.stop()
 
         old_end = new_eff - pd.Timedelta(days=1)
-        if old_end.date() < old_eff:
+        if old_end < old_eff:
             st.error("⚠️ 會造成舊價格區間不合法（end_date < effective_date）。請調整新生效日。")
             st.stop()
 
@@ -665,7 +665,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             "prices",
             int(current_row["_row"]),
             {
-                "end_date": str(old_end.date()),
+                "end_date": str(old_end)),
                 "updated_at": now,
                 "updated_by": actor_user_id,
                 "note": f"[CLOSE] close by new price effective_date={new_eff}",
@@ -719,6 +719,11 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
 
     st.success(f"✅ 已套用新現行價：{item_label} / {unit_price}（{price_id}）")
     st.rerun()
+
+
+def page_header():
+    st.title("ORIVIA OMS Admin UI")
+    st.caption("BUILD: removed .date() test")
 
 
 # ============================================================
@@ -777,4 +782,5 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
