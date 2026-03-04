@@ -31,8 +31,7 @@ class GoogleSheetsRepo:
         # 本機：用 json 檔案路徑
         else:
             creds = Credentials.from_service_account_file(
-                creds_path, scopes=scopes
-            )
+                creds_path, scopes=scopes)
 
         gc = gspread.authorize(creds)
         self.sh = gc.open_by_key(sheet_id)
@@ -245,5 +244,6 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
 
