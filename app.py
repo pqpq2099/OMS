@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 import streamlit as st
 import pandas as pd
+from datetime import timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -566,7 +567,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             tmp2["__end"] = tmp2["end_date"].apply(_to_date)
             tmp2["__active"] = tmp2["is_active"].apply(lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE"))
 
-            target_end = (cur_eff - pd.Timedelta(days=1)).date()
+            target_end = cur_eff - timedelta(days=1)
             prev = tmp2[
                 (tmp2["item_id"].astype(str) == str(item_id)) &
                 (tmp2["__active"]) &
@@ -776,3 +777,4 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
