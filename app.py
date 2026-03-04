@@ -62,8 +62,7 @@ def sidebar_system_config():
         # ✅ Windows 路徑用 / 或 raw 字串（這裡用 / 最穩）
         creds_path = st.text_input(
             "Service Account JSON Path",
-            value="F:/Google Backup/google文件專用/ORIVIA_OMS/secrets/service_account.json",
-        )
+            value="secrets/service_account.json"
 
         env = st.text_input("ENV", value="prod")
         audit_sheet = st.text_input("Audit Sheet", value="audit_log_test")
@@ -217,3 +216,4 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
