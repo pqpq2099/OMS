@@ -860,30 +860,32 @@ def main():
 
         page = st.radio("Page", options=pages, key="nav_page", index=0)
 
-            if page == "Vendors / Create":
-                page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
-            
-            elif page == "Units / Create":
-                page_units_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
-            
-            elif page == "Items / Create":
-                page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
-            
-            elif page == "Items / List":
-                page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
-            
-            elif page == "Items / Edit":
-                page_items_edit(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
-            
-            elif page == "Prices / Create":
-                page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
-            
-            else:
-                st.info("目前此角色沒有可用頁面。")
+           page = st.radio("Page", options=pages, key="nav_page", index=0)
 
+        if page == "Vendors / Create":
+            page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    
+        elif page == "Units / Create":
+            page_units_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    
+        elif page == "Items / Create":
+            page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    
+        elif page == "Items / List":
+            page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+    
+        elif page == "Items / Edit":
+            page_items_edit(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+    
+        elif page == "Prices / Create":
+            page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+    
+        else:
+            st.info("目前此角色沒有可用頁面。")
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
 
 
