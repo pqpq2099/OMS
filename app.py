@@ -445,10 +445,117 @@ def page_items_edit(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
     st.json(rec)  # 先用最直觀方式顯示
 
 
-def page_prices_create(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
+def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.subheader("Admin / Prices / Create")
-    st.info("Price create UI placeholder")
+    st.markdown("### 新增價格（歷史價格）")
 
+    # ----------------------------
+    # 1) Items 下拉（只顯示啟用）
+    # ----------------------------
+    items_df = repo.read_table("items")
+    if items_df.empty:
+        st.warning("沒有 items，請先建立品項")
+        return
+
+    if "is_active" in items_df.columns:
+        items_df = items_df[items_df["is_active"] == "TRUE"]
+
+    # 顯示名稱優先：item_name_zh > item_name > item_id
+    def _item_label(r):
+        name = ""
+        if "item_name_zh" in items_df.columns and str(r.get("item_name_zh", "")).strip():
+            name = str(r.get("item_name_zh", "")).strip()
+        elif "item_name" in items_df.columns and str(r.get("item_name", "")).strip():
+            name = str(r.get("item_name", "")).strip()
+        iid = str(r.get("item_id", "")).strip()
+        return f"{name} ({iid})" if name else iid
+
+    item_map = { _item_label(r): r.get("item_id", "") for _, r in items_df.iterrows() if str(r.get("item_id","")).strip() }
+    if not item_map:
+        st.warning("沒有可用品項（items.is_active=TRUE）")
+        return
+
+    item_label = st.selectbox("選擇品項", options=list(item_map.keys()))
+    item_id = item_map[item_label]
+
+    # ----------------------------
+    # 2) 價格輸入
+    # ----------------------------
+    unit_price = st.number_input("單價 unit_price", min_value=0.0, step=1.0, format="%.2f")
+
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        effective_date = st.date_input("生效日 effective_date")
+    with col_d2:
+        end_date = st.date_input("失效日 end_date（可空）", value=None)
+
+    is_active = st.checkbox("啟用 (is_active)", value=True)
+
+    submit = st.button("建立價格", use_container_width=True)
+    if not submit:
+        return
+
+    if unit_price <= 0:
+        st.warning("單價必須 > 0")
+        return
+
+    # ----------------------------
+    # 3) 簡版防重疊：如果 prices 已有此 item 的「現行價（end_date 空）」且你也要新增現行價 → 擋
+    # ----------------------------
+    prices_df = repo.read_table("prices")
+    if not prices_df.empty and "item_id" in prices_df.columns:
+        cur = prices_df[
+            (prices_df["item_id"].astype(str) == str(item_id)) &
+            ((prices_df.get("end_date", "") == "") | prices_df.get("end_date", "").isna())
+        ]
+        if len(cur) > 0 and end_date is None:
+            st.error("⚠️ 此品項已有一筆現行價（end_date 空）。請先把舊價格補 end_date，再新增新的現行價。")
+            st.stop()
+
+    # ----------------------------
+    # 4) 產生 price_id + 寫入 prices
+    # ----------------------------
+    try:
+        price_id = get_next_id(repo, key="prices", env=env, actor_user_id=actor_user_id)
+    except Exception as e:
+        fail(f"取得 price_id 失敗：{e}")
+
+    now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    new_price = {
+        "price_id": price_id,
+        "brand_id": "",              # 先留空（之後接 brands）
+        "vendor_id": "",             # 先留空（之後可從 items join 補）
+        "item_id": item_id,
+        "unit_price": str(unit_price),
+        "effective_date": str(effective_date),
+        "end_date": "" if end_date is None else str(end_date),
+        "is_active": str(bool(is_active)),
+        "audit": "",
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    # 自動補齊 header（避免 prices 表未來加欄位又擋）
+    try:
+        ws = repo.get_ws("prices")
+        header = ws.get_all_values()[0]
+        for c in header:
+            if c not in new_price:
+                new_price[c] = ""
+    except Exception as e:
+        fail(f"讀取 prices header 失敗：{e}")
+
+    try:
+        repo.append_row_dict("prices", new_price)
+    except Exception as e:
+        fail(f"寫入 prices 失敗：{e}")
+
+    st.success(f"✅ 建立成功：{item_label} / {unit_price}（{price_id}）")
+    st.json(new_price)
 
 # ============================================================
 # Main
@@ -501,11 +608,12 @@ def main():
     elif page == "Items / Edit":
         page_items_edit(repo, pipe, actor_user_id=auth["user_id"], env=env)
     elif page == "Prices / Create":
-        page_prices_create(repo, pipe, actor_user_id=auth["user_id"], env=env)
+        page_prices_create(repo, env=env, actor_user_id=auth["user_id"])
 
 
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
 
