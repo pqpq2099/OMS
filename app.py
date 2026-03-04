@@ -1,20 +1,85 @@
 # ============================================================
-# ORIVIA OMS Admin UI (Minimal Complete Version)
+# ORIVIA OMS Admin UI (Stable + Cache + Price Rollback)
 # 單檔 app.py：可上 GitHub + Streamlit Cloud 測試
+# - 解決：.date() 型別問題（全部用 date）
+# - 解決：Google Sheets 讀取配額爆掉（repo 用 cache_resource + 讀表用 cache_data）
+# - 保留：Vendors / Items / Prices Create + Rollback + Audit
 # ============================================================
 
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import timedelta, date
 import streamlit as st
 import pandas as pd
-from datetime import timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 
 
 # ============================================================
-# Repo
+# Basic helpers
+# ============================================================
+
+def fail(msg: str):
+    st.error(msg)
+    st.stop()
+
+
+def ensure_login():
+    # 先用簡化登入（之後再接 users/roles）
+    return {"user_id": "OWNER", "role": "Owner"}
+
+
+def page_header():
+    st.title("ORIVIA OMS Admin UI")
+    st.caption("BUILD: stable + cache + rollback")
+
+
+def sidebar_system_config():
+    with st.sidebar:
+        st.subheader("System Config")
+
+        sheet_id = st.text_input(
+            "Sheet ID",
+            value="1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ",
+        ).strip()
+
+        creds_path = st.text_input(
+            "Service Account JSON Path (local only)",
+            value="secrets/service_account.json",
+        ).strip()
+
+        env = st.text_input("ENV", value="prod").strip()
+        audit_sheet = st.text_input("Audit Sheet", value="audit_log_test").strip()
+
+        st.caption("✅ Streamlit Cloud 會自動用 st.secrets['gcp']，不看本機路徑。")
+
+    return sheet_id, creds_path, env, audit_sheet
+
+
+def _now_ts() -> str:
+    return pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _to_bool_str(v: bool) -> str:
+    return "TRUE" if bool(v) else "FALSE"
+
+
+def _parse_date(s) -> date | None:
+    """
+    永遠回傳 datetime.date 或 None
+    """
+    s = str(s).strip()
+    if not s:
+        return None
+    try:
+        return pd.to_datetime(s, errors="raise").date()
+    except Exception:
+        return None
+
+
+# ============================================================
+# Repo (Google Sheets)
 # ============================================================
 
 class GoogleSheetsRepo:
@@ -27,9 +92,8 @@ class GoogleSheetsRepo:
         # Streamlit Cloud：用 secrets（不需要檔案）
         if "gcp" in st.secrets:
             creds = Credentials.from_service_account_info(st.secrets["gcp"], scopes=scopes)
-
-        # 本機：用 json 檔案路徑
         else:
+            # 本機：用 json 檔案路徑
             if not creds_path:
                 raise FileNotFoundError("Missing creds_path (service_account.json path)")
             p = Path(creds_path)
@@ -43,28 +107,12 @@ class GoogleSheetsRepo:
     def get_ws(self, table: str):
         return self.sh.worksheet(table)
 
-    def read_table(self, table: str) -> pd.DataFrame:
-        ws = self.get_ws(table)
-        values = ws.get_all_values()
-        if not values:
-            return pd.DataFrame()
-        header = values[0]
-        rows = values[1:]
-        return pd.DataFrame(rows, columns=header)
-
-    def read_table_with_rownum(self, table: str) -> pd.DataFrame:
+    def fetch_all_values(self, table: str) -> list[list[str]]:
         """
-        讀表 + 帶回 Google Sheet 的 row index（1-based），存在 _row 欄位
+        真的打 API 的地方（給 cache 用）
         """
         ws = self.get_ws(table)
-        values = ws.get_all_values()
-        if not values:
-            return pd.DataFrame()
-        header = values[0]
-        rows = values[1:]
-        df = pd.DataFrame(rows, columns=header)
-        df["_row"] = list(range(2, 2 + len(rows)))  # header row=1
-        return df
+        return ws.get_all_values()
 
     def append_row_dict(self, table: str, row: dict):
         """
@@ -128,50 +176,53 @@ class GoogleSheetsRepo:
 
 
 # ============================================================
-# Basic helpers
+# Cache layer
 # ============================================================
 
-def page_header():
-    st.title("ORIVIA OMS Admin UI")
+@st.cache_resource(show_spinner=False)
+def get_repo_cached(sheet_id: str, creds_path: str | None):
+    # Repo 只建一次，避免每次 rerun 都重新 open_by_key（超吃配額）
+    return GoogleSheetsRepo(sheet_id=sheet_id, creds_path=creds_path)
 
 
-def fail(msg: str):
-    st.error(msg)
-    st.stop()
+@st.cache_data(show_spinner=False, ttl=120)
+def cached_table_values(sheet_id: str, table: str, cache_bust: int) -> list[list[str]]:
+    # 這裡會打 API，但 120 秒內同樣參數不會再打
+    repo = get_repo_cached(sheet_id, None)
+    return repo.fetch_all_values(table)
 
 
-def ensure_login():
-    # 先用簡化登入（之後再接 users/roles）
-    return {"user_id": "OWNER", "role": "Owner"}
+def read_table(repo: GoogleSheetsRepo, sheet_id: str, table: str) -> pd.DataFrame:
+    bust = int(st.session_state.get("cache_bust", 0))
+    values = cached_table_values(sheet_id, table, bust)
+    if not values:
+        return pd.DataFrame()
+    header = values[0]
+    rows = values[1:]
+    return pd.DataFrame(rows, columns=header)
 
 
-def sidebar_system_config():
-    with st.sidebar:
-        st.subheader("System Config")
-
-        sheet_id = st.text_input(
-            "Sheet ID",
-            value="1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ",
-        )
-
-        creds_path = st.text_input(
-            "Service Account JSON Path (local only)",
-            value="secrets/service_account.json",
-        )
-
-        env = st.text_input("ENV", value="prod")
-        audit_sheet = st.text_input("Audit Sheet", value="audit_log_test")
-
-        st.caption("✅ Streamlit Cloud 會自動用 st.secrets['gcp']，不看本機路徑。")
-
-    return sheet_id.strip(), creds_path.strip(), env.strip(), audit_sheet.strip()
+def read_table_with_rownum(repo: GoogleSheetsRepo, sheet_id: str, table: str) -> pd.DataFrame:
+    bust = int(st.session_state.get("cache_bust", 0))
+    values = cached_table_values(sheet_id, table, bust)
+    if not values:
+        return pd.DataFrame()
+    header = values[0]
+    rows = values[1:]
+    df = pd.DataFrame(rows, columns=header)
+    df["_row"] = list(range(2, 2 + len(rows)))  # header row=1
+    return df
 
 
-def build_services(sheet_id: str, creds_path: str, env: str, audit_sheet: str):
-    repo = GoogleSheetsRepo(sheet_id=sheet_id, creds_path=creds_path)
-    pipe = None
-    return repo, None, None, pipe
+def bust_cache():
+    st.session_state["cache_bust"] = int(st.session_state.get("cache_bust", 0)) + 1
+    # 也可以順便清一次 data cache（更保險）
+    st.cache_data.clear()
 
+
+# ============================================================
+# Audit (best-effort)
+# ============================================================
 
 def try_append_audit(repo: GoogleSheetsRepo, audit_sheet: str, actor_user_id: str, action: str, entity: str, detail: str):
     """
@@ -185,10 +236,9 @@ def try_append_audit(repo: GoogleSheetsRepo, audit_sheet: str, actor_user_id: st
             return
         header = values[0]
 
-        now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
         row = {c: "" for c in header}
         for k, v in {
-            "ts": now,
+            "ts": _now_ts(),
             "actor": actor_user_id,
             "action": action,
             "entity": entity,
@@ -247,7 +297,7 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
         updated["last_number"] = str(next_value)
 
     if "updated_at" in updated:
-        updated["updated_at"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+        updated["updated_at"] = _now_ts()
 
     if "updated_by" in updated:
         updated["updated_by"] = actor_user_id
@@ -257,7 +307,7 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
             updated[c] = ""
 
     repo.update_row("id_sequences", sheet_row_index, updated)
-
+    bust_cache()
     return new_id
 
 
@@ -265,7 +315,7 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 # Pages
 # ============================================================
 
-def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
+def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
     st.subheader("Admin / Vendors / Create")
     st.markdown("### 新增廠商")
 
@@ -290,13 +340,13 @@ def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     except Exception as e:
         fail(f"取得 vendor_id 失敗：{e}")
 
-    now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = _now_ts()
 
     new_vendor = {
         "vendor_id": vendor_id,
         "brand_id": "",
         "vendor_name": vendor_name,
-        "is_active": str(bool(is_active)),
+        "is_active": _to_bool_str(is_active),
         "audit": "",
         "note": "",
         "created_at": now,
@@ -307,6 +357,7 @@ def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
 
     try:
         repo.append_row_dict("vendors", new_vendor)
+        bust_cache()
     except Exception as e:
         fail(f"寫入 vendors 失敗：{e}")
 
@@ -314,17 +365,17 @@ def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.json(new_vendor)
 
 
-def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
+def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
     st.subheader("Admin / Items / Create")
     st.markdown("### 新增品項")
 
-    vendors_df = repo.read_table("vendors")
+    vendors_df = read_table(repo, sheet_id, "vendors")
     if vendors_df.empty:
         st.warning("沒有 vendors，請先建立廠商")
         return
 
     if "is_active" in vendors_df.columns:
-        vendors_df = vendors_df[vendors_df["is_active"] == "TRUE"]
+        vendors_df = vendors_df[vendors_df["is_active"].astype(str).str.upper() == "TRUE"]
 
     vendor_map = {
         f"{row.get('vendor_name','')} ({row.get('vendor_id','')})": row.get("vendor_id", "")
@@ -339,43 +390,36 @@ def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     vendor_label = st.selectbox("選擇廠商", options=list(vendor_map.keys()))
     vendor_id = vendor_map[vendor_label]
 
-    units_df = repo.read_table("units")
+    units_df = read_table(repo, sheet_id, "units")
+    unit_map = {}
     unit_options = []
 
-    if not units_df.empty:
+    if not units_df.empty and "unit_id" in units_df.columns:
         if "is_active" in units_df.columns:
-            units_df = units_df[units_df["is_active"] == "TRUE"]
+            units_df = units_df[units_df["is_active"].astype(str).str.upper() == "TRUE"]
 
-        if "unit_id" in units_df.columns:
-            def _label(r):
-                name = r.get("unit_name", "") if "unit_name" in units_df.columns else ""
-                uid = r.get("unit_id", "")
-                return f"{name} ({uid})" if name else str(uid)
+        def _u_label(r):
+            name = str(r.get("unit_name", "")).strip() if "unit_name" in units_df.columns else ""
+            uid = str(r.get("unit_id", "")).strip()
+            return f"{name} ({uid})" if name else uid
 
-            unit_map = { _label(r): r.get("unit_id", "") for _, r in units_df.iterrows() }
-            unit_options = list(unit_map.keys())
-        else:
-            unit_map = {}
-    else:
-        unit_map = {}
+        unit_map = {_u_label(r): str(r.get("unit_id", "")).strip() for _, r in units_df.iterrows()}
+        unit_options = list(unit_map.keys())
 
     col_u1, col_u2 = st.columns(2)
     with col_u1:
-        stock_unit = st.selectbox("庫存單位 stock_unit", options=unit_options) if unit_options else st.text_input("庫存單位 stock_unit（先手輸入）")
+        stock_unit_label = st.selectbox("庫存單位 stock_unit", options=unit_options) if unit_options else st.text_input("庫存單位 stock_unit（先手輸入）")
     with col_u2:
-        order_unit = st.selectbox("叫貨單位 order_unit", options=unit_options) if unit_options else st.text_input("叫貨單位 order_unit（先手輸入）")
+        order_unit_label = st.selectbox("叫貨單位 order_unit", options=unit_options) if unit_options else st.text_input("叫貨單位 order_unit（先手輸入）")
 
-    if unit_options:
-        stock_unit = unit_map.get(stock_unit, "")
-        order_unit = unit_map.get(order_unit, "")
+    stock_unit = unit_map.get(stock_unit_label, stock_unit_label).strip() if isinstance(stock_unit_label, str) else ""
+    order_unit = unit_map.get(order_unit_label, order_unit_label).strip() if isinstance(order_unit_label, str) else ""
 
     item_name = st.text_input("品項名稱（內部） item_name", value="").strip()
     item_name_zh = st.text_input("中文名稱 item_name_zh", value=item_name).strip()
     item_name_en = st.text_input("英文名稱 item_name_en（可空）", value="").strip()
     item_code = st.text_input("品項代碼 item_code（可空）", value="").strip()
     is_active = st.checkbox("啟用", value=True)
-
-    brand_id = ""
 
     submit = st.button("建立品項", use_container_width=True)
     if not submit:
@@ -394,11 +438,11 @@ def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     except Exception as e:
         fail(f"取得 item_id 失敗：{e}")
 
-    now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = _now_ts()
 
     new_item = {
         "item_id": item_id,
-        "brand_id": brand_id,
+        "brand_id": "",
         "vendor_id": vendor_id,
         "item_code": item_code,
         "item_name": item_name,
@@ -406,7 +450,7 @@ def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
         "item_name_en": item_name_en,
         "stock_unit": stock_unit,
         "order_unit": order_unit,
-        "is_active": str(bool(is_active)),
+        "is_active": _to_bool_str(is_active),
         "audit": "",
         "note": "",
         "created_at": now,
@@ -417,6 +461,7 @@ def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
 
     try:
         repo.append_row_dict("items", new_item)
+        bust_cache()
     except Exception as e:
         fail(f"寫入 items 失敗：{e}")
 
@@ -424,10 +469,10 @@ def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.json(new_item)
 
 
-def page_items_list(repo: GoogleSheetsRepo):
+def page_items_list(repo: GoogleSheetsRepo, sheet_id: str):
     st.subheader("Admin / Items / List")
 
-    df = repo.read_table("items")
+    df = read_table(repo, sheet_id, "items")
     if df.empty:
         st.warning("items table 沒有資料")
         return
@@ -456,7 +501,7 @@ def page_items_list(repo: GoogleSheetsRepo):
         st.rerun()
 
 
-def page_items_edit(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
+def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str):
     st.subheader("Admin / Items / Edit")
 
     item_id = st.session_state.get("edit_item_id")
@@ -464,7 +509,7 @@ def page_items_edit(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
         st.info("請先到 Items / List 選一筆，再進 Edit。")
         return
 
-    df = repo.read_table("items")
+    df = read_table(repo, sheet_id, "items")
     if df.empty:
         st.warning("items table 沒資料")
         return
@@ -483,17 +528,17 @@ def page_items_edit(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
     st.json(rec)
 
 
-def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, audit_sheet: str):
+def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str, audit_sheet: str):
     st.subheader("Admin / Prices / Create")
     st.markdown("### 新增價格（歷史價格）")
 
-    items_df = repo.read_table("items")
+    items_df = read_table(repo, sheet_id, "items")
     if items_df.empty:
         st.warning("沒有 items，請先建立品項")
         return
 
     if "is_active" in items_df.columns:
-        items_df = items_df[items_df["is_active"] == "TRUE"]
+        items_df = items_df[items_df["is_active"].astype(str).str.upper() == "TRUE"]
 
     def _item_label(r):
         name = ""
@@ -516,7 +561,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
     item_label = st.selectbox("選擇品項", options=list(item_map.keys()))
     item_id = item_map[item_label]
 
-    prices_df = repo.read_table_with_rownum("prices")
+    prices_df = read_table_with_rownum(repo, sheet_id, "prices")
     if prices_df.empty:
         st.info("prices 目前沒有資料，你將建立第一筆價格。")
     else:
@@ -524,20 +569,12 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             if col not in prices_df.columns:
                 prices_df[col] = ""
 
-    def _to_date(s):
-        s = str(s).strip()
-        if not s:
-            return None
-        try:
-            return pd.to_datetime(s).date()
-        except Exception:
-            return None
-
+    # 找目前現行價：is_active TRUE/空 + end_date 空，取最新 effective_date
     current_row = None
     if not prices_df.empty:
         tmp = prices_df.copy()
-        tmp["__eff"] = tmp["effective_date"].apply(_to_date)
-        tmp["__end"] = tmp["end_date"].apply(_to_date)
+        tmp["__eff"] = tmp["effective_date"].apply(_parse_date)
+        tmp["__end"] = tmp["end_date"].apply(_parse_date)
         tmp["__active"] = tmp["is_active"].apply(lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE"))
 
         cur = tmp[
@@ -550,6 +587,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             cur = cur.sort_values(by="__eff", ascending=True)
             current_row = cur.iloc[-1].to_dict()
 
+    # 顯示現行價 + Rollback
     if current_row:
         st.markdown("#### 目前現行價")
         st.write(
@@ -559,12 +597,13 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             f"- end_date：`(空)`"
         )
 
-        cur_eff = _to_date(current_row.get("effective_date", ""))
+        cur_eff = _parse_date(current_row.get("effective_date", ""))
         prev_row = None
+
         if cur_eff and not prices_df.empty:
             tmp2 = prices_df.copy()
-            tmp2["__eff"] = tmp2["effective_date"].apply(_to_date)
-            tmp2["__end"] = tmp2["end_date"].apply(_to_date)
+            tmp2["__eff"] = tmp2["effective_date"].apply(_parse_date)
+            tmp2["__end"] = tmp2["end_date"].apply(_parse_date)
             tmp2["__active"] = tmp2["is_active"].apply(lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE"))
 
             target_end = cur_eff - timedelta(days=1)
@@ -592,8 +631,9 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
                 st.error("找不到上一筆可恢復的價格（需要上一筆 end_date = 現行價生效日前一天）。")
                 st.stop()
 
-            now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+            now = _now_ts()
 
+            # 1) 作廢現行價
             repo.update_fields_by_row(
                 "prices",
                 int(current_row["_row"]),
@@ -605,6 +645,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
                 },
             )
 
+            # 2) 上一筆恢復為現行價（end_date 清空）
             repo.update_fields_by_row(
                 "prices",
                 int(prev_row["_row"]),
@@ -625,6 +666,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
                 detail=f"void={current_row.get('price_id','')}, restore={prev_row.get('price_id','')}",
             )
 
+            bust_cache()
             st.success("✅ 已撤回最新一次換價：新價已作廢，上一筆已恢復為現行價。")
             st.rerun()
 
@@ -643,11 +685,12 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
         st.warning("單價必須 > 0")
         return
 
-    new_eff = effective_date
-    now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_eff: date = effective_date
+    now = _now_ts()
 
+    # 若已有現行價 → 先封存舊價 end_date = new_eff - 1
     if current_row:
-        old_eff = _to_date(current_row.get("effective_date", ""))
+        old_eff = _parse_date(current_row.get("effective_date", ""))
         if not old_eff:
             st.error("現行價 effective_date 解析失敗，無法換價。")
             st.stop()
@@ -656,7 +699,8 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             st.error("⚠️ 新生效日必須晚於目前現行價的生效日。")
             st.stop()
 
-        old_end = new_eff - pd.Timedelta(days=1)
+        old_end: date = new_eff - timedelta(days=1)
+
         if old_end < old_eff:
             st.error("⚠️ 會造成舊價格區間不合法（end_date < effective_date）。請調整新生效日。")
             st.stop()
@@ -672,6 +716,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             },
         )
 
+    # 新增價格
     try:
         price_id = get_next_id(repo, key="prices", env=env, actor_user_id=actor_user_id)
     except Exception as e:
@@ -685,7 +730,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
         "unit_price": str(unit_price),
         "effective_date": str(new_eff),
         "end_date": "",
-        "is_active": str(bool(is_active)),
+        "is_active": _to_bool_str(is_active),
         "audit": "",
         "note": "",
         "created_at": now,
@@ -694,6 +739,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
         "updated_by": "",
     }
 
+    # 對齊 header（Fail Fast）
     try:
         ws = repo.get_ws("prices")
         header = ws.get_all_values()[0]
@@ -705,6 +751,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
 
     try:
         repo.append_row_dict("prices", new_price)
+        bust_cache()
     except Exception as e:
         fail(f"寫入 prices 失敗：{e}")
 
@@ -721,11 +768,6 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
     st.rerun()
 
 
-def page_header():
-    st.title("ORIVIA OMS Admin UI")
-    st.caption("BUILD: removed .date() test")
-
-
 # ============================================================
 # Main
 # ============================================================
@@ -739,14 +781,16 @@ def main():
     if not sheet_id:
         fail("Sheet ID 不能空白。")
 
+    # 本機才檢查 creds_path
     if "gcp" not in st.secrets:
         if not creds_path:
             fail("本機測試：Service Account JSON Path 不能空白。")
         if not Path(creds_path).exists():
             fail(f"找不到 service_account.json：{creds_path}")
 
+    # 這裡最關鍵：repo 用 cache_resource，避免重複初始化導致 quota 爆
     try:
-        repo, _, _, pipe = build_services(sheet_id, creds_path, env, audit_sheet)
+        repo = get_repo_cached(sheet_id, creds_path if "gcp" not in st.secrets else None)
     except Exception as e:
         fail(f"Repo 初始化失敗：{e}")
 
@@ -768,20 +812,17 @@ def main():
         )
 
     if page == "Vendors / Create":
-        page_vendors_create(repo, env=env, actor_user_id=auth["user_id"])
+        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=auth["user_id"])
     elif page == "Items / Create":
-        page_items_create(repo, env=env, actor_user_id=auth["user_id"])
+        page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=auth["user_id"])
     elif page == "Items / List":
-        page_items_list(repo)
+        page_items_list(repo, sheet_id=sheet_id)
     elif page == "Items / Edit":
-        page_items_edit(repo, pipe, actor_user_id=auth["user_id"], env=env)
+        page_items_edit(repo, sheet_id=sheet_id)
     elif page == "Prices / Create":
-        page_prices_create(repo, env=env, actor_user_id=auth["user_id"], audit_sheet=audit_sheet)
+        page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=auth["user_id"], audit_sheet=audit_sheet)
 
 
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
-
-
-
