@@ -1,9 +1,15 @@
 # ============================================================
-# ORIVIA OMS Admin UI (Stable + Cache + Price Rollback)
+# ORIVIA OMS Admin UI (Stable + Cache + Actor Selector + RBAC)
 # 單檔 app.py：可上 GitHub + Streamlit Cloud 測試
-# - 解決：.date() 型別問題（全部用 date）
-# - 解決：Google Sheets 讀取配額爆掉（repo 用 cache_resource + 讀表用 cache_data）
-# - 保留：Vendors / Items / Prices Create + Rollback + Audit
+#
+# ✅ 你要的：方案1（UI選操作者）可直接上線
+# - Sidebar：actor_user_id 下拉（OWNER / ADMIN_01~03）
+# - role mapping：Owner / Admin
+# - 基礎 RBAC：Admin 以上才能進 Vendors/Items/Prices
+# - 保留：Cache（避免 quota）、Prices Rollback、Audit best-effort
+#
+# ✅ 之後升級方案2（登入/權限）：
+# 只要把 actor_user_id 改成 auth["user_id"]，role 改成查 users 表即可
 # ============================================================
 
 from __future__ import annotations
@@ -25,14 +31,9 @@ def fail(msg: str):
     st.stop()
 
 
-def ensure_login():
-    # 先用簡化登入（之後再接 users/roles）
-    return {"user_id": "OWNER", "role": "Owner"}
-
-
 def page_header():
     st.title("ORIVIA OMS Admin UI")
-    st.caption("BUILD: stable + cache + rollback")
+    st.caption("BUILD: stable + cache + actor + rbac")
 
 
 def sidebar_system_config():
@@ -67,7 +68,7 @@ def _to_bool_str(v: bool) -> str:
 
 def _parse_date(s) -> date | None:
     """
-    永遠回傳 datetime.date 或 None
+    永遠回傳 datetime.date 或 None（避免 date/datetime 混用）
     """
     s = str(s).strip()
     if not s:
@@ -76,6 +77,50 @@ def _parse_date(s) -> date | None:
         return pd.to_datetime(s, errors="raise").date()
     except Exception:
         return None
+
+
+# ============================================================
+# Actor + Role (方案1：UI選操作者)
+# ============================================================
+
+ACTOR_OPTIONS = ["OWNER", "ADMIN_01", "ADMIN_02", "ADMIN_03"]
+
+ROLE_MAP = {
+    "OWNER": "Owner",
+    "ADMIN_01": "Admin",
+    "ADMIN_02": "Admin",
+    "ADMIN_03": "Admin",
+}
+
+ROLE_RANK = {"Owner": 3, "Admin": 2, "StoreManager": 1}
+
+
+def role_of(actor_user_id: str) -> str:
+    return ROLE_MAP.get(actor_user_id, "StoreManager")
+
+
+def require_role(min_role: str, actor_role: str):
+    if ROLE_RANK.get(actor_role, 0) < ROLE_RANK.get(min_role, 0):
+        st.warning("⚠️ 權限不足，無法進入此頁面。")
+        st.stop()
+
+
+def sidebar_actor_selector():
+    with st.sidebar:
+        st.divider()
+        st.subheader("Operator (方案1)")
+
+        actor_user_id = st.selectbox(
+            "操作者 actor_user_id",
+            options=ACTOR_OPTIONS,
+            index=0,
+            key="actor_user_id",
+        )
+
+        actor_role = role_of(actor_user_id)
+        st.caption(f"role: **{actor_role}**")
+
+    return actor_user_id, actor_role
 
 
 # ============================================================
@@ -108,16 +153,10 @@ class GoogleSheetsRepo:
         return self.sh.worksheet(table)
 
     def fetch_all_values(self, table: str) -> list[list[str]]:
-        """
-        真的打 API 的地方（給 cache 用）
-        """
         ws = self.get_ws(table)
         return ws.get_all_values()
 
     def append_row_dict(self, table: str, row: dict):
-        """
-        依照 sheet header 欄位順序 append 一列（Fail Fast：缺欄位就報錯）
-        """
         ws = self.get_ws(table)
         values = ws.get_all_values()
         if not values:
@@ -132,9 +171,6 @@ class GoogleSheetsRepo:
         ws.append_row(out, value_input_option="USER_ENTERED")
 
     def update_row(self, table: str, row_index_1based: int, new_row: dict):
-        """
-        以 row_index(1-based) 覆蓋整列（依 header 順序寫入）
-        """
         ws = self.get_ws(table)
         values = ws.get_all_values()
         if not values:
@@ -151,9 +187,6 @@ class GoogleSheetsRepo:
         ws.update(f"{start}:{end}", [row_values], value_input_option="USER_ENTERED")
 
     def update_fields_by_row(self, table: str, row_index_1based: int, patch: dict):
-        """
-        只更新指定列的部分欄位（其餘欄位維持原值）
-        """
         ws = self.get_ws(table)
         values = ws.get_all_values()
         if not values:
@@ -176,18 +209,16 @@ class GoogleSheetsRepo:
 
 
 # ============================================================
-# Cache layer
+# Cache layer (quota protection)
 # ============================================================
 
 @st.cache_resource(show_spinner=False)
 def get_repo_cached(sheet_id: str, creds_path: str | None):
-    # Repo 只建一次，避免每次 rerun 都重新 open_by_key（超吃配額）
     return GoogleSheetsRepo(sheet_id=sheet_id, creds_path=creds_path)
 
 
 @st.cache_data(show_spinner=False, ttl=120)
 def cached_table_values(sheet_id: str, table: str, cache_bust: int) -> list[list[str]]:
-    # 這裡會打 API，但 120 秒內同樣參數不會再打
     repo = get_repo_cached(sheet_id, None)
     return repo.fetch_all_values(table)
 
@@ -216,7 +247,6 @@ def read_table_with_rownum(repo: GoogleSheetsRepo, sheet_id: str, table: str) ->
 
 def bust_cache():
     st.session_state["cache_bust"] = int(st.session_state.get("cache_bust", 0)) + 1
-    # 也可以順便清一次 data cache（更保險）
     st.cache_data.clear()
 
 
@@ -225,10 +255,6 @@ def bust_cache():
 # ============================================================
 
 def try_append_audit(repo: GoogleSheetsRepo, audit_sheet: str, actor_user_id: str, action: str, entity: str, detail: str):
-    """
-    盡量寫 audit_log；如果 audit_sheet 不存在或欄位不符，就不讓主流程掛掉。
-    建議 audit_sheet header 至少要有：ts, actor, action, entity, detail
-    """
     try:
         ws = repo.get_ws(audit_sheet)
         values = ws.get_all_values()
@@ -281,24 +307,19 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
         raise ValueError(f"id_sequences not found for key='{key}', env='{env}'")
 
     rec = hit.iloc[0].to_dict()
-
     prefix = str(rec["prefix"])
     width = int(rec["width"])
     next_value = int(rec["next_value"])
 
     new_id = _make_id(prefix, width, next_value)
-
     sheet_row_index = int(hit.index[0]) + 2
 
     updated = rec.copy()
     updated["next_value"] = str(next_value + 1)
-
     if "last_number" in updated:
         updated["last_number"] = str(next_value)
-
     if "updated_at" in updated:
         updated["updated_at"] = _now_ts()
-
     if "updated_by" in updated:
         updated["updated_by"] = actor_user_id
 
@@ -312,10 +333,12 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 
 
 # ============================================================
-# Pages
+# Pages (Admin only)
 # ============================================================
 
 def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
     st.subheader("Admin / Vendors / Create")
     st.markdown("### 新增廠商")
 
@@ -335,11 +358,7 @@ def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_u
         st.warning("請輸入廠商名稱")
         st.stop()
 
-    try:
-        vendor_id = get_next_id(repo, key="vendors", env=env, actor_user_id=actor_user_id)
-    except Exception as e:
-        fail(f"取得 vendor_id 失敗：{e}")
-
+    vendor_id = get_next_id(repo, key="vendors", env=env, actor_user_id=actor_user_id)
     now = _now_ts()
 
     new_vendor = {
@@ -355,17 +374,16 @@ def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_u
         "updated_by": "",
     }
 
-    try:
-        repo.append_row_dict("vendors", new_vendor)
-        bust_cache()
-    except Exception as e:
-        fail(f"寫入 vendors 失敗：{e}")
+    repo.append_row_dict("vendors", new_vendor)
+    bust_cache()
 
     st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
     st.json(new_vendor)
 
 
 def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
     st.subheader("Admin / Items / Create")
     st.markdown("### 新增品項")
 
@@ -382,7 +400,6 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
         for _, row in vendors_df.iterrows()
         if str(row.get("vendor_id", "")).strip()
     }
-
     if not vendor_map:
         st.warning("沒有可用的啟用廠商（vendors.is_active=TRUE）")
         return
@@ -391,8 +408,7 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
     vendor_id = vendor_map[vendor_label]
 
     units_df = read_table(repo, sheet_id, "units")
-    unit_map = {}
-    unit_options = []
+    unit_map, unit_options = {}, []
 
     if not units_df.empty and "unit_id" in units_df.columns:
         if "is_active" in units_df.columns:
@@ -428,16 +444,11 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
     if not item_name:
         st.warning("請輸入 item_name")
         return
-
     if not stock_unit or not order_unit:
         st.warning("請選擇（或填寫）庫存單位與叫貨單位")
         return
 
-    try:
-        item_id = get_next_id(repo, key="items", env=env, actor_user_id=actor_user_id)
-    except Exception as e:
-        fail(f"取得 item_id 失敗：{e}")
-
+    item_id = get_next_id(repo, key="items", env=env, actor_user_id=actor_user_id)
     now = _now_ts()
 
     new_item = {
@@ -459,17 +470,16 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
         "updated_by": "",
     }
 
-    try:
-        repo.append_row_dict("items", new_item)
-        bust_cache()
-    except Exception as e:
-        fail(f"寫入 items 失敗：{e}")
+    repo.append_row_dict("items", new_item)
+    bust_cache()
 
     st.success(f"✅ 建立成功：{item_name}（{item_id}）")
     st.json(new_item)
 
 
-def page_items_list(repo: GoogleSheetsRepo, sheet_id: str):
+def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
     st.subheader("Admin / Items / List")
 
     df = read_table(repo, sheet_id, "items")
@@ -501,7 +511,9 @@ def page_items_list(repo: GoogleSheetsRepo, sheet_id: str):
         st.rerun()
 
 
-def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str):
+def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
     st.subheader("Admin / Items / Edit")
 
     item_id = st.session_state.get("edit_item_id")
@@ -512,10 +524,6 @@ def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str):
     df = read_table(repo, sheet_id, "items")
     if df.empty:
         st.warning("items table 沒資料")
-        return
-
-    if "item_id" not in df.columns:
-        st.error("items table 缺少 item_id 欄位")
         return
 
     row = df[df["item_id"].astype(str) == str(item_id)]
@@ -529,6 +537,8 @@ def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str):
 
 
 def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str, audit_sheet: str):
+    require_role("Admin", role_of(actor_user_id))  # ✅ 店長不能改價格（你選 A）
+
     st.subheader("Admin / Prices / Create")
     st.markdown("### 新增價格（歷史價格）")
 
@@ -569,7 +579,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
             if col not in prices_df.columns:
                 prices_df[col] = ""
 
-    # 找目前現行價：is_active TRUE/空 + end_date 空，取最新 effective_date
     current_row = None
     if not prices_df.empty:
         tmp = prices_df.copy()
@@ -587,7 +596,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
             cur = cur.sort_values(by="__eff", ascending=True)
             current_row = cur.iloc[-1].to_dict()
 
-    # 顯示現行價 + Rollback
     if current_row:
         st.markdown("#### 目前現行價")
         st.write(
@@ -633,7 +641,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
 
             now = _now_ts()
 
-            # 1) 作廢現行價
             repo.update_fields_by_row(
                 "prices",
                 int(current_row["_row"]),
@@ -645,7 +652,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
                 },
             )
 
-            # 2) 上一筆恢復為現行價（end_date 清空）
             repo.update_fields_by_row(
                 "prices",
                 int(prev_row["_row"]),
@@ -688,7 +694,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
     new_eff: date = effective_date
     now = _now_ts()
 
-    # 若已有現行價 → 先封存舊價 end_date = new_eff - 1
     if current_row:
         old_eff = _parse_date(current_row.get("effective_date", ""))
         if not old_eff:
@@ -700,7 +705,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
             st.stop()
 
         old_end: date = new_eff - timedelta(days=1)
-
         if old_end < old_eff:
             st.error("⚠️ 會造成舊價格區間不合法（end_date < effective_date）。請調整新生效日。")
             st.stop()
@@ -716,11 +720,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
             },
         )
 
-    # 新增價格
-    try:
-        price_id = get_next_id(repo, key="prices", env=env, actor_user_id=actor_user_id)
-    except Exception as e:
-        fail(f"取得 price_id 失敗：{e}")
+    price_id = get_next_id(repo, key="prices", env=env, actor_user_id=actor_user_id)
 
     new_price = {
         "price_id": price_id,
@@ -739,7 +739,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
         "updated_by": "",
     }
 
-    # 對齊 header（Fail Fast）
     try:
         ws = repo.get_ws("prices")
         header = ws.get_all_values()[0]
@@ -749,11 +748,8 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
     except Exception as e:
         fail(f"讀取 prices header 失敗：{e}")
 
-    try:
-        repo.append_row_dict("prices", new_price)
-        bust_cache()
-    except Exception as e:
-        fail(f"寫入 prices 失敗：{e}")
+    repo.append_row_dict("prices", new_price)
+    bust_cache()
 
     try_append_audit(
         repo=repo,
@@ -776,7 +772,7 @@ def main():
     page_header()
 
     sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
-    auth = ensure_login()
+    actor_user_id, actor_role = sidebar_actor_selector()
 
     if not sheet_id:
         fail("Sheet ID 不能空白。")
@@ -788,7 +784,7 @@ def main():
         if not Path(creds_path).exists():
             fail(f"找不到 service_account.json：{creds_path}")
 
-    # 這裡最關鍵：repo 用 cache_resource，避免重複初始化導致 quota 爆
+    # repo cache_resource：避免重複初始化導致 quota 爆
     try:
         repo = get_repo_cached(sheet_id, creds_path if "gcp" not in st.secrets else None)
     except Exception as e:
@@ -798,29 +794,34 @@ def main():
         st.divider()
         st.subheader("📚 Navigation")
 
-        page = st.radio(
-            "Page",
-            options=[
+        # ✅ 基礎頁面鎖：只有 Admin 以上才顯示 Admin Pages
+        is_admin = ROLE_RANK.get(actor_role, 0) >= ROLE_RANK["Admin"]
+
+        if is_admin:
+            pages = [
                 "Vendors / Create",
                 "Items / Create",
                 "Items / List",
                 "Items / Edit",
                 "Prices / Create",
-            ],
-            key="nav_page",
-            index=0,
-        )
+            ]
+        else:
+            pages = ["(No Access)"]
+
+        page = st.radio("Page", options=pages, key="nav_page", index=0)
 
     if page == "Vendors / Create":
-        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=auth["user_id"])
+        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
     elif page == "Items / Create":
-        page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=auth["user_id"])
+        page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
     elif page == "Items / List":
-        page_items_list(repo, sheet_id=sheet_id)
+        page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
     elif page == "Items / Edit":
-        page_items_edit(repo, sheet_id=sheet_id)
+        page_items_edit(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
     elif page == "Prices / Create":
-        page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=auth["user_id"], audit_sheet=audit_sheet)
+        page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+    else:
+        st.info("目前此角色沒有可用頁面。")
 
 
 if __name__ == "__main__":
