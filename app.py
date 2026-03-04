@@ -258,64 +258,131 @@ def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
 
 def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.subheader("Admin / Items / Create")
-
     st.markdown("### 新增品項")
 
+    # ----------------------------
+    # 1) Vendors 下拉（只顯示啟用）
+    # ----------------------------
     vendors_df = repo.read_table("vendors")
-
     if vendors_df.empty:
         st.warning("沒有 vendors，請先建立廠商")
         return
 
-    vendors_df = vendors_df[vendors_df["is_active"] == "TRUE"]
+    if "is_active" in vendors_df.columns:
+        vendors_df = vendors_df[vendors_df["is_active"] == "TRUE"]
 
     vendor_map = {
-        f"{row['vendor_name']} ({row['vendor_id']})": row["vendor_id"]
+        f"{row.get('vendor_name','')} ({row.get('vendor_id','')})": row.get("vendor_id", "")
         for _, row in vendors_df.iterrows()
+        if str(row.get("vendor_id", "")).strip()
     }
 
-    vendor_label = st.selectbox(
-        "選擇廠商",
-        options=list(vendor_map.keys())
-    )
+    if not vendor_map:
+        st.warning("沒有可用的啟用廠商（vendors.is_active=TRUE）")
+        return
 
+    vendor_label = st.selectbox("選擇廠商", options=list(vendor_map.keys()))
     vendor_id = vendor_map[vendor_label]
 
-    item_name = st.text_input("品項名稱").strip()
+    # ----------------------------
+    # 2) Units 下拉（雙單位：庫存/叫貨）
+    # ----------------------------
+    units_df = repo.read_table("units")
+    unit_options = []
 
+    if not units_df.empty:
+        # 常見欄位：unit_id / unit_name / is_active
+        if "is_active" in units_df.columns:
+            units_df = units_df[units_df["is_active"] == "TRUE"]
+
+        if "unit_id" in units_df.columns:
+            # 顯示：name (UNIT_000001)
+            def _label(r):
+                name = r.get("unit_name", "") if "unit_name" in units_df.columns else ""
+                uid = r.get("unit_id", "")
+                return f"{name} ({uid})" if name else str(uid)
+
+            unit_map = { _label(r): r.get("unit_id", "") for _, r in units_df.iterrows() }
+            unit_options = list(unit_map.keys())
+        else:
+            unit_map = {}
+    else:
+        unit_map = {}
+
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        stock_unit = st.selectbox("庫存單位 stock_unit", options=unit_options) if unit_options else st.text_input("庫存單位 stock_unit（先手輸入）")
+    with col_u2:
+        order_unit = st.selectbox("叫貨單位 order_unit", options=unit_options) if unit_options else st.text_input("叫貨單位 order_unit（先手輸入）")
+
+    if unit_options:
+        stock_unit = unit_map.get(stock_unit, "")
+        order_unit = unit_map.get(order_unit, "")
+
+    # ----------------------------
+    # 3) 品項欄位（最少可用）
+    # ----------------------------
+    item_name = st.text_input("品項名稱（內部） item_name", value="").strip()
+    item_name_zh = st.text_input("中文名稱 item_name_zh", value=item_name).strip()
+    item_name_en = st.text_input("英文名稱 item_name_en（可空）", value="").strip()
+    item_code = st.text_input("品項代碼 item_code（可空）", value="").strip()
     is_active = st.checkbox("啟用", value=True)
 
-    if st.button("建立品項", use_container_width=True):
+    # brand_id：先給空（下一步接 brands 下拉）
+    brand_id = ""
 
-        if not item_name:
-            st.warning("請輸入品項名稱")
-            return
+    submit = st.button("建立品項", use_container_width=True)
 
-        try:
-            item_id = get_next_id(repo, "items", env, actor_user_id)
-        except Exception as e:
-            fail(f"取得 item_id 失敗: {e}")
+    if not submit:
+        return
 
-        now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    # ----------------------------
+    # Fail Fast 檢查
+    # ----------------------------
+    if not item_name:
+        st.warning("請輸入 item_name")
+        return
 
-        new_item = {
-            "item_id": item_id,
-            "vendor_id": vendor_id,
-            "item_name": item_name,
-            "is_active": str(bool(is_active)),
-            "created_at": now,
-            "created_by": actor_user_id,
-            "updated_at": "",
-            "updated_by": ""
-        }
+    if not stock_unit or not order_unit:
+        st.warning("請選擇（或填寫）庫存單位與叫貨單位")
+        return
 
-        try:
-            repo.append_row_dict("items", new_item)
-        except Exception as e:
-            fail(f"寫入 items 失敗: {e}")
+    # ----------------------------
+    # 4) 產生 item_id + 寫入 items
+    # ----------------------------
+    try:
+        item_id = get_next_id(repo, key="items", env=env, actor_user_id=actor_user_id)
+    except Exception as e:
+        fail(f"取得 item_id 失敗：{e}")
 
-        st.success(f"建立成功：{item_name} ({item_id})")
-        st.json(new_item)
+    now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    new_item = {
+        "item_id": item_id,
+        "brand_id": brand_id,
+        "vendor_id": vendor_id,
+        "item_code": item_code,
+        "item_name": item_name,
+        "item_name_zh": item_name_zh,
+        "item_name_en": item_name_en,
+        "stock_unit": stock_unit,
+        "order_unit": order_unit,
+        "is_active": str(bool(is_active)),
+        "audit": "",
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    try:
+        repo.append_row_dict("items", new_item)
+    except Exception as e:
+        fail(f"寫入 items 失敗：{e}")
+
+    st.success(f"✅ 建立成功：{item_name}（{item_id}）")
+    st.json(new_item)
 
 
 
@@ -440,4 +507,5 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
