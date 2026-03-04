@@ -665,7 +665,7 @@ def page_prices_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str, aud
             "prices",
             int(current_row["_row"]),
             {
-                "end_date": str(old_end)),
+                "end_date": str(old_end),
                 "updated_at": now,
                 "updated_by": actor_user_id,
                 "note": f"[CLOSE] close by new price effective_date={new_eff}",
@@ -782,5 +782,6 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
 
