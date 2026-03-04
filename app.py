@@ -39,14 +39,53 @@ class GoogleSheetsRepo:
         gc = gspread.authorize(creds)
         self.sh = gc.open_by_key(sheet_id)
 
+    def get_ws(self, table: str):
+        return self.sh.worksheet(table)
+
     def read_table(self, table: str) -> pd.DataFrame:
-        ws = self.sh.worksheet(table)
+        ws = self.get_ws(table)
         values = ws.get_all_values()
         if not values:
             return pd.DataFrame()
         header = values[0]
         rows = values[1:]
         return pd.DataFrame(rows, columns=header)
+
+    def append_row_dict(self, table: str, row: dict):
+        """
+        依照 sheet header 欄位順序 append 一列（Fail Fast：缺欄位就報錯）
+        """
+        ws = self.get_ws(table)
+        values = ws.get_all_values()
+        if not values:
+            raise ValueError(f"Table '{table}' has no header row.")
+        header = values[0]
+
+        missing = [c for c in header if c not in row]
+        if missing:
+            raise ValueError(f"Append '{table}' missing fields: {missing}")
+
+        out = [row.get(c, "") for c in header]
+        ws.append_row(out, value_input_option="USER_ENTERED")
+
+    def update_row(self, table: str, row_index_1based: int, new_row: dict):
+        """
+        以 row_index(1-based) 覆蓋整列（依 header 順序寫入）
+        """
+        ws = self.get_ws(table)
+        values = ws.get_all_values()
+        if not values:
+            raise ValueError(f"Table '{table}' has no header row.")
+        header = values[0]
+
+        missing = [c for c in header if c not in new_row]
+        if missing:
+            raise ValueError(f"Update '{table}' missing fields: {missing}")
+
+        row_values = [new_row.get(c, "") for c in header]
+        start = gspread.utils.rowcol_to_a1(row_index_1based, 1)
+        end = gspread.utils.rowcol_to_a1(row_index_1based, len(header))
+        ws.update(f"{start}:{end}", [row_values], value_input_option="USER_ENTERED")
 
 
 # ============================================================
@@ -98,12 +137,124 @@ def build_services(sheet_id: str, creds_path: str, env: str, audit_sheet: str):
 
 
 # ============================================================
+# ID Generator (from id_sequences)
+# ============================================================
+
+def _make_id(prefix: str, width: int, n: int) -> str:
+    return f"{prefix}{str(n).zfill(int(width))}"
+
+
+def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) -> str:
+    """
+    讀 id_sequences 取得 next_value，生成 ID，並把 next_value + 1 寫回
+    Fail Fast：找不到 key/env 或欄位缺失直接報錯
+    """
+    ws = repo.get_ws("id_sequences")
+    values = ws.get_all_values()
+    if not values or len(values) < 2:
+        raise ValueError("id_sequences is empty or missing header.")
+
+    header = values[0]
+    rows = values[1:]
+
+    required = {"key", "env", "prefix", "width", "next_value"}
+    if not required.issubset(set(header)):
+        raise ValueError(f"id_sequences missing columns: {sorted(list(required - set(header)))}")
+
+    df = pd.DataFrame(rows, columns=header)
+
+    hit = df[(df["key"] == key) & (df["env"] == env)]
+    if hit.empty:
+        raise ValueError(f"id_sequences not found for key='{key}', env='{env}'")
+
+    rec = hit.iloc[0].to_dict()
+
+    prefix = str(rec["prefix"])
+    width = int(rec["width"])
+    next_value = int(rec["next_value"])
+
+    new_id = _make_id(prefix, width, next_value)
+
+    # 找到實際在 sheet 的列號（1-based；含 header）
+    # df index 是從 0 開始對應 rows[0] = sheet 第2列
+    sheet_row_index = int(hit.index[0]) + 2
+
+    # 更新 next_value + last_number/updated_at/updated_by（如果欄位存在就寫）
+    updated = rec.copy()
+    updated["next_value"] = str(next_value + 1)
+
+    if "last_number" in updated:
+        updated["last_number"] = str(next_value)
+
+    if "updated_at" in updated:
+        updated["updated_at"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if "updated_by" in updated:
+        updated["updated_by"] = actor_user_id
+
+    # 補齊缺欄位（避免 update_row Fail）
+    for c in header:
+        if c not in updated:
+            updated[c] = ""
+
+    repo.update_row("id_sequences", sheet_row_index, updated)
+
+    return new_id
+
+
+# ============================================================
 # Pages (minimal)
 # ============================================================
 
-def page_vendors_create(pipe, actor_user_id: str):
+def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.subheader("Admin / Vendors / Create")
-    st.info("Vendor create UI placeholder")
+
+    st.markdown("### 新增廠商")
+
+    vendor_name = st.text_input("廠商名稱 (vendor_name)", value="").strip()
+    is_active = st.checkbox("啟用 (is_active)", value=True)
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        submit = st.button("✅ 建立廠商", use_container_width=True)
+    with col2:
+        st.caption("ID 由 id_sequences 自動產生，並寫回 next_value。")
+
+    if not submit:
+        return
+
+    if not vendor_name:
+        st.warning("請輸入廠商名稱")
+        st.stop()
+
+    try:
+        vendor_id = get_next_id(repo, key="vendors", env=env, actor_user_id=actor_user_id)
+    except Exception as e:
+        fail(f"取得 vendor_id 失敗：{e}")
+
+    # 依你 vendors 表欄位（完整版）寫入：缺欄位就 Fail Fast
+    now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    new_vendor = {
+        "vendor_id": vendor_id,
+        "brand_id": "",          # 先留空（下一步接 brands 下拉）
+        "vendor_name": vendor_name,
+        "is_active": str(bool(is_active)),
+        "audit": "",
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    try:
+        repo.append_row_dict("vendors", new_vendor)
+    except Exception as e:
+        fail(f"寫入 vendors 失敗：{e}")
+
+    st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
+    st.json(new_vendor)
 
 
 def page_items_create(pipe, actor_user_id: str):
@@ -218,7 +369,7 @@ def main():
         )
 
     if page == "Vendors / Create":
-        page_vendors_create(pipe, actor_user_id=auth["user_id"])
+        page_vendors_create(repo, env=env, actor_user_id=auth["user_id"])
     elif page == "Items / Create":
         page_items_create(pipe, actor_user_id=auth["user_id"])
     elif page == "Items / List":
