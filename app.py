@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS Admin UI (Minimal Complete Version)
-# 單檔 app.py 可直接運行版本
+# 單檔 app.py：可上 GitHub + Streamlit Cloud 測試
 # ============================================================
 
 from __future__ import annotations
@@ -17,42 +17,27 @@ from google.oauth2.service_account import Credentials
 # ============================================================
 
 class GoogleSheetsRepo:
-    def __init__(self, sheet_id: str, creds_path: str):
+    def __init__(self, sheet_id: str, creds_path: str | None = None):
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
         ]
 
-        # Streamlit Cloud：用 secrets
+        # Streamlit Cloud：用 secrets（不需要檔案）
         if "gcp" in st.secrets:
-            creds = Credentials.from_service_account_info(
-                st.secrets["gcp"], scopes=scopes
-            )
+            creds = Credentials.from_service_account_info(st.secrets["gcp"], scopes=scopes)
+
         # 本機：用 json 檔案路徑
         else:
-            creds = Credentials.from_service_account_file(
-                creds_path, scopes=scopes)
+            if not creds_path:
+                raise FileNotFoundError("Missing creds_path (service_account.json path)")
+            p = Path(creds_path)
+            if not p.exists():
+                raise FileNotFoundError(f"No such file: {p}")
+            creds = Credentials.from_service_account_file(str(p), scopes=scopes)
 
         gc = gspread.authorize(creds)
         self.sh = gc.open_by_key(sheet_id)
-
-    def read_table(self, table: str) -> pd.DataFrame:
-        ws = self.sh.worksheet(table)
-        values = ws.get_all_values()
-        if not values:
-            return pd.DataFrame()
-        header = values[0]
-        rows = values[1:]
-        return pd.DataFrame(rows, columns=header)
-if "gcp" in st.secrets:
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp"], scopes=scopes
-    )
-# 本機測試用 json
-else:
-    creds = Credentials.from_service_account_file(
-        creds_path, scopes=scopes
-    )
 
     def read_table(self, table: str) -> pd.DataFrame:
         ws = self.sh.worksheet(table)
@@ -77,6 +62,11 @@ def fail(msg: str):
     st.stop()
 
 
+def ensure_login():
+    # 先用簡化登入（之後再接 users/roles）
+    return {"user_id": "OWNER", "role": "Owner"}
+
+
 def sidebar_system_config():
     with st.sidebar:
         st.subheader("System Config")
@@ -86,36 +76,29 @@ def sidebar_system_config():
             value="1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ",
         )
 
+        # Cloud 會用 secrets，不需要這個檔案，但留著給本機測試
         creds_path = st.text_input(
-            "Service Account JSON Path",
+            "Service Account JSON Path (local only)",
             value="secrets/service_account.json",
         )
 
-        env = st.text_input(
-            "ENV",
-            value="prod",
-        )
+        env = st.text_input("ENV", value="prod")
+        audit_sheet = st.text_input("Audit Sheet", value="audit_log_test")
 
-        audit_sheet = st.text_input(
-            "Audit Sheet",
-            value="audit_log_test",
-        )
+        st.caption("✅ Streamlit Cloud 會自動用 st.secrets['gcp']，不看本機路徑。")
 
-    return sheet_id, creds_path, env, audit_sheet
-
-def ensure_login():
-    # 簡化登入（先固定）
-    return {"user_id": "OWNER"}
+    return sheet_id.strip(), creds_path.strip(), env.strip(), audit_sheet.strip()
 
 
 def build_services(sheet_id: str, creds_path: str, env: str, audit_sheet: str):
-    repo = (sheet_id, creds_path)
+    # Cloud：creds_path 不會用到，但也不會出錯
+    repo = GoogleSheetsRepo(sheet_id=sheet_id, creds_path=creds_path)
     pipe = None
     return repo, None, None, pipe
 
 
 # ============================================================
-# Pages
+# Pages (minimal)
 # ============================================================
 
 def page_vendors_create(pipe, actor_user_id: str):
@@ -128,11 +111,10 @@ def page_items_create(pipe, actor_user_id: str):
     st.info("Item create UI placeholder")
 
 
-def page_items_list(repo: ):
+def page_items_list(repo: GoogleSheetsRepo):
     st.subheader("Admin / Items / List")
 
     df = repo.read_table("items")
-
     if df.empty:
         st.warning("items table 沒有資料")
         return
@@ -152,6 +134,7 @@ def page_items_list(repo: ):
         index=0,
         key="pick_item_id",
     )
+
     st.write("你選到：", pick)
 
     if st.button("✏️ 進入 Edit", use_container_width=True):
@@ -160,7 +143,7 @@ def page_items_list(repo: ):
         st.rerun()
 
 
-def page_items_edit(repo: , pipe, actor_user_id: str, env: str):
+def page_items_edit(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
     st.subheader("Admin / Items / Edit")
 
     item_id = st.session_state.get("edit_item_id")
@@ -184,7 +167,7 @@ def page_items_edit(repo: , pipe, actor_user_id: str, env: str):
 
     rec = row.iloc[0].to_dict()
     st.success(f"目前編輯：{item_id}")
-    st.json(rec)  # 先用 JSON 方式顯示（最直觀）
+    st.json(rec)  # 先用最直觀方式顯示
 
 
 def page_prices_create(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
@@ -193,7 +176,7 @@ def page_prices_create(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: st
 
 
 # ============================================================
-# Main Router
+# Main
 # ============================================================
 
 def main():
@@ -202,24 +185,24 @@ def main():
     sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
     auth = ensure_login()
 
-    # ✅ Fail-fast：路徑空、檔案不存在，直接提示
     if not sheet_id:
         fail("Sheet ID 不能空白。")
-    if not creds_path:
-        fail("Service Account JSON Path 不能空白。")
 
-    p = Path(creds_path)
-    if not p.exists():
-        fail(f"找不到 service_account.json：{creds_path}")
+    # 本機才檢查檔案存在；Cloud 用 secrets，不檢查
+    if "gcp" not in st.secrets:
+        if not creds_path:
+            fail("本機測試：Service Account JSON Path 不能空白。")
+        if not Path(creds_path).exists():
+            fail(f"找不到 service_account.json：{creds_path}")
 
     try:
-        repo, _, _, pipe = build_services(sheet_id, str(p), env, audit_sheet)
+        repo, _, _, pipe = build_services(sheet_id, creds_path, env, audit_sheet)
     except Exception as e:
         fail(f"Repo 初始化失敗：{e}")
 
     with st.sidebar:
         st.divider()
-        st.subheader("Navigation")
+        st.subheader("📚 Navigation")
 
         page = st.radio(
             "Page",
@@ -249,7 +232,3 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
-
-
-
-
