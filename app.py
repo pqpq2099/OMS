@@ -336,6 +336,55 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 # Pages (Admin only)
 # ============================================================
 
+def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
+    st.subheader("Admin / Units / Create")
+    st.markdown("### 新增單位")
+
+    unit_name = st.text_input("單位名稱 (unit_name)", value="").strip()
+    is_active = st.checkbox("啟用 (is_active)", value=True)
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        submit = st.button("✅ 建立單位", use_container_width=True)
+    with col2:
+        st.caption("ID 由 id_sequences 自動產生，並寫回 next_value。")
+
+    if not submit:
+        return
+
+    if not unit_name:
+        st.warning("請輸入單位名稱")
+        st.stop()
+
+    # Fail-fast: unit_name 必須唯一（避免重複）
+    units_df = read_table(repo, sheet_id, "units")
+    if not units_df.empty and "unit_name" in units_df.columns:
+        existed = units_df["unit_name"].astype(str).str.strip()
+        if (existed == unit_name).any():
+            st.error(f"已存在相同單位名稱：{unit_name}")
+            st.stop()
+
+    unit_id = get_next_id(repo, key="units", env=env, actor_user_id=actor_user_id)
+    now = _now_ts()
+
+    new_unit = {
+        "unit_id": unit_id,
+        "unit_name": unit_name,
+        "is_active": _to_bool_str(is_active),
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    repo.append_row_dict("units", new_unit)
+    bust_cache()
+
+    st.success(f"✅ 建立成功：{unit_name}（{unit_id}）")
+    st.json(new_unit)
 def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
 
@@ -800,6 +849,7 @@ def main():
         if is_admin:
             pages = [
                 "Vendors / Create",
+                "Units / Create",
                 "Items / Create",
                 "Items / List",
                 "Items / Edit",
@@ -811,19 +861,27 @@ def main():
         page = st.radio("Page", options=pages, key="nav_page", index=0)
 
     if page == "Vendors / Create":
-        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
-    elif page == "Items / Create":
-        page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
-    elif page == "Items / List":
-        page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
-    elif page == "Items / Edit":
-        page_items_edit(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
-    elif page == "Prices / Create":
-        page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
-    else:
-        st.info("目前此角色沒有可用頁面。")
+    page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
 
+elif page == "Units / Create":
+    page_units_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+
+elif page == "Items / Create":
+    page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+
+elif page == "Items / List":
+    page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+
+elif page == "Items / Edit":
+    page_items_edit(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+
+elif page == "Prices / Create":
+    page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+
+else:
+    st.info("目前此角色沒有可用頁面。")
 
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
