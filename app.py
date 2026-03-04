@@ -22,9 +22,38 @@ class GoogleSheetsRepo:
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
         ]
-        creds = Credentials.from_service_account_file(creds_path, scopes=scopes)
+
+        # Streamlit Cloud：用 secrets
+        if "gcp" in st.secrets:
+            creds = Credentials.from_service_account_info(
+                st.secrets["gcp"], scopes=scopes
+            )
+        # 本機：用 json 檔案路徑
+        else:
+            creds = Credentials.from_service_account_file(
+                creds_path, scopes=scopes
+            )
+
         gc = gspread.authorize(creds)
         self.sh = gc.open_by_key(sheet_id)
+
+    def read_table(self, table: str) -> pd.DataFrame:
+        ws = self.sh.worksheet(table)
+        values = ws.get_all_values()
+        if not values:
+            return pd.DataFrame()
+        header = values[0]
+        rows = values[1:]
+        return pd.DataFrame(rows, columns=header)
+if "gcp" in st.secrets:
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp"], scopes=scopes
+    )
+# 本機測試用 json
+else:
+    creds = Credentials.from_service_account_file(
+        creds_path, scopes=scopes
+    )
 
     def read_table(self, table: str) -> pd.DataFrame:
         ws = self.sh.worksheet(table)
@@ -76,7 +105,7 @@ def ensure_login():
 
 
 def build_services(sheet_id: str, creds_path: str, env: str, audit_sheet: str):
-    repo = GoogleSheetsRepo(sheet_id, creds_path)
+    repo = (sheet_id, creds_path)
     pipe = None
     return repo, None, None, pipe
 
@@ -95,7 +124,7 @@ def page_items_create(pipe, actor_user_id: str):
     st.info("Item create UI placeholder")
 
 
-def page_items_list(repo: GoogleSheetsRepo):
+def page_items_list(repo: ):
     st.subheader("Admin / Items / List")
 
     df = repo.read_table("items")
@@ -127,7 +156,7 @@ def page_items_list(repo: GoogleSheetsRepo):
         st.rerun()
 
 
-def page_items_edit(repo: GoogleSheetsRepo, pipe, actor_user_id: str, env: str):
+def page_items_edit(repo: , pipe, actor_user_id: str, env: str):
     st.subheader("Admin / Items / Edit")
 
     item_id = st.session_state.get("edit_item_id")
@@ -216,4 +245,5 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
