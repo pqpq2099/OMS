@@ -256,10 +256,67 @@ def page_vendors_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
     st.json(new_vendor)
 
-
-def page_items_create(pipe, actor_user_id: str):
+def page_items_create(repo: GoogleSheetsRepo, env: str, actor_user_id: str):
     st.subheader("Admin / Items / Create")
-    st.info("Item create UI placeholder")
+
+    st.markdown("### 新增品項")
+
+    vendors_df = repo.read_table("vendors")
+
+    if vendors_df.empty:
+        st.warning("沒有 vendors，請先建立廠商")
+        return
+
+    vendors_df = vendors_df[vendors_df["is_active"] == "TRUE"]
+
+    vendor_map = {
+        f"{row['vendor_name']} ({row['vendor_id']})": row["vendor_id"]
+        for _, row in vendors_df.iterrows()
+    }
+
+    vendor_label = st.selectbox(
+        "選擇廠商",
+        options=list(vendor_map.keys())
+    )
+
+    vendor_id = vendor_map[vendor_label]
+
+    item_name = st.text_input("品項名稱").strip()
+
+    is_active = st.checkbox("啟用", value=True)
+
+    if st.button("建立品項", use_container_width=True):
+
+        if not item_name:
+            st.warning("請輸入品項名稱")
+            return
+
+        try:
+            item_id = get_next_id(repo, "items", env, actor_user_id)
+        except Exception as e:
+            fail(f"取得 item_id 失敗: {e}")
+
+        now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        new_item = {
+            "item_id": item_id,
+            "vendor_id": vendor_id,
+            "item_name": item_name,
+            "is_active": str(bool(is_active)),
+            "created_at": now,
+            "created_by": actor_user_id,
+            "updated_at": "",
+            "updated_by": ""
+        }
+
+        try:
+            repo.append_row_dict("items", new_item)
+        except Exception as e:
+            fail(f"寫入 items 失敗: {e}")
+
+        st.success(f"建立成功：{item_name} ({item_id})")
+        st.json(new_item)
+
 
 
 def page_items_list(repo: GoogleSheetsRepo):
@@ -371,7 +428,7 @@ def main():
     if page == "Vendors / Create":
         page_vendors_create(repo, env=env, actor_user_id=auth["user_id"])
     elif page == "Items / Create":
-        page_items_create(pipe, actor_user_id=auth["user_id"])
+        page_items_create(repo, env=env, actor_user_id=auth["user_id"])
     elif page == "Items / List":
         page_items_list(repo)
     elif page == "Items / Edit":
@@ -383,3 +440,4 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
