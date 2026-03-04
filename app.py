@@ -5,7 +5,7 @@
 # ✅ 你要的：方案1（UI選操作者）可直接上線
 # - Sidebar：actor_user_id 下拉（OWNER / ADMIN_01~03）
 # - role mapping：Owner / Admin
-# - 基礎 RBAC：Admin 以上才能進 Vendors/Items/Prices
+# - 基礎 RBAC：Admin 以上才能進 Vendors/Items/Prices/Units
 # - 保留：Cache（避免 quota）、Prices Rollback、Audit best-effort
 #
 # ✅ 之後升級方案2（登入/權限）：
@@ -218,14 +218,14 @@ def get_repo_cached(sheet_id: str, creds_path: str | None):
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def cached_table_values(sheet_id: str, table: str, cache_bust: int) -> list[list[str]]:
-    repo = get_repo_cached(sheet_id, None)
+def cached_table_values(sheet_id: str, creds_path: str | None, table: str, cache_bust: int) -> list[list[str]]:
+    repo = get_repo_cached(sheet_id, creds_path)
     return repo.fetch_all_values(table)
 
 
-def read_table(repo: GoogleSheetsRepo, sheet_id: str, table: str) -> pd.DataFrame:
+def read_table(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, table: str) -> pd.DataFrame:
     bust = int(st.session_state.get("cache_bust", 0))
-    values = cached_table_values(sheet_id, table, bust)
+    values = cached_table_values(sheet_id, creds_path, table, bust)
     if not values:
         return pd.DataFrame()
     header = values[0]
@@ -233,9 +233,9 @@ def read_table(repo: GoogleSheetsRepo, sheet_id: str, table: str) -> pd.DataFram
     return pd.DataFrame(rows, columns=header)
 
 
-def read_table_with_rownum(repo: GoogleSheetsRepo, sheet_id: str, table: str) -> pd.DataFrame:
+def read_table_with_rownum(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, table: str) -> pd.DataFrame:
     bust = int(st.session_state.get("cache_bust", 0))
-    values = cached_table_values(sheet_id, table, bust)
+    values = cached_table_values(sheet_id, creds_path, table, bust)
     if not values:
         return pd.DataFrame()
     header = values[0]
@@ -251,10 +251,23 @@ def bust_cache():
 
 
 # ============================================================
-# Audit (best-effort)
+# Audit (best-effort) — align with audit_log_test header
+# expected header:
+# ts, env, action, table, entity_id, actor_user_id, before_json, after_json, note
 # ============================================================
 
-def try_append_audit(repo: GoogleSheetsRepo, audit_sheet: str, actor_user_id: str, action: str, entity: str, detail: str):
+def try_append_audit(
+    repo: GoogleSheetsRepo,
+    audit_sheet: str,
+    env: str,
+    actor_user_id: str,
+    action: str,
+    table: str,
+    entity_id: str,
+    before_json: str = "",
+    after_json: str = "",
+    note: str = "",
+):
     try:
         ws = repo.get_ws(audit_sheet)
         values = ws.get_all_values()
@@ -263,15 +276,21 @@ def try_append_audit(repo: GoogleSheetsRepo, audit_sheet: str, actor_user_id: st
         header = values[0]
 
         row = {c: "" for c in header}
-        for k, v in {
+        payload = {
             "ts": _now_ts(),
-            "actor": actor_user_id,
+            "env": env,
             "action": action,
-            "entity": entity,
-            "detail": detail,
-        }.items():
+            "table": table,
+            "entity_id": entity_id,
+            "actor_user_id": actor_user_id,
+            "before_json": before_json,
+            "after_json": after_json,
+            "note": note,
+        }
+
+        for k, v in payload.items():
             if k in row:
-                row[k] = v
+                row[k] = "" if v is None else str(v)
 
         out = [row.get(c, "") for c in header]
         ws.append_row(out, value_input_option="USER_ENTERED")
@@ -336,7 +355,7 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 # Pages (Admin only)
 # ============================================================
 
-def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Units / Create")
@@ -358,8 +377,8 @@ def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
         st.warning("請輸入單位名稱")
         st.stop()
 
-    # Fail-fast: unit_name 必須唯一（避免重複）
-    units_df = read_table(repo, sheet_id, "units")
+    # Fail-fast: unit_name 必須唯一
+    units_df = read_table(repo, sheet_id, creds_path, "units")
     if not units_df.empty and "unit_name" in units_df.columns:
         existed = units_df["unit_name"].astype(str).str.strip()
         if (existed == unit_name).any():
@@ -383,9 +402,23 @@ def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
     repo.append_row_dict("units", new_unit)
     bust_cache()
 
+    try_append_audit(
+        repo=repo,
+        audit_sheet=audit_sheet,
+        env=env,
+        actor_user_id=actor_user_id,
+        action="UNIT_CREATE",
+        table="units",
+        entity_id=str(unit_id),
+        after_json=str(new_unit),
+        note=f"unit_name={unit_name}",
+    )
+
     st.success(f"✅ 建立成功：{unit_name}（{unit_id}）")
     st.json(new_unit)
-def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+
+
+def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Vendors / Create")
@@ -426,17 +459,29 @@ def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_u
     repo.append_row_dict("vendors", new_vendor)
     bust_cache()
 
+    try_append_audit(
+        repo=repo,
+        audit_sheet=audit_sheet,
+        env=env,
+        actor_user_id=actor_user_id,
+        action="VENDOR_CREATE",
+        table="vendors",
+        entity_id=str(vendor_id),
+        after_json=str(new_vendor),
+        note=f"vendor_name={vendor_name}",
+    )
+
     st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
     st.json(new_vendor)
 
 
-def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Items / Create")
     st.markdown("### 新增品項")
 
-    vendors_df = read_table(repo, sheet_id, "vendors")
+    vendors_df = read_table(repo, sheet_id, creds_path, "vendors")
     if vendors_df.empty:
         st.warning("沒有 vendors，請先建立廠商")
         return
@@ -456,7 +501,7 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
     vendor_label = st.selectbox("選擇廠商", options=list(vendor_map.keys()))
     vendor_id = vendor_map[vendor_label]
 
-    units_df = read_table(repo, sheet_id, "units")
+    units_df = read_table(repo, sheet_id, creds_path, "units")
     unit_map, unit_options = {}, []
 
     if not units_df.empty and "unit_id" in units_df.columns:
@@ -522,16 +567,28 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_use
     repo.append_row_dict("items", new_item)
     bust_cache()
 
+    try_append_audit(
+        repo=repo,
+        audit_sheet=audit_sheet,
+        env=env,
+        actor_user_id=actor_user_id,
+        action="ITEM_CREATE",
+        table="items",
+        entity_id=str(item_id),
+        after_json=str(new_item),
+        note=f"item_name={item_name}",
+    )
+
     st.success(f"✅ 建立成功：{item_name}（{item_id}）")
     st.json(new_item)
 
 
-def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
+def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Items / List")
 
-    df = read_table(repo, sheet_id, "items")
+    df = read_table(repo, sheet_id, creds_path, "items")
     if df.empty:
         st.warning("items table 沒有資料")
         return
@@ -560,7 +617,7 @@ def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
         st.rerun()
 
 
-def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
+def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Items / Edit")
@@ -570,7 +627,7 @@ def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
         st.info("請先到 Items / List 選一筆，再進 Edit。")
         return
 
-    df = read_table(repo, sheet_id, "items")
+    df = read_table(repo, sheet_id, creds_path, "items")
     if df.empty:
         st.warning("items table 沒資料")
         return
@@ -585,13 +642,13 @@ def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
     st.json(rec)
 
 
-def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str, audit_sheet: str):
+def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
     require_role("Admin", role_of(actor_user_id))  # ✅ 店長不能改價格（你選 A）
 
     st.subheader("Admin / Prices / Create")
     st.markdown("### 新增價格（歷史價格）")
 
-    items_df = read_table(repo, sheet_id, "items")
+    items_df = read_table(repo, sheet_id, creds_path, "items")
     if items_df.empty:
         st.warning("沒有 items，請先建立品項")
         return
@@ -620,7 +677,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
     item_label = st.selectbox("選擇品項", options=list(item_map.keys()))
     item_id = item_map[item_label]
 
-    prices_df = read_table_with_rownum(repo, sheet_id, "prices")
+    prices_df = read_table_with_rownum(repo, sheet_id, creds_path, "prices")
     if prices_df.empty:
         st.info("prices 目前沒有資料，你將建立第一筆價格。")
     else:
@@ -715,10 +772,14 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
             try_append_audit(
                 repo=repo,
                 audit_sheet=audit_sheet,
+                env=env,
                 actor_user_id=actor_user_id,
                 action="PRICE_ROLLBACK",
-                entity=str(item_id),
-                detail=f"void={current_row.get('price_id','')}, restore={prev_row.get('price_id','')}",
+                table="prices",
+                entity_id=str(item_id),
+                before_json=str(current_row),
+                after_json=str(prev_row),
+                note=f"void={current_row.get('price_id','')}, restore={prev_row.get('price_id','')}",
             )
 
             bust_cache()
@@ -788,6 +849,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
         "updated_by": "",
     }
 
+    # 對齊 prices header（避免缺欄位 append 失敗）
     try:
         ws = repo.get_ws("prices")
         header = ws.get_all_values()[0]
@@ -803,10 +865,13 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
     try_append_audit(
         repo=repo,
         audit_sheet=audit_sheet,
+        env=env,
         actor_user_id=actor_user_id,
         action="PRICE_APPLY_NEW",
-        entity=str(item_id),
-        detail=f"new_price_id={price_id}, unit_price={unit_price}, effective_date={new_eff}",
+        table="prices",
+        entity_id=str(item_id),
+        after_json=str(new_price),
+        note=f"new_price_id={price_id}, unit_price={unit_price}, effective_date={new_eff}",
     )
 
     st.success(f"✅ 已套用新現行價：{item_label} / {unit_price}（{price_id}）")
@@ -818,6 +883,8 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_us
 # ============================================================
 
 def main():
+    st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
+
     page_header()
 
     sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
@@ -826,8 +893,10 @@ def main():
     if not sheet_id:
         fail("Sheet ID 不能空白。")
 
-    # 本機才檢查 creds_path
-    if "gcp" not in st.secrets:
+    # Streamlit Cloud：不要檢查本機路徑
+    local_mode = ("gcp" not in st.secrets)
+
+    if local_mode:
         if not creds_path:
             fail("本機測試：Service Account JSON Path 不能空白。")
         if not Path(creds_path).exists():
@@ -835,7 +904,7 @@ def main():
 
     # repo cache_resource：避免重複初始化導致 quota 爆
     try:
-        repo = get_repo_cached(sheet_id, creds_path if "gcp" not in st.secrets else None)
+        repo = get_repo_cached(sheet_id, creds_path if local_mode else None)
     except Exception as e:
         fail(f"Repo 初始化失敗：{e}")
 
@@ -860,33 +929,30 @@ def main():
 
         page = st.radio("Page", options=pages, key="nav_page", index=0)
 
+    # local creds_path 才需要傳；cloud 模式傳 None
+    cp = creds_path if local_mode else None
+
     if page == "Vendors / Create":
-        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+        page_vendors_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
 
     elif page == "Units / Create":
-        page_units_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+        page_units_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
 
     elif page == "Items / Create":
-        page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+        page_items_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
 
     elif page == "Items / List":
-        page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+        page_items_list(repo, sheet_id=sheet_id, creds_path=cp, actor_user_id=actor_user_id)
 
     elif page == "Items / Edit":
-        page_items_edit(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+        page_items_edit(repo, sheet_id=sheet_id, creds_path=cp, actor_user_id=actor_user_id)
 
     elif page == "Prices / Create":
-        page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+        page_prices_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
 
     else:
         st.info("目前此角色沒有可用頁面。")
+
+
 if __name__ == "__main__":
-    st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
-
-
-
-
-
-
-
