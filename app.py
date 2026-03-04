@@ -860,7 +860,7 @@ def main():
 
         page = st.radio("Page", options=pages, key="nav_page", index=0)
 
-    if page == "Vendors / Create":
+if page == "Vendors / Create":
     page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
 
 elif page == "Units / Create":
@@ -884,4 +884,5 @@ else:
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
 
