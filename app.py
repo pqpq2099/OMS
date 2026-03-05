@@ -2,7 +2,20 @@ import re
 import streamlit as st
 
 st.set_page_config(page_title="OMS Compact Row Test v6", layout="wide")
+st.markdown("""
+<style>
+/* 手機：把 Streamlit 預設左右 padding 變小，避免超出螢幕 */
+@media (max-width: 640px){
+  .block-container{
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+}
 
+/* 你的 row grid（如果你有用 data-oms-row / oms-row 這類 class，保留）
+   沒有也沒關係，先不要加複雜條件 */
+</style>
+""", unsafe_allow_html=True)
 st.markdown(
     """
 <style>
@@ -166,3 +179,4 @@ with st.expander("Debug（讀取時才清洗，不回寫 session_state）"):
             }
         )
     st.write(rows)
+
