@@ -89,7 +89,7 @@ def row(i, name, price, stock_units, order_units):
     st.caption(f"單價：{price:.1f}")
 
     # ✅ 單位格不要太小：比例稍微拉大（避免手機只剩箭頭）
-    c1, c2, c3, c4 = st.columns([1.55, 1.05, 1.55, 1.05], gap="small")
+    c1, c2, c3, c4 = st.columns([1.6, 0.9, 1.6, 0.9], gap="small")
 
     with c1:
         st.number_input("庫存", min_value=0.0, value=0.0, step=0.0, format="%.1f",
@@ -111,6 +111,7 @@ for i, (n, p, su, ou) in enumerate(ITEMS):
 
 with st.expander("Debug"):
     st.json({k: v for k, v in st.session_state.items()})
+
 
 
 
