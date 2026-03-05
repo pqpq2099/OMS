@@ -1,21 +1,25 @@
 # ============================================================
 # ORIVIA OMS Admin UI (Stable + Cache + Actor Selector + RBAC)
-# 單檔 app.py：可上 GitHub + Streamlit Cloud 測試
+# Single-file app.py for GitHub + Streamlit Cloud
 #
-# ✅ 你要的：方案1（UI選操作者）可直接上線
-# - Sidebar：actor_user_id 下拉（OWNER / ADMIN_01~03）
-# - role mapping：Owner / Admin
-# - 基礎 RBAC：Admin 以上才能進 Vendors/Items/Prices/Units
-# - 保留：Cache（避免 quota）、Prices Rollback、Audit best-effort
-#
-# ✅ 之後升級方案2（登入/權限）：
-# 只要把 actor_user_id 改成 auth["user_id"]，role 改成查 users 表即可
+# ✅ Includes:
+# - Sidebar: System Config (Sheet ID / ENV / Audit Sheet)
+# - Operator selector (OWNER / ADMIN_01~03) with role mapping
+# - RBAC (Admin+ can access admin pages)
+# - Cache (quota protection)
+# - Prices apply + rollback (best-effort)
+# - Audit best-effort (compatible with your current audit header)
+# - Worksheet cache + API retry/backoff (handles rate limit / transient errors)
+# - Safe navigation state (prevents Streamlit session_state widget-key crash)
 # ============================================================
 
 from __future__ import annotations
 
 from pathlib import Path
 from datetime import timedelta, date
+import time
+import json
+
 import streamlit as st
 import pandas as pd
 import gspread
@@ -36,28 +40,6 @@ def page_header():
     st.caption("BUILD: stable + cache + actor + rbac")
 
 
-def sidebar_system_config():
-    with st.sidebar:
-        st.subheader("System Config")
-
-        sheet_id = st.text_input(
-            "Sheet ID",
-            value="1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ",
-        ).strip()
-
-        creds_path = st.text_input(
-            "Service Account JSON Path (local only)",
-            value="secrets/service_account.json",
-        ).strip()
-
-        env = st.text_input("ENV", value="prod").strip()
-        audit_sheet = st.text_input("Audit Sheet", value="audit_log_test").strip()
-
-        st.caption("✅ Streamlit Cloud 會自動用 st.secrets['gcp']，不看本機路徑。")
-
-    return sheet_id, creds_path, env, audit_sheet
-
-
 def _now_ts() -> str:
     return pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -68,7 +50,7 @@ def _to_bool_str(v: bool) -> str:
 
 def _parse_date(s) -> date | None:
     """
-    永遠回傳 datetime.date 或 None（避免 date/datetime 混用）
+    Always return datetime.date or None
     """
     s = str(s).strip()
     if not s:
@@ -116,7 +98,6 @@ def sidebar_actor_selector():
             index=0,
             key="actor_user_id",
         )
-
         actor_role = role_of(actor_user_id)
         st.caption(f"role: **{actor_role}**")
 
@@ -124,7 +105,70 @@ def sidebar_actor_selector():
 
 
 # ============================================================
-# Repo (Google Sheets)
+# System Config
+# ============================================================
+
+def sidebar_system_config():
+    with st.sidebar:
+        st.subheader("System Config")
+
+        sheet_id = st.text_input(
+            "Sheet ID",
+            value="1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ",
+        ).strip()
+
+        creds_path = st.text_input(
+            "Service Account JSON Path (local only)",
+            value="secrets/service_account.json",
+        ).strip()
+
+        env = st.text_input("ENV", value="prod").strip()
+        audit_sheet = st.text_input("Audit Sheet", value="audit_log_test").strip()
+
+        st.caption("✅ Streamlit Cloud 會自動用 st.secrets['gcp']，不看本機路徑。")
+
+    return sheet_id, creds_path, env, audit_sheet
+
+
+# ============================================================
+# Retry / Backoff (handles transient Google API errors)
+# ============================================================
+
+def _is_retryable_gspread_error(e: Exception) -> bool:
+    """
+    gspread.exceptions.APIError has a response with status code; sometimes message is redacted.
+    We'll treat most APIError as retryable (rate limit / transient) except obvious permission issues.
+    """
+    if isinstance(e, gspread.exceptions.APIError):
+        msg = str(e).lower()
+        # Non-retryable hints
+        if "permission" in msg or "forbidden" in msg:
+            return False
+        if "not found" in msg:
+            return False
+        return True
+    return False
+
+
+def _with_retry(fn, *, tries: int = 4, base_sleep: float = 0.6):
+    """
+    Exponential backoff retry wrapper for gspread API calls.
+    """
+    last = None
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if not _is_retryable_gspread_error(e):
+                raise
+            sleep_s = base_sleep * (2 ** i)
+            time.sleep(sleep_s)
+    raise last
+
+
+# ============================================================
+# Repo (Google Sheets) + Worksheet cache
 # ============================================================
 
 class GoogleSheetsRepo:
@@ -134,11 +178,10 @@ class GoogleSheetsRepo:
             "https://www.googleapis.com/auth/drive",
         ]
 
-        # Streamlit Cloud：用 secrets（不需要檔案）
+        # Streamlit Cloud: use secrets
         if "gcp" in st.secrets:
             creds = Credentials.from_service_account_info(st.secrets["gcp"], scopes=scopes)
         else:
-            # 本機：用 json 檔案路徑
             if not creds_path:
                 raise FileNotFoundError("Missing creds_path (service_account.json path)")
             p = Path(creds_path)
@@ -147,18 +190,29 @@ class GoogleSheetsRepo:
             creds = Credentials.from_service_account_file(str(p), scopes=scopes)
 
         gc = gspread.authorize(creds)
-        self.sh = gc.open_by_key(sheet_id)
 
-    def get_ws(self, table: str):
-        return self.sh.worksheet(table)
+        # open_by_key can also hit transient errors
+        self.sh = _with_retry(lambda: gc.open_by_key(sheet_id))
+        self._ws_cache: dict[str, gspread.Worksheet] = {}
+
+    def get_ws(self, table: str) -> gspread.Worksheet:
+        """
+        Worksheet cache to reduce metadata calls.
+        """
+        if table in self._ws_cache:
+            return self._ws_cache[table]
+
+        ws = _with_retry(lambda: self.sh.worksheet(table))
+        self._ws_cache[table] = ws
+        return ws
 
     def fetch_all_values(self, table: str) -> list[list[str]]:
         ws = self.get_ws(table)
-        return ws.get_all_values()
+        return _with_retry(lambda: ws.get_all_values())
 
     def append_row_dict(self, table: str, row: dict):
         ws = self.get_ws(table)
-        values = ws.get_all_values()
+        values = _with_retry(lambda: ws.get_all_values())
         if not values:
             raise ValueError(f"Table '{table}' has no header row.")
         header = values[0]
@@ -168,11 +222,11 @@ class GoogleSheetsRepo:
             raise ValueError(f"Append '{table}' missing fields: {missing}")
 
         out = [row.get(c, "") for c in header]
-        ws.append_row(out, value_input_option="USER_ENTERED")
+        _with_retry(lambda: ws.append_row(out, value_input_option="USER_ENTERED"))
 
     def update_row(self, table: str, row_index_1based: int, new_row: dict):
         ws = self.get_ws(table)
-        values = ws.get_all_values()
+        values = _with_retry(lambda: ws.get_all_values())
         if not values:
             raise ValueError(f"Table '{table}' has no header row.")
         header = values[0]
@@ -184,16 +238,16 @@ class GoogleSheetsRepo:
         row_values = [new_row.get(c, "") for c in header]
         start = gspread.utils.rowcol_to_a1(row_index_1based, 1)
         end = gspread.utils.rowcol_to_a1(row_index_1based, len(header))
-        ws.update(f"{start}:{end}", [row_values], value_input_option="USER_ENTERED")
+        _with_retry(lambda: ws.update(f"{start}:{end}", [row_values], value_input_option="USER_ENTERED"))
 
     def update_fields_by_row(self, table: str, row_index_1based: int, patch: dict):
         ws = self.get_ws(table)
-        values = ws.get_all_values()
+        values = _with_retry(lambda: ws.get_all_values())
         if not values:
             raise ValueError(f"Table '{table}' has no header row.")
         header = values[0]
 
-        row_vals = ws.row_values(row_index_1based)
+        row_vals = _with_retry(lambda: ws.row_values(row_index_1based))
         row_vals = row_vals + [""] * (len(header) - len(row_vals))
         cur = dict(zip(header, row_vals))
 
@@ -251,9 +305,7 @@ def bust_cache():
 
 
 # ============================================================
-# Audit (best-effort) — align with audit_log_test header
-# expected header:
-# ts, env, action, table, entity_id, actor_user_id, before_json, after_json, note
+# Audit (best-effort) - compatible with your audit_log header
 # ============================================================
 
 def try_append_audit(
@@ -264,18 +316,24 @@ def try_append_audit(
     action: str,
     table: str,
     entity_id: str,
-    before_json: str = "",
-    after_json: str = "",
     note: str = "",
+    before_json: dict | None = None,
+    after_json: dict | None = None,
 ):
+    """
+    Your current audit_log header example:
+    ts, env, action, table, entity_id, actor_user_id, before_json, after_json, note
+    We'll fill what exists, ignore missing columns.
+    """
     try:
         ws = repo.get_ws(audit_sheet)
-        values = ws.get_all_values()
+        values = _with_retry(lambda: ws.get_all_values())
         if not values:
             return
         header = values[0]
 
         row = {c: "" for c in header}
+
         payload = {
             "ts": _now_ts(),
             "env": env,
@@ -283,17 +341,20 @@ def try_append_audit(
             "table": table,
             "entity_id": entity_id,
             "actor_user_id": actor_user_id,
-            "before_json": before_json,
-            "after_json": after_json,
             "note": note,
         }
 
+        if before_json is not None:
+            payload["before_json"] = json.dumps(before_json, ensure_ascii=False)
+        if after_json is not None:
+            payload["after_json"] = json.dumps(after_json, ensure_ascii=False)
+
         for k, v in payload.items():
             if k in row:
-                row[k] = "" if v is None else str(v)
+                row[k] = v
 
         out = [row.get(c, "") for c in header]
-        ws.append_row(out, value_input_option="USER_ENTERED")
+        _with_retry(lambda: ws.append_row(out, value_input_option="USER_ENTERED"))
     except Exception:
         return
 
@@ -308,7 +369,7 @@ def _make_id(prefix: str, width: int, n: int) -> str:
 
 def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) -> str:
     ws = repo.get_ws("id_sequences")
-    values = ws.get_all_values()
+    values = _with_retry(lambda: ws.get_all_values())
     if not values or len(values) < 2:
         raise ValueError("id_sequences is empty or missing header.")
 
@@ -320,7 +381,6 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
         raise ValueError(f"id_sequences missing columns: {sorted(list(required - set(header)))}")
 
     df = pd.DataFrame(rows, columns=header)
-
     hit = df[(df["key"] == key) & (df["env"] == env)]
     if hit.empty:
         raise ValueError(f"id_sequences not found for key='{key}', env='{env}'")
@@ -331,7 +391,7 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
     next_value = int(rec["next_value"])
 
     new_id = _make_id(prefix, width, next_value)
-    sheet_row_index = int(hit.index[0]) + 2
+    sheet_row_index = int(hit.index[0]) + 2  # header=1
 
     updated = rec.copy()
     updated["next_value"] = str(next_value + 1)
@@ -352,10 +412,10 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 
 
 # ============================================================
-# Pages (Admin only)
+# Pages
 # ============================================================
 
-def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
+def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Units / Create")
@@ -377,7 +437,6 @@ def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | N
         st.warning("請輸入單位名稱")
         st.stop()
 
-    # Fail-fast: unit_name 必須唯一
     units_df = read_table(repo, sheet_id, creds_path, "units")
     if not units_df.empty and "unit_name" in units_df.columns:
         existed = units_df["unit_name"].astype(str).str.strip()
@@ -402,23 +461,11 @@ def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | N
     repo.append_row_dict("units", new_unit)
     bust_cache()
 
-    try_append_audit(
-        repo=repo,
-        audit_sheet=audit_sheet,
-        env=env,
-        actor_user_id=actor_user_id,
-        action="UNIT_CREATE",
-        table="units",
-        entity_id=str(unit_id),
-        after_json=str(new_unit),
-        note=f"unit_name={unit_name}",
-    )
-
     st.success(f"✅ 建立成功：{unit_name}（{unit_id}）")
     st.json(new_unit)
 
 
-def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
+def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Vendors / Create")
@@ -459,23 +506,11 @@ def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str |
     repo.append_row_dict("vendors", new_vendor)
     bust_cache()
 
-    try_append_audit(
-        repo=repo,
-        audit_sheet=audit_sheet,
-        env=env,
-        actor_user_id=actor_user_id,
-        action="VENDOR_CREATE",
-        table="vendors",
-        entity_id=str(vendor_id),
-        after_json=str(new_vendor),
-        note=f"vendor_name={vendor_name}",
-    )
-
     st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
     st.json(new_vendor)
 
 
-def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
+def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Items / Create")
@@ -501,6 +536,7 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | N
     vendor_label = st.selectbox("選擇廠商", options=list(vendor_map.keys()))
     vendor_id = vendor_map[vendor_label]
 
+    # units: select for stock_unit + order_unit
     units_df = read_table(repo, sheet_id, creds_path, "units")
     unit_map, unit_options = {}, []
 
@@ -567,18 +603,6 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | N
     repo.append_row_dict("items", new_item)
     bust_cache()
 
-    try_append_audit(
-        repo=repo,
-        audit_sheet=audit_sheet,
-        env=env,
-        actor_user_id=actor_user_id,
-        action="ITEM_CREATE",
-        table="items",
-        entity_id=str(item_id),
-        after_json=str(new_item),
-        note=f"item_name={item_name}",
-    )
-
     st.success(f"✅ 建立成功：{item_name}（{item_id}）")
     st.json(new_item)
 
@@ -611,6 +635,7 @@ def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | Non
 
     st.write("你選到：", pick)
 
+    # Note: do NOT set widget-keyed session state directly (nav_page_radio)
     if st.button("✏️ 進入 Edit", use_container_width=True):
         st.session_state["edit_item_id"] = pick
         st.session_state["nav_page"] = "Items / Edit"
@@ -640,10 +665,11 @@ def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | Non
     rec = row.iloc[0].to_dict()
     st.success(f"目前編輯：{item_id}")
     st.json(rec)
+    st.info("（Edit 功能後續再做）")
 
 
 def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | None, env: str, actor_user_id: str, audit_sheet: str):
-    require_role("Admin", role_of(actor_user_id))  # ✅ 店長不能改價格（你選 A）
+    require_role("Admin", role_of(actor_user_id))  # 店長不能改價格（你選 A）
 
     st.subheader("Admin / Prices / Create")
     st.markdown("### 新增價格（歷史價格）")
@@ -685,6 +711,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
             if col not in prices_df.columns:
                 prices_df[col] = ""
 
+    # Find current active price (end_date empty)
     current_row = None
     if not prices_df.empty:
         tmp = prices_df.copy()
@@ -702,6 +729,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
             cur = cur.sort_values(by="__eff", ascending=True)
             current_row = cur.iloc[-1].to_dict()
 
+    # Rollback block
     if current_row:
         st.markdown("#### 目前現行價")
         st.write(
@@ -777,8 +805,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
                 action="PRICE_ROLLBACK",
                 table="prices",
                 entity_id=str(item_id),
-                before_json=str(current_row),
-                after_json=str(prev_row),
                 note=f"void={current_row.get('price_id','')}, restore={prev_row.get('price_id','')}",
             )
 
@@ -786,6 +812,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
             st.success("✅ 已撤回最新一次換價：新價已作廢，上一筆已恢復為現行價。")
             st.rerun()
 
+    # Apply new current price
     st.divider()
     st.markdown("#### 套用新現行價（自動封存舊價）")
 
@@ -804,6 +831,7 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
     new_eff: date = effective_date
     now = _now_ts()
 
+    # Close old current price if exists
     if current_row:
         old_eff = _parse_date(current_row.get("effective_date", ""))
         if not old_eff:
@@ -849,15 +877,12 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
         "updated_by": "",
     }
 
-    # 對齊 prices header（避免缺欄位 append 失敗）
-    try:
-        ws = repo.get_ws("prices")
-        header = ws.get_all_values()[0]
-        for c in header:
-            if c not in new_price:
-                new_price[c] = ""
-    except Exception as e:
-        fail(f"讀取 prices header 失敗：{e}")
+    # Ensure we include all header fields
+    ws = repo.get_ws("prices")
+    header = _with_retry(lambda: ws.get_all_values())[0]
+    for c in header:
+        if c not in new_price:
+            new_price[c] = ""
 
     repo.append_row_dict("prices", new_price)
     bust_cache()
@@ -870,7 +895,6 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
         action="PRICE_APPLY_NEW",
         table="prices",
         entity_id=str(item_id),
-        after_json=str(new_price),
         note=f"new_price_id={price_id}, unit_price={unit_price}, effective_date={new_eff}",
     )
 
@@ -879,12 +903,65 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str | 
 
 
 # ============================================================
+# Navigation (safe session_state)
+# ============================================================
+
+def _init_nav(default_page: str):
+    if "nav_page" not in st.session_state:
+        st.session_state["nav_page"] = default_page
+
+
+def _sync_nav_from_radio(pages: list[str]):
+    """
+    Keep programmatic nav_page in sync with widget nav_page_radio.
+    """
+    val = st.session_state.get("nav_page_radio")
+    if val in pages:
+        st.session_state["nav_page"] = val
+
+
+def sidebar_navigation(actor_role: str) -> str:
+    with st.sidebar:
+        st.divider()
+        st.subheader("📚 Navigation")
+
+        is_admin = ROLE_RANK.get(actor_role, 0) >= ROLE_RANK["Admin"]
+        pages = [
+            "Vendors / Create",
+            "Units / Create",
+            "Items / Create",
+            "Items / List",
+            "Items / Edit",
+            "Prices / Create",
+        ] if is_admin else ["(No Access)"]
+
+        _init_nav(pages[0])
+
+        # If nav_page set programmatically (e.g., Items/List -> Edit), reflect it in radio
+        cur = st.session_state.get("nav_page", pages[0])
+        if cur not in pages:
+            cur = pages[0]
+            st.session_state["nav_page"] = cur
+
+        index = pages.index(cur)
+
+        st.radio(
+            "Page",
+            options=pages,
+            index=index,
+            key="nav_page_radio",
+            on_change=_sync_nav_from_radio,
+            args=(pages,),
+        )
+
+    return st.session_state.get("nav_page", pages[0])
+
+
+# ============================================================
 # Main
 # ============================================================
 
 def main():
-    st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
-
     page_header()
 
     sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
@@ -893,53 +970,31 @@ def main():
     if not sheet_id:
         fail("Sheet ID 不能空白。")
 
-    # Streamlit Cloud：不要檢查本機路徑
-    local_mode = ("gcp" not in st.secrets)
-
-    if local_mode:
+    # Local-only check
+    if "gcp" not in st.secrets:
         if not creds_path:
             fail("本機測試：Service Account JSON Path 不能空白。")
         if not Path(creds_path).exists():
             fail(f"找不到 service_account.json：{creds_path}")
 
-    # repo cache_resource：避免重複初始化導致 quota 爆
+    cp = None if "gcp" in st.secrets else creds_path
+
+    # repo cache_resource to prevent repeated init quota spikes
     try:
-        repo = get_repo_cached(sheet_id, creds_path if local_mode else None)
+        repo = get_repo_cached(sheet_id, cp)
     except Exception as e:
         fail(f"Repo 初始化失敗：{e}")
 
-    with st.sidebar:
-        st.divider()
-        st.subheader("📚 Navigation")
-
-        # ✅ 基礎頁面鎖：只有 Admin 以上才顯示 Admin Pages
-        is_admin = ROLE_RANK.get(actor_role, 0) >= ROLE_RANK["Admin"]
-
-        if is_admin:
-            pages = [
-                "Vendors / Create",
-                "Units / Create",
-                "Items / Create",
-                "Items / List",
-                "Items / Edit",
-                "Prices / Create",
-            ]
-        else:
-            pages = ["(No Access)"]
-
-        page = st.radio("Page", options=pages, key="nav_page", index=0)
-
-    # local creds_path 才需要傳；cloud 模式傳 None
-    cp = creds_path if local_mode else None
+    page = sidebar_navigation(actor_role)
 
     if page == "Vendors / Create":
-        page_vendors_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
 
     elif page == "Units / Create":
-        page_units_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+        page_units_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id)
 
     elif page == "Items / Create":
-        page_items_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+        page_items_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id)
 
     elif page == "Items / List":
         page_items_list(repo, sheet_id=sheet_id, creds_path=cp, actor_user_id=actor_user_id)
@@ -955,4 +1010,5 @@ def main():
 
 
 if __name__ == "__main__":
+    st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
