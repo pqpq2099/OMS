@@ -1,78 +1,86 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="OMS Compact (No :has)", layout="wide")
+st.set_page_config(page_title="OMS Compact Selectbox Template", layout="wide")
 
 # ============================================================
-# CSS
+# CSS：不靠 :has()，直接縮 stTextInput / stSelectbox + 縮間距 + 強制同排
 # ============================================================
 st.markdown("""
 <style>
-.block-container{
-  max-width: 980px;
-  padding: 16px 16px 32px;
-}
+/* 容器 */
+.block-container{ max-width: 980px; padding: 16px 16px 32px; }
 
-/* 讓 columns 在手機也不要自動直排 */
+/* columns 一律同排、不換行、縮gap（手機也不換行） */
 div[data-testid="stHorizontalBlock"]{
   flex-wrap: nowrap !important;
-  gap: 4px !important;
+  gap: 6px !important;
 }
 
-/* 欄位不要撐滿 */
+/* column 不要撐爆 */
 div[data-testid="column"]{
   padding: 0 !important;
   margin: 0 !important;
   min-width: 0 !important;
 }
 
-/* ========= 小格子：text_input ========= */
+/* ===== 數字格（text_input） ===== */
 div[data-testid="stTextInput"]{
-  width: 62px !important;
-  min-width: 62px !important;
-  max-width: 62px !important;
+  width: 72px !important;        /* 你要三位數 OK；想更小改 64/68 */
+  min-width: 72px !important;
+  max-width: 72px !important;
 }
 div[data-testid="stTextInput"] input{
-  padding: 2px 4px !important;
-  font-size: 13px !important;
+  padding: 4px 6px !important;
+  font-size: 14px !important;
   line-height: 1.1 !important;
 }
 
-/* ========= 單位：radio 水平 ========= */
-div[data-testid="stRadio"]{
-  width: 150px !important;
-  min-width: 150px !important;
-  max-width: 150px !important;
-}
-div[data-testid="stRadio"] label{
-  font-size: 13px !important;
-}
-div[data-testid="stRadio"] div[role="radiogroup"]{
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  gap: 6px !important;
-}
-div[data-testid="stRadio"] div[role="radiogroup"] > label{
-  margin: 0 !important;
-  padding: 0 !important;
+/* ===== 下拉格（selectbox） ===== */
+div[data-testid="stSelectbox"]{
+  width: 84px !important;        /* 單位格寬度：夠顯示 KG/包/箱 */
+  min-width: 84px !important;
+  max-width: 84px !important;
 }
 
-/* 卡片 */
+/* BaseWeb select 內部（Streamlit selectbox 其實是 BaseWeb） */
+div[data-testid="stSelectbox"] div[data-baseweb="select"]{
+  width: 84px !important;
+  min-width: 84px !important;
+  max-width: 84px !important;
+}
+
+/* select 文字與padding縮小 */
+div[data-testid="stSelectbox"] *{
+  font-size: 14px !important;
+}
+div[data-testid="stSelectbox"] div[data-baseweb="select"] > div{
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
+/* 讓下拉箭頭區不要吃掉太多寬度 */
+div[data-testid="stSelectbox"] svg{
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* item card（只是分隔好看） */
 .item-card{
   border: 1px solid rgba(0,0,0,0.08);
   border-radius: 10px;
-  padding: 12px;
-  margin-bottom: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
 }
-.item-name{
-  font-size: 16px;
+.item-name{ font-weight: 700; font-size: 16px; margin: 0 0 4px 0; }
+.item-meta{ color: #666; font-size: 13px; margin: 0 0 8px 0; }
+
+/* 標題列（像Excel表頭） */
+.head{
   font-weight: 700;
-  margin: 0 0 4px 0;
-}
-.item-meta{
-  font-size: 13px;
-  color: #666;
-  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #222;
+  margin: 6px 0 6px 0;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -81,117 +89,89 @@ div[data-testid="stRadio"] div[role="radiogroup"] > label{
 # Demo data
 # ============================================================
 items = [
-    {"id": "1", "name": "測試原料", "price": 10.0},
-    {"id": "2", "name": "魚", "price": 0.0},
-    {"id": "3", "name": "高麗菜", "price": 50.0},
+    {"id":"1","name":"薯條","price":50.0, "stock_unit":"包", "order_unit":"包"},
+    {"id":"2","name":"測試原料","price":10.0, "stock_unit":"KG", "order_unit":"箱"},
+    {"id":"3","name":"魚","price":0.0, "stock_unit":"包", "order_unit":"包"},
 ]
+UNITS = ["KG", "包", "箱"]
 
-UNIT_OPTIONS = ["KG", "包", "箱"]
-
-# ============================================================
-# Helpers
-# ============================================================
-def sanitize_int_text(text: str, max_len: int = 4) -> str:
-    text = (text or "").strip()
-    if text == "":
+def sanitize_num(s: str) -> str:
+    """允許整數+小數1位（可輸入 60.0 / 2.5 / 1.5），其他字元過濾"""
+    s = (s or "").strip()
+    if s == "":
         return ""
-    cleaned = "".join(ch for ch in text if ch.isdigit())
-    return cleaned[:max_len]
+    out = []
+    dot = False
+    for ch in s:
+        if ch.isdigit():
+            out.append(ch)
+        elif ch == "." and not dot:
+            out.append(".")
+            dot = True
+    cleaned = "".join(out)
+    # 控制小數最多1位
+    if "." in cleaned:
+        a, b = cleaned.split(".", 1)
+        cleaned = a + "." + b[:1]
+    return cleaned[:6]  # 長度上限避免太長
 
-def sync_clean_input(input_key: str, value_key: str):
-    raw = st.session_state.get(input_key, "")
-    cleaned = sanitize_int_text(raw)
-    st.session_state[input_key] = cleaned
-    st.session_state[value_key] = cleaned
+def on_clean(input_key: str):
+    st.session_state[input_key] = sanitize_num(st.session_state.get(input_key, ""))
 
 # ============================================================
 # Header
 # ============================================================
-a, b = st.columns([2, 1])
-with a:
-    st.selectbox("分店", ["ORIVIA_001 (STORE_000001)"], index=0)
-with b:
+c1, c2 = st.columns([2, 1])
+with c1:
+    st.selectbox("分店", ["ORIVIA_001"], index=0)
+with c2:
     st.date_input("日期", value=date(2026, 3, 5))
-
 st.selectbox("廠商（可先選，方便分段點貨）", ["(全部廠商)", "VENDOR_A"], index=0)
 st.divider()
+
+# ============================================================
+# Excel-like header row
+# ============================================================
+h1, h2, h3, h4, h5 = st.columns([3.6, 0.9, 1.0, 0.9, 1.0])
+with h1: st.markdown('<div class="head">品項名稱</div>', unsafe_allow_html=True)
+with h2: st.markdown('<div class="head">庫存</div>', unsafe_allow_html=True)
+with h3: st.markdown('<div class="head">單位</div>', unsafe_allow_html=True)
+with h4: st.markdown('<div class="head">進貨</div>', unsafe_allow_html=True)
+with h5: st.markdown('<div class="head">單位</div>', unsafe_allow_html=True)
 
 # ============================================================
 # Rows
 # ============================================================
 for it in items:
     st.markdown('<div class="item-card">', unsafe_allow_html=True)
+    # 你要像Excel一樣也可以把品名放同排；這裡先保留品名+單價在上方
     st.markdown(f'<div class="item-name">{it["name"]}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="item-meta">單價：{it["price"]:.2f}</div>', unsafe_allow_html=True)
 
-    c1, c2, c3, c4 = st.columns([0.9, 2.1, 0.9, 2.1])
+    a, b, c, d, e = st.columns([3.6, 0.9, 1.0, 0.9, 1.0])
 
-    stock_input_key = f"s_{it['id']}_input"
-    stock_value_key = f"s_{it['id']}"
-    order_input_key = f"o_{it['id']}_input"
-    order_value_key = f"o_{it['id']}"
+    with a:
+        st.write("")  # 保留空間，讓欄位對齊（不放元件）
 
-    # 初始化
-    if stock_input_key not in st.session_state:
-        st.session_state[stock_input_key] = ""
-    if stock_value_key not in st.session_state:
-        st.session_state[stock_value_key] = ""
+    with b:
+        k = f"stock_qty_{it['id']}"
+        if k not in st.session_state:
+            st.session_state[k] = ""
+        st.text_input("", key=k, label_visibility="collapsed", on_change=on_clean, args=(k,), placeholder="0")
 
-    if order_input_key not in st.session_state:
-        st.session_state[order_input_key] = ""
-    if order_value_key not in st.session_state:
-        st.session_state[order_value_key] = ""
+    with c:
+        st.selectbox("", UNITS, index=UNITS.index(it["stock_unit"]), key=f"stock_unit_{it['id']}", label_visibility="collapsed")
 
-    with c1:
-        st.text_input(
-            "",
-            key=stock_input_key,
-            label_visibility="collapsed",
-            on_change=sync_clean_input,
-            args=(stock_input_key, stock_value_key),
-            placeholder="0",
-        )
+    with d:
+        k = f"order_qty_{it['id']}"
+        if k not in st.session_state:
+            st.session_state[k] = ""
+        st.text_input("", key=k, label_visibility="collapsed", on_change=on_clean, args=(k,), placeholder="0")
 
-    with c2:
-        st.radio(
-            "",
-            UNIT_OPTIONS,
-            horizontal=True,
-            key=f"su_{it['id']}",
-            label_visibility="collapsed",
-        )
-
-    with c3:
-        st.text_input(
-            "",
-            key=order_input_key,
-            label_visibility="collapsed",
-            on_change=sync_clean_input,
-            args=(order_input_key, order_value_key),
-            placeholder="0",
-        )
-
-    with c4:
-        st.radio(
-            "",
-            UNIT_OPTIONS,
-            horizontal=True,
-            key=f"ou_{it['id']}",
-            label_visibility="collapsed",
-        )
+    with e:
+        st.selectbox("", UNITS, index=UNITS.index(it["order_unit"]), key=f"order_unit_{it['id']}", label_visibility="collapsed")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ============================================================
-# Debug（可先看值有沒有進來）
-# ============================================================
 with st.expander("Debug"):
-    debug_data = {}
-    for it in items:
-        debug_data[it["name"]] = {
-            "stock_qty": st.session_state.get(f"s_{it['id']}", ""),
-            "stock_unit": st.session_state.get(f"su_{it['id']}", ""),
-            "order_qty": st.session_state.get(f"o_{it['id']}", ""),
-            "order_unit": st.session_state.get(f"ou_{it['id']}", ""),
-        }
-    st.json(debug_data)
+    st.json({k: v for k, v in st.session_state.items() if "qty_" in k or "unit_" in k})
