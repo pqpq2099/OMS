@@ -42,15 +42,15 @@ st.markdown(
 /* 1=庫數字, 2=庫單位, 3=進數字, 4=進單位 */
 .orivia-row div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(1),
 .orivia-row div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3){
-  flex: 0 0 92px !important;
-  width: 92px !important;
-  max-width: 92px !important;
+  flex: 0 0 60px !important;
+  width: 60px !important;
+  max-width: 60px !important;
 }
 .orivia-row div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2),
 .orivia-row div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(4){
-  flex: 0 0 78px !important;
-  width: 78px !important;
-  max-width: 78px !important;
+  flex: 0 0 60px !important;
+  width: 60px !important;
+  max-width: 60px !important;
 }
 
 /* number_input / selectbox：吃滿各自格子 */
@@ -131,3 +131,4 @@ for it in items:
 
     st.markdown("</div>", unsafe_allow_html=True)  # close .orivia-row
     st.markdown("</div>", unsafe_allow_html=True)  # close .orivia-item
+
