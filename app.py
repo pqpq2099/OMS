@@ -16,7 +16,9 @@ div[data-testid="stHorizontalBlock"]{
   flex-direction:row !important;
   flex-wrap:nowrap !important;
   align-items:center !important;
-  column-gap: 10px !important;   /* ✅ 硬拉開「欄與欄」距離 */
+  column-gap: 14px !important;     /* 整體欄位間距加大 */
+div[data-testid="stHorizontalBlock"] > div:nth-child(2){
+  margin-right: 8px !important;  /* 專門拉開「中間單位」跟右邊數字 */
 }
 div[data-testid="stHorizontalBlock"] > div:nth-child(2){
   margin-right: 4px !important;  /* ✅ 單位與右邊數字多一點縫 */
@@ -109,5 +111,6 @@ for i, (n, p, su, ou) in enumerate(ITEMS):
 
 with st.expander("Debug"):
     st.json({k: v for k, v in st.session_state.items()})
+
 
 
