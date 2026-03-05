@@ -1,126 +1,125 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="OMS UI Width Test v2", layout="wide")
+st.set_page_config(page_title="OMS UI", layout="wide")
 
-st.markdown("""
+# ===============================
+# CSS
+# ===============================
 st.markdown("""
 <style>
-.block-container{ max-width: 980px; padding: 1rem 1rem 2rem; }
 
-/* 只針對：同排同時出現 number_input + selectbox 的 row */
+.block-container{
+  max-width: 980px;
+  padding: 1rem 1rem 2rem;
+}
+
+/* 只抓有 number_input + selectbox 的 row */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"]){
   display:flex !important;
   flex-wrap:nowrap !important;
   gap:2px !important;
   align-items:center !important;
-  width: fit-content !important;
-  max-width: 100% !important;
+  width:fit-content !important;
 }
 
-/* column：把 Streamlit 的滿寬/最小寬度全部打掉 */
-div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
-  > div[data-testid="column"]{
+/* column 基礎 */
+div[data-testid="column"]{
   padding:0 !important;
   margin:0 !important;
   min-width:0 !important;
-  width:auto !important;
-  flex:0 0 auto !important;
 }
 
-/* ✅ 數字欄位 column（更小） */
-div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
-  > div[data-testid="column"]:has(div[data-testid="stNumberInput"]){
+/* 數字欄位 */
+div[data-testid="column"]:has(div[data-testid="stNumberInput"]){
   flex:0 0 60px !important;
   width:60px !important;
-  max-width:60px !important;
-  min-width:60px !important;
 }
 
-/* ✅ 單位欄位 column（更小） */
-div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
-  > div[data-testid="column"]:has(div[data-testid="stSelectbox"]){
+/* 單位欄位 */
+div[data-testid="column"]:has(div[data-testid="stSelectbox"]){
   flex:0 0 46px !important;
   width:46px !important;
-  max-width:46px !important;
-  min-width:46px !important;
 }
 
-/* widget 吃滿各自格子 + 打掉它們自己的 min-width */
+/* widget */
 div[data-testid="stNumberInput"], div[data-testid="stSelectbox"]{
   width:100% !important;
-  min-width:0 !important;         /* ✅ 重要 */
-  max-width:100% !important;
+  min-width:0 !important;
 }
 
-/* number input 視覺更緊 */
+/* number input */
 div[data-testid="stNumberInput"] input{
   padding:2px 4px !important;
   font-size:13px !important;
-  line-height:1.1 !important;
 }
 
-/* selectbox：真正會撐開的是 baseweb select，本體也要打 min-width */
+/* selectbox */
 div[data-testid="stSelectbox"] div[data-baseweb="select"]{
-  width:100% !important;
-  min-width:0 !important;         /* ✅ 重要 */
+  min-width:0 !important;
 }
+
 div[data-testid="stSelectbox"] div[role="combobox"]{
-  padding:2px 2px !important;
+  padding:2px !important;
   min-height:28px !important;
   font-size:13px !important;
 }
-div[data-testid="stSelectbox"] span{
-  white-space:nowrap !important;
-  overflow:hidden !important;
-  text-overflow:clip !important;
-}
-div[data-testid="stSelectbox"] svg{
-  width:14px !important;
-  height:14px !important;
+
+/* 移除 stepper */
+div[data-testid="stNumberInput"] button{
+  display:none !important;
 }
 
-/* Stepper 永久移除 */
-div[data-testid="stNumberInput"] button{ display:none !important; }
-div[data-testid="stNumberInput"] svg{ display:none !important; }
-div[data-testid="stNumberInput"] [data-baseweb="input"] button{ display:none !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
+# ===============================
+# Demo data
+# ===============================
 items = [
-    {"id":"1","name":"測試原料","price":10.0,"stock_units":["KG","包"],"order_units":["箱","包"]},
-    {"id":"2","name":"魚","price":0.0,"stock_units":["包"],"order_units":["包"]},
-    {"id":"3","name":"高麗菜","price":50.0,"stock_units":["包","KG"],"order_units":["包","箱"]},
+    {"id":"1","name":"測試原料","price":10,"stock_units":["KG","包"],"order_units":["箱","包"]},
+    {"id":"2","name":"魚","price":0,"stock_units":["包"],"order_units":["包"]},
+    {"id":"3","name":"高麗菜","price":50,"stock_units":["包","KG"],"order_units":["包","箱"]},
 ]
 
-a,b = st.columns([2,1])
-with a:
-    st.selectbox("分店", ["ORIVIA_001 (STORE_000001)"], index=0)
-with b:
-    st.date_input("日期", value=date(2026,3,5))
-st.selectbox("廠商（可先選，方便分段點貨）", ["(全部廠商)", "VENDOR_A"], index=0)
+
+# ===============================
+# Header
+# ===============================
+c1,c2 = st.columns([2,1])
+
+with c1:
+    st.selectbox("分店",["ORIVIA_001"])
+
+with c2:
+    st.date_input("日期",date(2026,3,5))
+
+st.selectbox("廠商",["全部廠商"])
 
 st.divider()
 
-for it in items:
-    st.markdown(f"**{it['name']}**")
-    st.caption(f"單價：{it['price']:.2f}")
 
-    c1,c2,c3,c4 = st.columns(4)
-    with c1:
-        st.number_input("庫", min_value=0.0, value=0.0, step=1.0, format="%.0f",
-                        key=f"s_{it['id']}", label_visibility="collapsed")
-    with c2:
-        st.selectbox("庫單位", it["stock_units"], index=0,
-                     key=f"su_{it['id']}", label_visibility="collapsed")
-    with c3:
-        st.number_input("進", min_value=0.0, value=0.0, step=1.0, format="%.0f",
-                        key=f"o_{it['id']}", label_visibility="collapsed")
-    with c4:
-        st.selectbox("進單位", it["order_units"], index=0,
-                     key=f"ou_{it['id']}", label_visibility="collapsed")
+# ===============================
+# Items
+# ===============================
+for item in items:
 
-    st.markdown("---")
+    st.markdown(f"**{item['name']}**")
+    st.caption(f"單價 {item['price']}")
 
+    col1,col2,col3,col4 = st.columns(4)
 
+    with col1:
+        st.number_input("",value=0,step=1,key=f"s_{item['id']}")
+
+    with col2:
+        st.selectbox("",item["stock_units"],key=f"su_{item['id']}")
+
+    with col3:
+        st.number_input("",value=0,step=1,key=f"o_{item['id']}")
+
+    with col4:
+        st.selectbox("",item["order_units"],key=f"ou_{item['id']}")
+
+    st.divider()
