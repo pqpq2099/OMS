@@ -7,13 +7,18 @@ from datetime import date
 st.set_page_config(page_title="OMS UI Compact Demo", layout="wide")
 
 # ============================================================
-# [1] Global CSS (核心：把 number_input / selectbox 變窄 + 移除 stepper + 壓縮間距)
+# [1] Global CSS
+#   核心改動：
+#   1) block-container 加 max-width：避免桌機超寬導致空隙巨大
+#   2) columns 用「最後一格吃掉剩餘寬度」：讓 4 個控制項靠左貼齊
+#   3) number_input / selectbox 變窄 + 移除 stepper
 # ============================================================
 st.markdown(
     """
 <style>
-/* --------- 整體容器：左右 padding 壓小 --------- */
+/* --------- 整體容器：限制最大寬度，避免桌機空隙超大 --------- */
 .block-container{
+  max-width: 980px !important;      /* ✅ 這行是桌機“不要散開”的關鍵 */
   padding-left: 1rem !important;
   padding-right: 1rem !important;
   padding-top: 1rem !important;
@@ -22,16 +27,11 @@ st.markdown(
 
 /* --------- columns：減少欄位間的左右 padding --------- */
 div[data-testid="column"]{
-  padding-left: .2rem !important;
-  padding-right: .2rem !important;
+  padding-left: .15rem !important;
+  padding-right: .15rem !important;
 }
 
-/* --------- 讓每一列更緊湊 --------- */
-div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stHorizontalBlock"]) {
-  margin-bottom: .35rem !important;
-}
-
-/* --------- 卡片外框（可選） --------- */
+/* --------- 卡片外框 --------- */
 .orivia-item{
   border: 1px solid rgba(49,51,63,.15);
   border-radius: 12px;
@@ -52,75 +52,53 @@ div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stHorizontalBloc
 }
 
 /* ============================================================
-   [A] number_input：縮到像 POS 那樣，並移除 +/- stepper
+   [A] number_input：縮窄 + 移除 +/- stepper
    ============================================================ */
-
-/* number input 外框限制寬度 */
 div[data-testid="stNumberInput"]{
   min-width: 64px !important;
   max-width: 78px !important;
 }
-
-/* number input 輸入框本體：padding/font 縮小 */
 div[data-testid="stNumberInput"] input{
   padding: 2px 6px !important;
   font-size: 14px !important;
   line-height: 1.2 !important;
 }
 
-/* 移除 stepper：不同版本 Streamlit 會有不同 DOM，這裡用多重選擇器硬拆 */
-div[data-testid="stNumberInput"] button{
-  display: none !important;
-}
-div[data-testid="stNumberInput"] [role="spinbutton"] + div{
-  display: none !important;
-}
-div[data-testid="stNumberInput"] div:has(> button){
-  display: none !important;
-}
+/* ✅ 更乾淨的移除 stepper（多版本兼容） */
+div[data-testid="stNumberInput"] button { display: none !important; }
+div[data-testid="stNumberInput"] div:has(> button){ display:none !important; }
 
 /* ============================================================
-   [B] selectbox：縮小 + 壓掉右側箭頭區/內距
+   [B] selectbox：縮窄 + 壓縮箭頭區
    ============================================================ */
 div[data-testid="stSelectbox"]{
   min-width: 56px !important;
   max-width: 78px !important;
 }
-
-/* selectbox 外層 */
-div[data-testid="stSelectbox"] > div{
-  padding: 0 !important;
-}
-
-/* selectbox 顯示區（含箭頭那塊） */
 div[data-testid="stSelectbox"] div[role="combobox"]{
   padding: 2px 6px !important;
   font-size: 14px !important;
   min-height: 30px !important;
 }
-
-/* 右側箭頭容器縮小（不同版本 class 不同，用 role 旁支抓） */
 div[data-testid="stSelectbox"] div[role="combobox"] svg{
   width: 16px !important;
   height: 16px !important;
 }
 
-/* label 取消高度佔位（不想要 label 撐高就用空字串 label） */
-label{
-  margin-bottom: 0 !important;
-}
+/* label 不要佔高度（我們用 collapsed） */
+label{ margin-bottom: 0 !important; }
 
 /* ============================================================
-   [C] 手機版：強制同一行不要直排（避免 columns 自動堆疊）
-   這是關鍵：把 HorizontalBlock 變成可水平滾動，而不是直排
+   [C] 手機：同一行、不直排，必要時可橫向滑動
    ============================================================ */
 @media (max-width: 768px){
+  .block-container{ max-width: 100% !important; }
+
   div[data-testid="stHorizontalBlock"]{
     flex-wrap: nowrap !important;
     overflow-x: auto !important;
     gap: .35rem !important;
   }
-  /* 讓每個 column 不要被壓到變形 */
   div[data-testid="column"]{
     flex: 0 0 auto !important;
   }
@@ -134,17 +112,20 @@ label{
 # [2] Demo data
 # ============================================================
 items = [
-    {"item_id": "ITEM_0001", "item_name_zh": "測試原料", "unit_price": 10.00, "last_order": "-", "suggest": 1.0, "stock_units": ["KG", "包"], "order_units": ["箱", "包"]},
-    {"item_id": "ITEM_0002", "item_name_zh": "魚", "unit_price": 0.00, "last_order": "-", "suggest": 1.0, "stock_units": ["包"], "order_units": ["包"]},
-    {"item_id": "ITEM_0003", "item_name_zh": "高麗菜", "unit_price": 50.00, "last_order": "-", "suggest": 1.0, "stock_units": ["包", "KG"], "order_units": ["包", "箱"]},
+    {"item_id": "ITEM_0001", "item_name_zh": "測試原料", "unit_price": 10.00, "last_order": "-", "suggest": 1.0,
+     "stock_units": ["KG", "包"], "order_units": ["箱", "包"]},
+    {"item_id": "ITEM_0002", "item_name_zh": "魚", "unit_price": 0.00, "last_order": "-", "suggest": 1.0,
+     "stock_units": ["包"], "order_units": ["包"]},
+    {"item_id": "ITEM_0003", "item_name_zh": "高麗菜", "unit_price": 50.00, "last_order": "-", "suggest": 1.0,
+     "stock_units": ["包", "KG"], "order_units": ["包", "箱"]},
 ]
 
 # ============================================================
-# [3] Header (模擬你現在的叫貨頁)
+# [3] Header (模擬叫貨頁)
 # ============================================================
 st.write("手機：品名一行；輸入一行（庫+單位 / 進+單位 同一行）。")
 
-top1, top2 = st.columns([2.2, 1.2])
+top1, top2 = st.columns([2.2, 1.2], gap="small")
 with top1:
     st.selectbox("分店", ["ORIVIA_001 (STORE_000001)", "ORIVIA_002 (STORE_000002)"], index=0)
 with top2:
@@ -156,28 +137,22 @@ st.divider()
 
 # ============================================================
 # [4] Item rows
-#   - 品名（只顯示中文）
-#   - 下方只保留：單價 / 上次叫貨 / 建議
-#   - 輸入行：庫存數字 + 庫存單位 + 進貨數字 + 進貨單位（同一行）
-#   - columns 比例：數字(較寬) / 單位(較窄) / 數字(較寬) / 單位(較窄)
+#   ✅ 關鍵：用 5 columns，最後一格當「吸寬欄」吃掉剩餘空間
+#   這樣前 4 個控制項會靠左緊貼，不會散開
 # ============================================================
 for it in items:
     item_key = it["item_id"]
 
-    # 外框卡片（用 HTML 包一層）
     st.markdown('<div class="orivia-item">', unsafe_allow_html=True)
 
-    # 品名（只顯示中文優先）
     st.markdown(f'<div class="orivia-name">{it["item_name_zh"]}</div>', unsafe_allow_html=True)
-
-    # meta info（只保留：單價／上次叫貨／建議）
     st.markdown(
         f'<div class="orivia-meta">單價：{it["unit_price"]:.2f} ｜ 上次叫貨：{it["last_order"]} ｜ 建議：{it["suggest"]:.1f}</div>',
         unsafe_allow_html=True,
     )
 
-    # 輸入行：同一行（庫+單位 / 進+單位）
-    c1, c2, c3, c4 = st.columns([1.25, 0.75, 1.25, 0.75])
+    # ✅ 前四格放控制項，第五格吸掉剩餘空間
+    c1, c2, c3, c4, c5 = st.columns([0.9, 0.75, 0.9, 0.75, 6.0], gap="small")
 
     with c1:
         st.number_input(
@@ -219,19 +194,23 @@ for it in items:
             label_visibility="collapsed",
         )
 
+    with c5:
+        # 吸寬欄：什麼都不放
+        st.write("")
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
-# [5] Debug view (你可以先看 state 長怎樣)
+# [5] Debug
 # ============================================================
 with st.expander("Debug：目前輸入值"):
     out = {}
     for it in items:
-        item_key = it["item_id"]
-        out[item_key] = {
-            "stock_qty": st.session_state.get(f"{item_key}_stock_qty"),
-            "stock_unit": st.session_state.get(f"{item_key}_stock_unit"),
-            "order_qty": st.session_state.get(f"{item_key}_order_qty"),
-            "order_unit": st.session_state.get(f"{item_key}_order_unit"),
+        k = it["item_id"]
+        out[k] = {
+            "stock_qty": st.session_state.get(f"{k}_stock_qty"),
+            "stock_unit": st.session_state.get(f"{k}_stock_unit"),
+            "order_qty": st.session_state.get(f"{k}_order_qty"),
+            "order_unit": st.session_state.get(f"{k}_order_unit"),
         }
     st.json(out)
