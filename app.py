@@ -1,117 +1,206 @@
+import re
 import streamlit as st
 
-st.set_page_config(page_title="OMS Compact Row Test v4", layout="wide")
+# =========================
+# Page
+# =========================
+st.set_page_config(page_title="OMS Compact Row Test v5", layout="wide")
 
-st.markdown("""
+# =========================
+# CSS (safe, all inside string)
+# =========================
+st.markdown(
+    """
 <style>
-.block-container { padding-top: 1rem; padding-bottom: 2rem; }
+/* --- container --- */
+.block-container{
+  padding-top: 1.2rem;
+  padding-bottom: 2rem;
+}
 
-/* 隱藏 number_input +/- stepper */
-button[aria-label="Increment"], button[aria-label="Decrement"] { display: none !important; }
-[data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
+/* --- Make "columns" NOT wrap on mobile (single row), and control gap --- */
+@media (max-width: 640px){
+  div[data-testid="stHorizontalBlock"]{
+    flex-wrap: nowrap !important;
+    column-gap: 10px !important;   /* ✅ 中間間隙 */
+    row-gap: 0px !important;
+    align-items: center !important;
+  }
+  /* Let children shrink properly to avoid overflow */
+  div[data-testid="column"]{
+    min-width: 0 !important;
+  }
+}
 
-/* ✅ 手機也強制同一行 + 不換行 */
-div[data-testid="stHorizontalBlock"]{
-  display:flex !important;
-  flex-direction:row !important;
-  flex-wrap:nowrap !important;
-  align-items:center !important;
-  column-gap: 14px !important;     /* 整體欄位間距加大 */
-div[data-testid="stHorizontalBlock"] > div:nth-child(2){
-  margin-right: 8px !important;  /* 專門拉開「中間單位」跟右邊數字 */
+/* --- Inputs compact height / padding --- */
+div[data-testid="stTextInput"] input{
+  height: 44px !important;
+  padding: 0 10px !important;
+  font-size: 16px !important;
 }
-div[data-testid="stHorizontalBlock"] > div:nth-child(2){
-  margin-right: 4px !important;  /* ✅ 單位與右邊數字多一點縫 */
+div[data-testid="stSelectbox"] > div{
+  height: 44px !important;
 }
-/* ✅ 再保底：每個欄容器自己也留縫（避免某些手機/瀏覽器看起來黏住） */
-div[data-testid="stHorizontalBlock"] > div{
-  padding-right: 2px !important;
-}
-div[data-testid="stHorizontalBlock"] > div{
-  flex: 0 0 auto !important;
+
+/* Select box internal (baseweb) */
+div[data-testid="stSelectbox"] div[data-baseweb="select"]{
   min-width: 0 !important;
 }
-
-/* ✅ 關鍵：單位欄位「最小寬度」(手機必須有，不然只剩箭頭) */
-div[data-testid="stSelectbox"]{
-  min-width: 84px !important;   /* 你要更大就調這個：84 / 92 / 100 */
+div[data-testid="stSelectbox"] div[data-baseweb="select"] > div{
+  height: 44px !important;
+  padding: 0 8px !important;
+  font-size: 16px !important;
 }
 
-/* input / select 吃滿自己的欄 */
-div[data-testid="stNumberInput"], div[data-testid="stSelectbox"] { width: 100% !important; }
-div[data-testid="stNumberInput"] input { width: 100% !important; }
-
-/* ✅ BaseWeb select：文字區一定要留出空間，右側箭頭區保留 */
-div[data-testid="stSelectbox"] div[role="combobox"]{
-  min-height: 40px !important;
-  padding-left: 10px !important;
-  padding-right: 38px !important; /* 箭頭 */
-  overflow: visible !important;
+/* Reduce extra vertical spacing between widgets */
+div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stTextInput"]),
+div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stSelectbox"]){
+  margin-bottom: 8px !important;
 }
 
-/* ✅ 選到的值一定顯示（不透明、不隱藏、不省略成空白） */
-div[data-testid="stSelectbox"] div[role="combobox"] span{
-  opacity: 1 !important;
-  visibility: visible !important;
-  display: inline-block !important;
-  white-space: nowrap !important;
-  color: inherit !important;
+/* Slightly reduce label spacing (we won't show widget labels anyway) */
+label{
+  margin-bottom: 0.25rem !important;
 }
 
-/* number input 高度 + padding */
-div[data-testid="stNumberInput"] input{
-  min-height: 40px !important;
-  padding-left: 10px !important;
-  padding-right: 10px !important;
+/* Make the row feel "Excel-like" */
+.item-card{
+  padding: 14px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(120,120,120,0.18);
+  margin-bottom: 14px;
 }
-
-/* 手機微調：間距更小 */
-@media (max-width: 640px){
-  .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
-  div[data-testid="stHorizontalBlock"]{ gap: 6px !important; }
-  div[data-testid="stSelectbox"]{ min-width: 78px !important; } /* 手機再保底一次 */
+.item-name{
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 4px 0;
+}
+.item-meta{
+  font-size: 14px;
+  opacity: 0.7;
+  margin: 0 0 10px 0;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.title("OMS Compact Row Test v4（只測 UI）")
-st.caption("目標：手機也要同一排，且單位(例如 KG)一定要看得到。")
+# =========================
+# Helpers
+# =========================
+def sanitize_number_text(s: str, default: str = "0") -> str:
+    """
+    Keep only digits and a single dot. Return default if empty.
+    This avoids session_state write-back issues: we sanitize on read.
+    """
+    if s is None:
+        return default
+    s = s.strip()
+    if s == "":
+        return default
+    # allow digits and dot
+    s = re.sub(r"[^0-9.]", "", s)
+    # keep only first dot
+    if s.count(".") > 1:
+        parts = s.split(".")
+        s = parts[0] + "." + "".join(parts[1:])
+    if s in ("", "."):
+        return default
+    return s
+
+def get_float_from_text(key: str, default: float = 0.0) -> float:
+    txt = sanitize_number_text(st.session_state.get(key, "0"))
+    try:
+        return float(txt)
+    except Exception:
+        return default
+
+
+# =========================
+# Header
+# =========================
+st.title("OMS Compact Row Test v5（只測 UI）")
+st.caption("目標：手機也同一排：庫存(數字+單位) / 進貨(數字+單位)。單位要看得到、有間隙、不超出螢幕。")
+
 st.divider()
 
-ITEMS = [
-    ("測試原料", 10.0, ["KG", "包", "箱"], ["箱", "包", "KG"]),
-    ("魚", 0.0, ["包", "KG", "箱"], ["包", "箱", "KG"]),
-    ("高麗菜", 50.0, ["包", "KG"], ["包", "箱"]),
+# =========================
+# Fake data
+# =========================
+UNITS = ["KG", "包", "箱", "罐", "瓶", "袋"]
+items = [
+    {"item_id": "I001", "name": "測試原料", "price": 10.0},
+    {"item_id": "I002", "name": "魚", "price": 0.0},
+    {"item_id": "I003", "name": "高麗菜", "price": 50.0},
 ]
 
-def row(i, name, price, stock_units, order_units):
-    st.markdown(f"### {name}")
-    st.caption(f"單價：{price:.1f}")
+# =========================
+# Render rows
+# =========================
+for it in items:
+    item_id = it["item_id"]
 
-    # ✅ 單位格不要太小：比例稍微拉大（避免手機只剩箭頭）
+    # init defaults BEFORE widgets
+    st.session_state.setdefault(f"{item_id}_stock_qty", "0")
+    st.session_state.setdefault(f"{item_id}_stock_unit", "KG")
+    st.session_state.setdefault(f"{item_id}_order_qty", "0")
+    st.session_state.setdefault(f"{item_id}_order_unit", "箱")
+
+    st.markdown('<div class="item-card">', unsafe_allow_html=True)
+    st.markdown(f'<div class="item-name">{it["name"]}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="item-meta">單價：{it["price"]:.1f}</div>', unsafe_allow_html=True)
+
+    # ✅ 關鍵：欄位比例（避免超出螢幕）
+    # 數字欄寬、單位欄窄；中間靠 gap 控制間隙
     c1, c2, c3, c4 = st.columns([1.6, 0.9, 1.6, 0.9], gap="small")
 
     with c1:
-        st.number_input("庫存", min_value=0.0, value=0.0, step=0.0, format="%.1f",
-                        key=f"s_qty_{i}", label_visibility="collapsed")
+        st.text_input(
+            "庫存",
+            key=f"{item_id}_stock_qty",
+            label_visibility="collapsed",
+            placeholder="0",
+        )
     with c2:
-        st.selectbox("庫存單位", stock_units, index=0,
-                     key=f"s_unit_{i}", label_visibility="collapsed")
+        st.selectbox(
+            "庫存單位",
+            UNITS,
+            key=f"{item_id}_stock_unit",
+            label_visibility="collapsed",
+        )
     with c3:
-        st.number_input("進貨", min_value=0.0, value=0.0, step=0.0, format="%.1f",
-                        key=f"o_qty_{i}", label_visibility="collapsed")
+        st.text_input(
+            "進貨",
+            key=f"{item_id}_order_qty",
+            label_visibility="collapsed",
+            placeholder="0",
+        )
     with c4:
-        st.selectbox("進貨單位", order_units, index=0,
-                     key=f"o_unit_{i}", label_visibility="collapsed")
+        st.selectbox(
+            "進貨單位",
+            UNITS,
+            key=f"{item_id}_order_unit",
+            label_visibility="collapsed",
+        )
 
-    st.markdown("<hr/>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-for i, (n, p, su, ou) in enumerate(ITEMS):
-    row(i, n, p, su, ou)
-
-with st.expander("Debug"):
-    st.json({k: v for k, v in st.session_state.items()})
-
-
-
-
+# =========================
+# Debug (read-only, sanitized)
+# =========================
+with st.expander("Debug（讀取時才清洗，不回寫 session_state）"):
+    rows = []
+    for it in items:
+        item_id = it["item_id"]
+        rows.append(
+            {
+                "item": it["name"],
+                "stock_qty(text)": st.session_state.get(f"{item_id}_stock_qty"),
+                "stock_qty(num)": get_float_from_text(f"{item_id}_stock_qty"),
+                "stock_unit": st.session_state.get(f"{item_id}_stock_unit"),
+                "order_qty(text)": st.session_state.get(f"{item_id}_order_qty"),
+                "order_qty(num)": get_float_from_text(f"{item_id}_order_qty"),
+                "order_unit": st.session_state.get(f"{item_id}_order_unit"),
+            }
+        )
+    st.write(rows)
