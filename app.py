@@ -15,8 +15,13 @@ div[data-testid="stHorizontalBlock"]{
   display:flex !important;
   flex-direction:row !important;
   flex-wrap:nowrap !important;
-  gap:8px !important;
   align-items:center !important;
+  column-gap: 10px !important;   /* ✅ 硬拉開「欄與欄」距離 */
+}
+
+/* ✅ 再保底：每個欄容器自己也留縫（避免某些手機/瀏覽器看起來黏住） */
+div[data-testid="stHorizontalBlock"] > div{
+  padding-right: 2px !important;
 }
 div[data-testid="stHorizontalBlock"] > div{
   flex: 0 0 auto !important;
@@ -102,3 +107,4 @@ for i, (n, p, su, ou) in enumerate(ITEMS):
 
 with st.expander("Debug"):
     st.json({k: v for k, v in st.session_state.items()})
+
