@@ -1,88 +1,142 @@
 import streamlit as st
-from datetime import date
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="OMS Compact Row Test", layout="wide")
 
-# ===== CSS：只負責縮小格子 =====
-st.markdown("""
+# =========================
+# CSS: 只做「控寬 + 同一行 + 隱藏 stepper」
+# =========================
+st.markdown(
+    """
 <style>
+/* --- 基本：縮掉 container padding，避免手機浪費空間 --- */
+.block-container { padding-top: 1rem; padding-bottom: 2rem; }
 
-.block-container{
-    max-width: 980px;
-}
+/* --- 隱藏 number_input 的 +/- stepper（不同版本可能有差異，兩種都加） --- */
+button[aria-label="Increment"], button[aria-label="Decrement"] { display: none !important; }
+[data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
 
-/* 數字欄 */
-div[data-testid="stTextInput"]{
-    width:70px !important;
-}
-div[data-testid="stTextInput"] input{
-    padding:4px !important;
-}
+/* --- 讓「同一行」成立的核心：把下一個 widget 的外層 div 改成 inline-block --- */
+/* 我們用「marker + 下一個元素」這種方式，精準控制 4 個 widget 都變 inline-block */
+.omslab { margin: 0.35rem 0 0.25rem 0; font-weight: 700; }
+.omsm { display: block; height: 0px; } /* marker 本身不佔空間 */
 
-/* 下拉 */
-div[data-testid="stSelectbox"]{
-    width:80px !important;
-}
-div[data-testid="stSelectbox"] div[data-baseweb="select"]{
-    min-height:32px !important;
+.omsm + div { 
+  display: inline-block !important;
+  vertical-align: top !important;
+  margin-right: 8px !important;   /* 欄位間距 */
 }
 
-/* item */
-.item{
-    border:1px solid rgba(0,0,0,0.08);
-    border-radius:10px;
-    padding:10px;
-    margin-bottom:10px;
+/* --- 控制寬度：桌機 & 手機都用固定寬（避免 Streamlit 自動拉滿） --- */
+/* 數字框（庫存/進貨） */
+.omsw-num + div { width: 96px !important; min-width: 96px !important; max-width: 96px !important; }
+/* 單位下拉（庫存/進貨） */
+.omsw-unit + div { width: 76px !important; min-width: 76px !important; max-width: 76px !important; }
+
+/* 讓 input / select 本體吃滿我們定的寬度 */
+.omsm + div [data-testid="stNumberInput"] { width: 100% !important; }
+.omsm + div [data-testid="stSelectbox"] { width: 100% !important; }
+
+/* 下拉箭頭區、padding 稍微縮小（避免單位被擠到只剩符號） */
+.omsm + div [data-baseweb="select"] > div {
+  padding-left: 8px !important;
+  padding-right: 28px !important; /* 保留箭頭空間 */
 }
 
+/* number_input 的 input padding 縮小一點 */
+.omsm + div input {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+/* --- 手機：再更緊一點（避免超出螢幕） --- */
+@media (max-width: 640px) {
+  .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
+
+  .omsm + div { margin-right: 6px !important; }
+
+  .omsw-num + div { width: 88px !important; min-width: 88px !important; max-width: 88px !important; }
+  .omsw-unit + div { width: 68px !important; min-width: 68px !important; max-width: 68px !important; }
+}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-items = [
-    {"id":1,"name":"薯條","price":50},
-    {"id":2,"name":"測試原料","price":10},
+# =========================
+# 測試資料
+# =========================
+ITEMS = [
+    {"name": "測試原料", "price": 10.0, "stock_unit": ["KG", "包", "箱"], "order_unit": ["箱", "包", "KG"]},
+    {"name": "魚", "price": 0.0, "stock_unit": ["包", "KG", "箱"], "order_unit": ["包", "箱", "KG"]},
+    {"name": "高麗菜", "price": 50.0, "stock_unit": ["包", "KG"], "order_unit": ["包", "箱"]},
 ]
 
-units = ["KG","包","箱"]
+st.title("OMS Compact Row Test（只測 UI）")
 
-# header
-a,b = st.columns([2,1])
-with a:
-    st.selectbox("分店",["ORIVIA_001"])
-with b:
-    st.date_input("日期",date.today())
+st.caption("目標：手機也要維持同一行：庫存(數字+單位) / 進貨(數字+單位)，不出現 +/-，不超出螢幕。")
 
 st.divider()
 
-# 表頭
-h = st.columns([3.5,1,1.2,1,1.2])
-h[0].write("品項名稱")
-h[1].write("庫存")
-h[2].write("單位")
-h[3].write("進貨")
-h[4].write("單位")
+# =========================
+# Row renderer (四個 widget 以 marker + CSS 控寬，強制同一行)
+# =========================
+def render_item_row(idx: int, it: dict):
+    st.markdown(f'<div class="omslab">{it["name"]}</div>', unsafe_allow_html=True)
+    st.caption(f'單價：{it["price"]:.1f}')
 
-# rows
-for item in items:
+    # 庫存數字
+    st.markdown('<span class="omsm omsw-num"></span>', unsafe_allow_html=True)
+    stock_qty = st.number_input(
+        "庫存數字",
+        min_value=0.0,
+        value=0.0,
+        step=0.0,  # 避免顯示 step 的最佳做法仍是 CSS 隱藏，但這裡也設 0
+        format="%.1f",
+        key=f"stock_qty_{idx}",
+        label_visibility="collapsed",
+    )
 
-    with st.container():
+    # 庫存單位
+    st.markdown('<span class="omsm omsw-unit"></span>', unsafe_allow_html=True)
+    stock_unit = st.selectbox(
+        "庫存單位",
+        it["stock_unit"],
+        index=0,
+        key=f"stock_unit_{idx}",
+        label_visibility="collapsed",
+    )
 
-        c = st.columns([3.5,1,1.2,1,1.2])
+    # 進貨數字
+    st.markdown('<span class="omsm omsw-num"></span>', unsafe_allow_html=True)
+    order_qty = st.number_input(
+        "進貨數字",
+        min_value=0.0,
+        value=0.0,
+        step=0.0,
+        format="%.1f",
+        key=f"order_qty_{idx}",
+        label_visibility="collapsed",
+    )
 
-        with c[0]:
-            st.markdown(f"""
-            **{item["name"]}**  
-            單價 {item["price"]}
-            """)
+    # 進貨單位
+    st.markdown('<span class="omsm omsw-unit"></span>', unsafe_allow_html=True)
+    order_unit = st.selectbox(
+        "進貨單位",
+        it["order_unit"],
+        index=0,
+        key=f"order_unit_{idx}",
+        label_visibility="collapsed",
+    )
 
-        with c[1]:
-            st.text_input("",key=f"s_{item['id']}")
+    # 換行（結束 inline-block）
+    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
-        with c[2]:
-            st.selectbox("",units,key=f"su_{item['id']}")
+    return stock_qty, stock_unit, order_qty, order_unit
 
-        with c[3]:
-            st.text_input("",key=f"o_{item['id']}")
 
-        with c[4]:
-            st.selectbox("",units,key=f"ou_{item['id']}")
+for i, it in enumerate(ITEMS):
+    render_item_row(i, it)
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+with st.expander("Debug：目前輸入值"):
+    st.json({k: v for k, v in st.session_state.items() if any(x in k for x in ["stock_", "order_"])})
