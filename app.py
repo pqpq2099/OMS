@@ -30,17 +30,17 @@ div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(d
 /* 數字欄位 column */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]:has(div[data-testid="stNumberInput"]){
-  flex:0 0 72px !important;
-  width:72px !important;
-  max-width:72px !important;
+  flex:0 0 40px !important;
+  width:40px !important;
+  max-width:40px !important;
 }
 
 /* 單位欄位 column */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]:has(div[data-testid="stSelectbox"]){
-  flex:0 0 56px !important;
-  width:56px !important;
-  max-width:56px !important;
+  flex:0 0 40px !important;
+  width:40px !important;
+  max-width:40px !important;
 }
 
 /* widget 吃滿各自格子 */
@@ -112,3 +112,4 @@ for it in items:
                      key=f"ou_{it['id']}", label_visibility="collapsed")
 
     st.markdown("---")
+
