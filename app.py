@@ -1,55 +1,66 @@
 import re
 import streamlit as st
 
-# =========================
-# Page
-# =========================
-st.set_page_config(page_title="OMS Compact Row Test v5", layout="wide")
+st.set_page_config(page_title="OMS Compact Row Test v6", layout="wide")
 
-# =========================
-# CSS (safe, all inside string)
-# =========================
 st.markdown(
     """
 <style>
-/* --- container --- */
+/* ========== Base container ========== */
 .block-container{
-  padding-top: 1.2rem;
+  padding-top: 1.1rem;
   padding-bottom: 2rem;
 }
 
-/* --- Make "columns" NOT wrap on mobile (single row), and control gap --- */
+/* ========== Mobile: force 1-row and prevent overflow ========== */
 @media (max-width: 640px){
+  /* The horizontal block (columns row) */
   div[data-testid="stHorizontalBlock"]{
     flex-wrap: nowrap !important;
-    column-gap: 10px !important;   /* ✅ 中間間隙 */
+    column-gap: 6px !important;          /* ✅ gap 縮小，避免超出 */
     row-gap: 0px !important;
     align-items: center !important;
+    overflow-x: hidden !important;       /* ✅ 防止橫向溢出 */
   }
-  /* Let children shrink properly to avoid overflow */
+
+  /* Each column can shrink */
   div[data-testid="column"]{
     min-width: 0 !important;
+    overflow: hidden !important;
   }
 }
 
-/* --- Inputs compact height / padding --- */
-div[data-testid="stTextInput"] input{
-  height: 44px !important;
-  padding: 0 10px !important;
-  font-size: 16px !important;
+/* ========== Inputs: compact + never exceed column width ========== */
+div[data-testid="stTextInput"]{
+  width: 100% !important;
+  max-width: 100% !important;
 }
-div[data-testid="stSelectbox"] > div{
+div[data-testid="stTextInput"] input{
+  width: 100% !important;
+  max-width: 100% !important;
   height: 44px !important;
+  padding: 0 8px !important;            /* ✅ 內距縮小 */
+  font-size: 16px !important;
+  box-sizing: border-box !important;
 }
 
-/* Select box internal (baseweb) */
+/* Selectbox container */
+div[data-testid="stSelectbox"]{
+  width: 100% !important;
+  max-width: 100% !important;
+}
 div[data-testid="stSelectbox"] div[data-baseweb="select"]{
+  width: 100% !important;
+  max-width: 100% !important;
   min-width: 0 !important;
 }
+
+/* Select visual box */
 div[data-testid="stSelectbox"] div[data-baseweb="select"] > div{
   height: 44px !important;
-  padding: 0 8px !important;
+  padding: 0 6px !important;            /* ✅ 內距縮小 */
   font-size: 16px !important;
+  box-sizing: border-box !important;
 }
 
 /* Reduce extra vertical spacing between widgets */
@@ -58,12 +69,7 @@ div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stSelectbox"]){
   margin-bottom: 8px !important;
 }
 
-/* Slightly reduce label spacing (we won't show widget labels anyway) */
-label{
-  margin-bottom: 0.25rem !important;
-}
-
-/* Make the row feel "Excel-like" */
+/* Row card styling */
 .item-card{
   padding: 14px 12px;
   border-radius: 14px;
@@ -85,22 +91,13 @@ label{
     unsafe_allow_html=True,
 )
 
-# =========================
-# Helpers
-# =========================
 def sanitize_number_text(s: str, default: str = "0") -> str:
-    """
-    Keep only digits and a single dot. Return default if empty.
-    This avoids session_state write-back issues: we sanitize on read.
-    """
     if s is None:
         return default
     s = s.strip()
     if s == "":
         return default
-    # allow digits and dot
     s = re.sub(r"[^0-9.]", "", s)
-    # keep only first dot
     if s.count(".") > 1:
         parts = s.split(".")
         s = parts[0] + "." + "".join(parts[1:])
@@ -116,17 +113,10 @@ def get_float_from_text(key: str, default: float = 0.0) -> float:
         return default
 
 
-# =========================
-# Header
-# =========================
-st.title("OMS Compact Row Test v5（只測 UI）")
-st.caption("目標：手機也同一排：庫存(數字+單位) / 進貨(數字+單位)。單位要看得到、有間隙、不超出螢幕。")
-
+st.title("OMS Compact Row Test v6（只測 UI）")
+st.caption("目標：手機也同一排，且不超出螢幕。庫存(數字+單位) / 進貨(數字+單位)。")
 st.divider()
 
-# =========================
-# Fake data
-# =========================
 UNITS = ["KG", "包", "箱", "罐", "瓶", "袋"]
 items = [
     {"item_id": "I001", "name": "測試原料", "price": 10.0},
@@ -134,13 +124,9 @@ items = [
     {"item_id": "I003", "name": "高麗菜", "price": 50.0},
 ]
 
-# =========================
-# Render rows
-# =========================
 for it in items:
     item_id = it["item_id"]
 
-    # init defaults BEFORE widgets
     st.session_state.setdefault(f"{item_id}_stock_qty", "0")
     st.session_state.setdefault(f"{item_id}_stock_unit", "KG")
     st.session_state.setdefault(f"{item_id}_order_qty", "0")
@@ -150,44 +136,20 @@ for it in items:
     st.markdown(f'<div class="item-name">{it["name"]}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="item-meta">單價：{it["price"]:.1f}</div>', unsafe_allow_html=True)
 
-    # ✅ 關鍵：欄位比例（避免超出螢幕）
-    # 數字欄寬、單位欄窄；中間靠 gap 控制間隙
-    c1, c2, c3, c4 = st.columns([1.6, 0.9, 1.6, 0.9], gap="small")
+    # ✅ 更窄欄位比例（避免手機超出）
+    c1, c2, c3, c4 = st.columns([1.35, 0.75, 1.35, 0.75], gap="small")
 
     with c1:
-        st.text_input(
-            "庫存",
-            key=f"{item_id}_stock_qty",
-            label_visibility="collapsed",
-            placeholder="0",
-        )
+        st.text_input("庫存", key=f"{item_id}_stock_qty", label_visibility="collapsed", placeholder="0")
     with c2:
-        st.selectbox(
-            "庫存單位",
-            UNITS,
-            key=f"{item_id}_stock_unit",
-            label_visibility="collapsed",
-        )
+        st.selectbox("庫存單位", UNITS, key=f"{item_id}_stock_unit", label_visibility="collapsed")
     with c3:
-        st.text_input(
-            "進貨",
-            key=f"{item_id}_order_qty",
-            label_visibility="collapsed",
-            placeholder="0",
-        )
+        st.text_input("進貨", key=f"{item_id}_order_qty", label_visibility="collapsed", placeholder="0")
     with c4:
-        st.selectbox(
-            "進貨單位",
-            UNITS,
-            key=f"{item_id}_order_unit",
-            label_visibility="collapsed",
-        )
+        st.selectbox("進貨單位", UNITS, key=f"{item_id}_order_unit", label_visibility="collapsed")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================
-# Debug (read-only, sanitized)
-# =========================
 with st.expander("Debug（讀取時才清洗，不回寫 session_state）"):
     rows = []
     for it in items:
