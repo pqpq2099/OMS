@@ -1,72 +1,75 @@
 import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="OMS UI Width Test", layout="wide")
+st.set_page_config(page_title="OMS UI Width Test v2", layout="wide")
 
 st.markdown("""
 <style>
-/* 版面寬度 */
 .block-container{ max-width: 980px; padding: 1rem 1rem 2rem; }
 
-/* =========================================
-   ✅ 核心：抓「有 number_input + selectbox」的 columns row
-   直接鎖 Streamlit 自己的 stHorizontalBlock
-========================================= */
-
-/* 只針對：同一排裡同時出現 number_input 與 selectbox 的水平區塊 */
+/* 只針對：同排同時出現 number_input + selectbox 的 row */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"]){
   display:flex !important;
-  flex-wrap:nowrap !important;   /* 不換行（手機也不換） */
-  gap:6px !important;            /* 間距縮小 */
+  flex-wrap:nowrap !important;
+  gap:4px !important;
   align-items:center !important;
+  width: fit-content !important;     /* ✅ 不要撐滿整行 */
+  max-width: 100% !important;
 }
 
-/* column 基礎：不要被撐爆 */
+/* column：先把 Streamlit 的撐滿屬性打掉 */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]{
   padding:0 !important;
   margin:0 !important;
   min-width:0 !important;
+  width:auto !important;             /* ✅ 不要 100% */
+  flex:0 0 auto !important;          /* ✅ 不要平均分配 */
 }
 
-/* 數字欄位 column：固定寬度（可吃 3 位數） */
+/* 數字欄位 column */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]:has(div[data-testid="stNumberInput"]){
-  flex:0 0 92px !important;
-  width:92px !important;
-  max-width:92px !important;
+  flex:0 0 72px !important;
+  width:72px !important;
+  max-width:72px !important;
 }
 
-/* 單位欄位 column：固定窄寬（1~2 字 + 箭頭） */
+/* 單位欄位 column */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]:has(div[data-testid="stSelectbox"]){
-  flex:0 0 74px !important;
-  width:74px !important;
-  max-width:74px !important;
+  flex:0 0 56px !important;
+  width:56px !important;
+  max-width:56px !important;
 }
 
-/* widget 吃滿自己的 column */
+/* widget 吃滿各自格子 */
 div[data-testid="stNumberInput"], div[data-testid="stSelectbox"]{ width:100% !important; }
 
-/* number input：縮 padding */
+/* number input 視覺 */
 div[data-testid="stNumberInput"] input{
-  padding:6px 8px !important;
-  font-size:15px !important;
+  padding:4px 6px !important;
+  font-size:14px !important;
 }
 
-/* selectbox：縮 padding + 讓文字不要被吃掉 */
+/* selectbox 視覺 + 文字可見 */
+div[data-testid="stSelectbox"] div[data-baseweb="select"]{ width:100% !important; }
 div[data-testid="stSelectbox"] div[role="combobox"]{
-  padding:6px 8px !important;
-  min-height:36px !important;
-  font-size:15px !important;
+  padding:4px 4px !important;
+  min-height:34px !important;
+  font-size:14px !important;
 }
 div[data-testid="stSelectbox"] span{
   white-space:nowrap !important;
   overflow:visible !important;
   text-overflow:clip !important;
 }
+div[data-testid="stSelectbox"] svg{
+  width:16px !important;
+  height:16px !important;
+}
 
-/* ✅ Stepper 永久移除 */
+/* Stepper 永久移除 */
 div[data-testid="stNumberInput"] button{ display:none !important; }
 div[data-testid="stNumberInput"] svg{ display:none !important; }
 div[data-testid="stNumberInput"] [data-baseweb="input"] button{ display:none !important; }
@@ -75,18 +78,12 @@ div[data-testid="stNumberInput"] [data-baseweb="input"] button{ display:none !im
 """, unsafe_allow_html=True)
 
 
-# -----------------------
-# 測試資料
-# -----------------------
 items = [
     {"id":"1","name":"測試原料","price":10.0,"stock_units":["KG","包"],"order_units":["箱","包"]},
     {"id":"2","name":"魚","price":0.0,"stock_units":["包"],"order_units":["包"]},
     {"id":"3","name":"高麗菜","price":50.0,"stock_units":["包","KG"],"order_units":["包","箱"]},
 ]
 
-# -----------------------
-# Header（跟你的 OMS 類似）
-# -----------------------
 a,b = st.columns([2,1])
 with a:
     st.selectbox("分店", ["ORIVIA_001 (STORE_000001)"], index=0)
@@ -96,9 +93,6 @@ st.selectbox("廠商（可先選，方便分段點貨）", ["(全部廠商)", "V
 
 st.divider()
 
-# -----------------------
-# 列表：每個品項一排四格
-# -----------------------
 for it in items:
     st.markdown(f"**{it['name']}**")
     st.caption(f"單價：{it['price']:.2f}")
