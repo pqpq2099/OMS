@@ -1,64 +1,68 @@
 import streamlit as st
 
-st.set_page_config(page_title="OMS Compact Row Test v2", layout="wide")
+st.set_page_config(page_title="OMS Compact Row Test v3", layout="wide")
 
-# =========================
-# CSS：強制 columns 在手機也維持「同一排」、縮小間距、隱藏 +/- stepper
-# =========================
 st.markdown("""
 <style>
-/* container padding 縮小一點 */
 .block-container { padding-top: 1rem; padding-bottom: 2rem; }
 
-/* 隱藏 number_input 的 +/- stepper（兩種 selector 都放） */
+/* 隱藏 number_input +/- stepper */
 button[aria-label="Increment"], button[aria-label="Decrement"] { display: none !important; }
 [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
 
-/* ====== 核心：強制「columns 橫排、不換行」 ======
-   Streamlit columns 外層通常是 stHorizontalBlock（flex）
-   手機預設會改成直排/換行，我們強制回 row + nowrap
-*/
+/* ✅ 核心：強制 columns 手機也橫排 + 不換行 */
 div[data-testid="stHorizontalBlock"]{
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
-  gap: 10px !important;         /* 欄位間距 */
-  align-items: flex-start !important;
+  gap: 8px !important;
+  align-items: center !important;
 }
-
-/* columns 每欄不要被拉到很寬，讓它能縮 */
 div[data-testid="stHorizontalBlock"] > div{
   flex: 0 0 auto !important;
   min-width: 0 !important;
 }
 
-/* 讓 input/select 吃滿欄位寬 */
+/* 讓 input / select 吃滿欄位寬 */
 div[data-testid="stNumberInput"], div[data-testid="stSelectbox"] { width: 100% !important; }
 div[data-testid="stNumberInput"] input { width: 100% !important; }
 div[data-testid="stSelectbox"] [data-baseweb="select"] { width: 100% !important; }
 
-/* 下拉選單 padding 微縮，讓單位不要被擠沒 */
+/* ✅ 修正：select 內容一定要看得到 */
 div[data-testid="stSelectbox"] [data-baseweb="select"] > div{
-  padding-left: 8px !important;
-  padding-right: 30px !important;
+  min-height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding-left: 10px !important;
+  padding-right: 36px !important;   /* 右側箭頭區保留 */
+  overflow: visible !important;
 }
 
-/* 數字欄位 padding 微縮 */
+/* ✅ 修正：選到的文字（value）不准被吃掉/透明 */
+div[data-testid="stSelectbox"] [data-baseweb="select"] span{
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: inline-block !important;
+  white-space: nowrap !important;
+}
+
+/* 數字欄位 padding */
 div[data-testid="stNumberInput"] input{
-  padding-left: 8px !important;
-  padding-right: 8px !important;
+  min-height: 40px !important;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
 }
 
-/* 手機再縮一點（避免爆寬） */
+/* 手機微調 */
 @media (max-width: 640px){
   .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
-  div[data-testid="stHorizontalBlock"]{ gap: 8px !important; }
+  div[data-testid="stHorizontalBlock"]{ gap: 6px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("OMS Compact Row Test v2（只測 UI）")
-st.caption("目標：桌機一排、手機也一排；庫存(數字+單位) / 進貨(數字+單位)，不出現 +/-。")
+st.title("OMS Compact Row Test v3（只測 UI）")
+st.caption("目標：桌機一排、手機也一排；庫存(數字+單位) / 進貨(數字+單位)，單位必顯示。")
 st.divider()
 
 ITEMS = [
@@ -71,9 +75,8 @@ def row(i, name, price, stock_units, order_units):
     st.markdown(f"### {name}")
     st.caption(f"單價：{price:.1f}")
 
-    # ✅ 這裡是你要的「四格同一行」
-    # 數字框：三位數就夠 -> 欄位比例給大一點；單位 -> 小一點
-    c1, c2, c3, c4 = st.columns([1.2, 0.9, 1.2, 0.9], gap="small")
+    # ✅ 四格同一行：數字稍大、單位稍小（但要看得到）
+    c1, c2, c3, c4 = st.columns([1.35, 0.85, 1.35, 0.85], gap="small")
 
     with c1:
         st.number_input("庫存", min_value=0.0, value=0.0, step=0.0, format="%.1f",
