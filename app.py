@@ -1,108 +1,166 @@
+import streamlit as st
+from datetime import date
+
+st.set_page_config(page_title="OMS Test", layout="wide")
+
+# ============================================================
+# CSS：控制排版 + 移除 stepper
+# ============================================================
+
+st.markdown("""
 <style>
-/* =========================
-   基本容器
-========================= */
+
+/* 整體寬度 */
 .block-container{
-  max-width: 980px !important;
-  padding: 1rem !important;
+    max-width: 980px;
 }
 
-/* 卡片 */
+/* 品項卡片 */
 .orivia-item{
-  border: 1px solid rgba(49,51,63,.15);
-  border-radius: 12px;
-  padding: 12px 12px 10px 12px;
-  margin-bottom: 10px;
+    border:1px solid rgba(0,0,0,0.08);
+    border-radius:10px;
+    padding:12px;
+    margin-bottom:12px;
 }
-.orivia-name{ font-weight:700; font-size:16px; margin:0 0 6px 0; }
-.orivia-meta{ font-size:13px; color:rgba(49,51,63,.65); margin:0 0 10px 0; }
 
-/* =========================
-   ✅ 關鍵：強制 columns 永遠橫向（含手機）
-   不管 Streamlit breakpoint 怎麼改，都用 row
-========================= */
+/* 名稱 */
+.orivia-name{
+    font-size:16px;
+    font-weight:700;
+}
+
+/* 單價 */
+.orivia-meta{
+    font-size:13px;
+    color:#666;
+    margin-bottom:8px;
+}
+
+/* ======================================================
+   關鍵：讓 columns 在手機也維持同一行
+====================================================== */
+
 .orivia-row div[data-testid="stHorizontalBlock"]{
-  display:flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  gap: 8px !important;
-  align-items: center !important;
+    display:flex !important;
+    flex-wrap:nowrap !important;
+    gap:8px !important;
 }
 
-/* 有些版本手機會改成 stVerticalBlock：也強制橫向 */
-.orivia-row div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"]{
-  display:flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  gap: 8px !important;
-}
-
-/* =========================
-   ✅ 不用 nth-child，改用 :has() 判斷內容來固定寬度
-   number_input → 92px
-   selectbox    → 78px
-========================= */
+/* column 不要撐滿 */
 .orivia-row div[data-testid="column"]{
-  padding: 0 !important;
-  margin: 0 !important;
-  min-width: 0 !important;
+    padding:0 !important;
+    min-width:0 !important;
 }
 
+/* 數字欄位 */
 .orivia-row div[data-testid="column"]:has(div[data-testid="stNumberInput"]){
-  flex: 0 0 92px !important;
-  width: 92px !important;
-  max-width: 92px !important;
+    flex:0 0 90px !important;
+    max-width:90px !important;
 }
 
+/* 單位欄位 */
 .orivia-row div[data-testid="column"]:has(div[data-testid="stSelectbox"]){
-  flex: 0 0 78px !important;
-  width: 78px !important;
-  max-width: 78px !important;
+    flex:0 0 80px !important;
+    max-width:80px !important;
 }
 
-/* Widget 吃滿格子 */
+/* input 寬度填滿 */
 .orivia-row div[data-testid="stNumberInput"],
 .orivia-row div[data-testid="stSelectbox"]{
-  width:100% !important;
+    width:100% !important;
 }
 
-/* number input 視覺 */
-.orivia-row div[data-testid="stNumberInput"] input{
-  padding: 6px 8px !important;
-  font-size: 15px !important;
+/* 移除 number_input stepper */
+div[data-testid="stNumberInput"] button{
+    display:none !important;
 }
 
-/* selectbox 視覺與文字 */
-.orivia-row div[data-testid="stSelectbox"] div[data-baseweb="select"]{ width:100% !important; }
-.orivia-row div[data-testid="stSelectbox"] div[role="combobox"]{
-  padding: 6px 8px !important;
-  font-size: 15px !important;
-  min-height: 36px !important;
-}
-.orivia-row div[data-testid="stSelectbox"] span{
-  white-space: nowrap !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-}
-.orivia-row div[data-testid="stSelectbox"] svg{
-  width: 16px !important;
-  height: 16px !important;
+div[data-testid="stNumberInput"] svg{
+    display:none !important;
 }
 
-/* =========================
-   ✅ Stepper 永久移除（你已驗證有效，再補強）
-========================= */
-div[data-testid="stNumberInput"] button{ display:none !important; }
-div[data-testid="stNumberInput"] [data-baseweb="input"] button{ display:none !important; }
-div[data-testid="stNumberInput"] svg{ display:none !important; }
-
-/* =========================
-   ✅ 最後保險：手機也不允許換行
-========================= */
-@media (max-width: 768px){
-  .orivia-row div[data-testid="stHorizontalBlock"]{
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-  }
-}
 </style>
+""", unsafe_allow_html=True)
+
+
+# ============================================================
+# 測試資料
+# ============================================================
+
+items = [
+    {"id":"1","name":"測試原料","price":10,"stock_units":["KG","包"],"order_units":["箱","包"]},
+    {"id":"2","name":"魚","price":0,"stock_units":["包"],"order_units":["包"]},
+    {"id":"3","name":"高麗菜","price":50,"stock_units":["包","KG"],"order_units":["包","箱"]},
+]
+
+
+# ============================================================
+# Header
+# ============================================================
+
+c1,c2 = st.columns([2,1])
+
+with c1:
+    st.selectbox("分店",["ORIVIA_001 (STORE_000001)"])
+
+with c2:
+    st.date_input("日期",date(2026,3,5))
+
+st.selectbox("廠商（可先選，方便分段點貨）",["全部廠商","A廠商","B廠商"])
+
+st.divider()
+
+
+# ============================================================
+# 品項列
+# ============================================================
+
+for it in items:
+
+    st.markdown('<div class="orivia-item">',unsafe_allow_html=True)
+
+    st.markdown(f'<div class="orivia-name">{it["name"]}</div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="orivia-meta">單價：{it["price"]:.2f}</div>',unsafe_allow_html=True)
+
+    st.markdown('<div class="orivia-row">',unsafe_allow_html=True)
+
+    col1,col2,col3,col4 = st.columns(4)
+
+    with col1:
+        st.number_input(
+            "庫存",
+            min_value=0,
+            step=1,
+            value=0,
+            key=f"s_{it['id']}",
+            label_visibility="collapsed"
+        )
+
+    with col2:
+        st.selectbox(
+            "庫單位",
+            it["stock_units"],
+            key=f"su_{it['id']}",
+            label_visibility="collapsed"
+        )
+
+    with col3:
+        st.number_input(
+            "進貨",
+            min_value=0,
+            step=1,
+            value=0,
+            key=f"o_{it['id']}",
+            label_visibility="collapsed"
+        )
+
+    with col4:
+        st.selectbox(
+            "進單位",
+            it["order_units"],
+            key=f"ou_{it['id']}",
+            label_visibility="collapsed"
+        )
+
+    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
