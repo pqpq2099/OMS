@@ -8,6 +8,20 @@ st.set_page_config(page_title="OMS Compact Row Test (No Overflow)", layout="wide
 # =========================
 # CSS
 # =========================
+st.markdown("""
+<style>
+@media (max-width: 640px){
+  body:before{
+    content:"MOBILE MODE";
+    position:fixed; top:8px; left:8px;
+    z-index:99999;
+    background:#ff4b4b; color:white;
+    padding:4px 8px; border-radius:6px;
+    font-size:12px;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
 st.markdown(
     """
 <style>
@@ -151,3 +165,4 @@ for item in items:
 
 with st.expander("Debug"):
     st.write(dict(st.session_state))
+
