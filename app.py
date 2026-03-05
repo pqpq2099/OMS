@@ -1,18 +1,25 @@
 # ============================================================
-# ORIVIA OMS Admin UI + Stocktake/Order (Single-file app.py)
-# MOBILE FIX: 4欄同一行 + 數字一位小數 + 單位縮短(KG) + 移除 +/- 按鈕
+# ORIVIA OMS Admin UI (Single-file app.py)
+# Focus: Mobile compact Stocktake/Order layout
 # ============================================================
 
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta, datetime
 import time
 import random
+
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+
+# ============================================================
+# Page config (MUST be before any other st calls)
+# ============================================================
+
+st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
 
 # ============================================================
 # Fail-fast helpers
@@ -41,7 +48,21 @@ def _parse_date(s) -> date | None:
         return None
 
 
+def _parse_dt(s) -> datetime | None:
+    s = str(s).strip()
+    if not s:
+        return None
+    try:
+        return pd.to_datetime(s, errors="raise").to_pydatetime()
+    except Exception:
+        return None
+
+
 def _extract_id_from_label(label: str) -> str:
+    """
+    label like: '公斤 (UNIT_000001)' -> 'UNIT_000001'
+    fallback -> original stripped label
+    """
     s = str(label).strip()
     if "(" in s and s.endswith(")"):
         inside = s.split("(")[-1].rstrip(")").strip()
@@ -50,73 +71,113 @@ def _extract_id_from_label(label: str) -> str:
 
 
 # ============================================================
-# Mobile / compact UI style  (key part)
+# Mobile / compact UI style (CRITICAL)
 # ============================================================
 
 def apply_mobile_compact_style(max_width_px: int = 760):
+    """
+    Key idea:
+    - Force main container width on mobile
+    - Force columns to stay in one row for the input row (2 numbers + 2 units)
+    - Hard cap widget widths via CSS
+    - Remove +/- steppers robustly
+    """
     st.markdown(
         f"""
         <style>
-        /* main container */
+        /* Main container narrower */
         [data-testid="stMainBlockContainer"] {{
             max-width: {max_width_px}px !important;
-            padding-left: 0.6rem !important;
-            padding-right: 0.6rem !important;
+            padding-left: 0.55rem !important;
+            padding-right: 0.55rem !important;
             margin: 0 auto !important;
         }}
 
-        /* ========= 핵심：手機強制 columns 不折行 ========= */
-        @media (max-width: 768px) {{
-            [data-testid="stHorizontalBlock"] {{
-                gap: 0.35rem !important;
-                flex-wrap: nowrap !important;
-                align-items: center !important;
-            }}
-            [data-testid="column"] {{
-                min-width: 0 !important;
-            }}
-        }}
-
-        /* ========= 數字輸入：固定寬度 + 右對齊 + 一位小數更好讀 ========= */
-        div[data-testid="stNumberInput"] input {{
-            width: 7.8ch !important;           /* 夠放 60.0 / 100.0 */
-            max-width: 7.8ch !important;
-            text-align: right !important;
-            padding-right: 0.6rem !important;
-        }}
-
-        /* ========= Selectbox：盡量縮窄（單位只要一兩個字） ========= */
-        div[data-testid="stSelectbox"] > div {{
-            min-width: 5.2ch !important;
-        }}
-
-        /* ========= 移除 +/-（多版本DOM全封） ========= */
-        /* 1) 舊版 steppers */
+        /* --------------------------------------------------
+           Robustly remove +/- steppers for number inputs
+           (Streamlit DOM differs across versions)
+        -------------------------------------------------- */
         div[data-testid="stNumberInputStepUp"],
-        div[data-testid="stNumberInputStepDown"] {{
-            display: none !important;
-        }}
-        /* 2) BaseWeb input buttons */
-        div[data-baseweb="input"] button {{
-            display: none !important;
-        }}
-        /* 3) aria-label / title variants */
+        div[data-testid="stNumberInputStepDown"],
         button[aria-label="Increment"],
-        button[aria-label="Decrement"],
-        button[aria-label="Increase"],
-        button[aria-label="Decrease"],
-        button[title="Increment"],
-        button[title="Decrement"] {{
+        button[aria-label="Decrement"] {{
             display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
         }}
-        /* 4) Some builds render +/- as svg icons inside buttons */
-        div[data-testid="stNumberInput"] button {{
-            display: none !important;
+        input[type=number] {{
+            -moz-appearance: textfield !important;
+            -webkit-appearance: none !important;
+            appearance: textfield !important;
+            margin: 0 !important;
+        }}
+        input[type=number]::-webkit-outer-spin-button,
+        input[type=number]::-webkit-inner-spin-button {{
+            -webkit-appearance: none !important;
+            margin: 0 !important;
         }}
 
-        /* tighten captions */
+        /* --------------------------------------------------
+           Make columns less likely to wrap on mobile
+        -------------------------------------------------- */
+        [data-testid="stHorizontalBlock"] {{
+            gap: 0.45rem !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+        }}
+        [data-testid="column"] {{
+            min-width: 0 !important;
+        }}
+
+        /* --------------------------------------------------
+           Hard limit widget widths (number + select)
+           These apply inside our item rows
+        -------------------------------------------------- */
+        /* number input outer container */
+        div[data-testid="stNumberInput"] {{
+            min-width: 0 !important;
+        }}
+        /* number input field itself */
+        div[data-testid="stNumberInput"] input {{
+            width: 100% !important;
+            max-width: 120px !important;
+        }}
+
+        /* selectbox outer container */
+        div[data-testid="stSelectbox"] {{
+            min-width: 0 !important;
+        }}
+        /* selectbox control */
+        div[data-testid="stSelectbox"] > div {{
+            width: 100% !important;
+        }}
+
+        /* Compact caption spacing */
         .stCaption {{
             margin-top: -0.15rem !important;
+            margin-bottom: 0.35rem !important;
+        }}
+
+        /* Hide code blocks in this page if any */
+        pre {{
+            display: none !important;
+        }}
+
+        /* --------------------------------------------------
+           Mobile-specific tweaks
+        -------------------------------------------------- */
+        @media (max-width: 520px) {{
+            /* even tighter paddings */
+            [data-testid="stMainBlockContainer"] {{
+                padding-left: 0.45rem !important;
+                padding-right: 0.45rem !important;
+            }}
+
+            /* Make our top header row less annoying on mobile */
+            .oms-header-row {{
+                display: none !important;
+            }}
         }}
         </style>
         """,
@@ -124,9 +185,12 @@ def apply_mobile_compact_style(max_width_px: int = 760):
     )
 
 
+# ============================================================
+# Header
+# ============================================================
+
 def page_header():
     st.title("ORIVIA OMS Admin UI")
-    st.caption("MOBILE FIX: 4欄同一行 / 數字一位小數 / 單位縮短(KG) / 移除 +/-")
 
 
 # ============================================================
@@ -342,6 +406,45 @@ def read_table(sheet_id: str, table: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=header)
 
 
+def read_table_with_rownum(sheet_id: str, table: str) -> pd.DataFrame:
+    bust = int(st.session_state.get("cache_bust", 0))
+    values = cached_table_values(sheet_id, table, bust)
+    if not values:
+        return pd.DataFrame()
+    header = values[0]
+    rows = values[1:]
+    df = pd.DataFrame(rows, columns=header)
+    df["_row"] = list(range(2, 2 + len(rows)))
+    return df
+
+
+# ============================================================
+# Audit (best-effort)
+# ============================================================
+
+def try_append_audit(repo: GoogleSheetsRepo, audit_sheet: str, actor_user_id: str, action: str, entity: str, detail: str):
+    try:
+        ws = repo.get_ws(audit_sheet)
+        values = _with_backoff(lambda: ws.get_all_values(), desc=f"audit_get_all:{audit_sheet}")
+        if not values:
+            return
+        header = values[0]
+        row = {c: "" for c in header}
+        for k, v in {
+            "ts": _now_ts(),
+            "actor": actor_user_id,
+            "action": action,
+            "entity": entity,
+            "detail": detail,
+        }.items():
+            if k in row:
+                row[k] = v
+        out = [row.get(c, "") for c in header]
+        _with_backoff(lambda: ws.append_row(out, value_input_option="USER_ENTERED"), desc=f"audit_append:{audit_sheet}")
+    except Exception:
+        return
+
+
 # ============================================================
 # ID Generator (from id_sequences)
 # ============================================================
@@ -377,6 +480,8 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 
     updated = rec.copy()
     updated["next_value"] = str(next_value + 1)
+    if "last_number" in updated:
+        updated["last_number"] = str(next_value)
     if "updated_at" in updated:
         updated["updated_at"] = _now_ts()
     if "updated_by" in updated:
@@ -392,55 +497,34 @@ def get_next_id(repo: GoogleSheetsRepo, key: str, env: str, actor_user_id: str) 
 
 
 # ============================================================
-# Units: UI顯示名（公斤->KG） + 寫回 unit_id
+# Units: build dropdown options (UI display normalization)
 # ============================================================
 
-def _unit_ui_name(unit_name: str) -> str:
-    name = str(unit_name).strip()
-    if name == "公斤":
+def _normalize_unit_name(name: str) -> str:
+    s = str(name).strip()
+    if s in {"公斤", "千克", "公千克", "kg", "Kg", "kG", "KG"}:
         return "KG"
-    return name
+    return s
 
 
-def build_unit_ui_options(units_df: pd.DataFrame) -> tuple[list[str], dict[str, str], dict[str, str]]:
-    """
-    Returns:
-      - ui_options: ["KG", "包", ...]
-      - ui_to_unit_id: {"KG": "UNIT_000003", ...}
-      - unit_id_to_ui: {"UNIT_000003": "KG", ...}
-    """
+def build_unit_options(units_df: pd.DataFrame) -> list[str]:
     if units_df is None or units_df.empty:
-        return ["(未設定)"], {"(未設定)": ""}, {"": "(未設定)"}
-
+        return ["(未設定單位)"]
     df = units_df.copy()
     if "is_active" in df.columns:
         df = df[df["is_active"].astype(str).str.upper() == "TRUE"]
-
-    ui_options: list[str] = []
-    ui_to_unit_id: dict[str, str] = {}
-    unit_id_to_ui: dict[str, str] = {}
-
+    opts = []
     for _, r in df.iterrows():
         uid = str(r.get("unit_id", "")).strip()
-        nm = str(r.get("unit_name", "")).strip()
+        name = _normalize_unit_name(str(r.get("unit_name", "")).strip())
         if not uid:
             continue
-        ui = _unit_ui_name(nm) if nm else uid
-
-        # UI 名稱可能重複（例如你未來可能有兩個「包」），先採用第一個
-        if ui not in ui_to_unit_id:
-            ui_options.append(ui)
-            ui_to_unit_id[ui] = uid
-        unit_id_to_ui[uid] = ui
-
-    if not ui_options:
-        return ["(未設定)"], {"(未設定)": ""}, {"": "(未設定)"}
-
-    return ui_options, ui_to_unit_id, unit_id_to_ui
+        opts.append(f"{name} ({uid})" if name else uid)
+    return opts or ["(未設定單位)"]
 
 
 # ============================================================
-# Prices
+# Prices: get current unit price
 # ============================================================
 
 def get_price_today(sheet_id: str, item_id: str, target_date: date) -> float:
@@ -488,76 +572,120 @@ def get_price_today(sheet_id: str, item_id: str, target_date: date) -> float:
 
 
 # ============================================================
-# Stocktake/Order UI
+# Last order qty: from stocktake_lines (best effort)
 # ============================================================
 
-def render_item_block_mobile(
+def get_last_order_qty(sheet_id: str, store_id: str, item_id: str) -> float | None:
+    df = read_table(sheet_id, "stocktake_lines")
+    if df.empty:
+        return None
+
+    for c in ["store_id", "item_id", "order_qty"]:
+        if c not in df.columns:
+            return None
+
+    tmp = df.copy()
+    tmp["store_id"] = tmp["store_id"].astype(str).str.strip()
+    tmp["item_id"] = tmp["item_id"].astype(str).str.strip()
+    tmp["order_qty"] = pd.to_numeric(tmp["order_qty"], errors="coerce").fillna(0.0)
+
+    tmp = tmp[(tmp["store_id"] == str(store_id).strip()) & (tmp["item_id"] == str(item_id).strip())]
+    tmp = tmp[tmp["order_qty"] > 0]
+    if tmp.empty:
+        return None
+
+    # Prefer created_at if exists
+    if "created_at" in tmp.columns:
+        tmp["__dt"] = tmp["created_at"].apply(_parse_dt)
+        tmp = tmp.sort_values("__dt", ascending=True)
+    elif "stocktake_id" in tmp.columns:
+        # fallback: as-is
+        pass
+
+    return float(tmp.iloc[-1]["order_qty"])
+
+
+# ============================================================
+# Item Row UI (Mobile-first)
+# ============================================================
+
+def render_item_row_mobile_first(
     *,
     item_id: str,
-    item_name_zh: str,
+    item_name_zh_only: str,
+    stock_unit_default_label: str,
+    order_unit_default_label: str,
+    unit_options: list[str],
+    unit_index_map: dict[str, int],
     price_today: float,
     last_order_qty: float | None,
-    suggest_qty: float | None,
-    default_stock_unit_ui: str,
-    default_order_unit_ui: str,
-    unit_ui_options: list[str],
+    suggest_qty: float,  # test stage fixed 1.0
 ):
-    # 第一行：品名 + 3資訊
-    st.markdown(f"**{item_name_zh}**")
-    last_txt = "—" if last_order_qty is None else f"{last_order_qty:.1f}"
-    sugg_txt = "—" if suggest_qty is None else f"{suggest_qty:.1f}"
-    st.caption(f"單價：{price_today:.2f} ｜ 上次叫貨：{last_txt} ｜ 建議：{sugg_txt}")
+    """
+    Layout:
+      [Name]
+      [meta line: 單價 | 上次叫貨 | 建議]
+      [ stock_qty ][ stock_unit ] [ order_qty ][ order_unit ]  (SAME ROW, forced)
+    """
+    st.markdown(f"**{item_name_zh_only}**")
+    last_order_txt = "—" if last_order_qty is None else f"{last_order_qty:.1f}"
+    st.caption(f"單價：{price_today:.2f} ｜ 上次叫貨：{last_order_txt} ｜ 建議：{suggest_qty:.1f}")
 
-    # 第二行：4欄一定同一行（手機強制 nowrap）
-    c1, c2, c3, c4 = st.columns([1.35, 0.75, 1.35, 0.75], gap="small")
+    # ---- input row (force one line) ----
+    # Width design:
+    # - number: ~115px
+    # - unit:   ~70px
+    # On desktop it still looks fine.
+    c1, c2, c3, c4 = st.columns([2.4, 1.0, 2.4, 1.0], gap="small")
 
     with c1:
         stock_qty = st.number_input(
-            "庫存",
+            "庫",
             min_value=0.0,
-            step=0.5,
+            step=0.1,
             value=0.0,
-            format="%.1f",                    # ✅ 一位小數
+            format="%.1f",
             key=f"stk_qty__{item_id}",
             label_visibility="collapsed",
         )
-
     with c2:
-        idx = unit_ui_options.index(default_stock_unit_ui) if default_stock_unit_ui in unit_ui_options else 0
-        stock_unit_ui = st.selectbox(
+        stock_unit_label = st.selectbox(
             "庫單位",
-            options=unit_ui_options,
-            index=idx,
+            options=unit_options,
+            index=unit_index_map.get(stock_unit_default_label, 0),
             key=f"stk_unit__{item_id}",
             label_visibility="collapsed",
         )
-
     with c3:
         order_qty = st.number_input(
-            "進貨",
+            "進",
             min_value=0.0,
-            step=0.5,
+            step=0.1,
             value=0.0,
-            format="%.1f",                    # ✅ 一位小數
+            format="%.1f",
             key=f"ord_qty__{item_id}",
             label_visibility="collapsed",
         )
-
     with c4:
-        idx2 = unit_ui_options.index(default_order_unit_ui) if default_order_unit_ui in unit_ui_options else 0
-        order_unit_ui = st.selectbox(
+        order_unit_label = st.selectbox(
             "進單位",
-            options=unit_ui_options,
-            index=idx2,
+            options=unit_options,
+            index=unit_index_map.get(order_unit_default_label, 0),
             key=f"ord_unit__{item_id}",
             label_visibility="collapsed",
         )
 
-    return float(stock_qty), stock_unit_ui, float(order_qty), order_unit_ui
+    st.divider()
 
+    return float(stock_qty), stock_unit_label, float(order_qty), order_unit_label
+
+
+# ============================================================
+# Stocktake/Order Page
+# ============================================================
 
 def page_stocktake_order(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
-    require_role("Admin", role_of(actor_user_id))
+    require_role("Admin", role_of(actor_user_id))  # 測試階段先鎖 Admin
 
     apply_mobile_compact_style(max_width_px=760)
 
@@ -606,14 +734,15 @@ def page_stocktake_order(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_
     vendor_label = st.selectbox("廠商（可先選，方便分段點貨）", options=vendor_opts, index=0)
     vendor_id = "" if vendor_label == "(全部廠商)" else _extract_id_from_label(vendor_label)
 
-    # Units UI
+    # Units options (shared)
     units_df = read_table(sheet_id, "units")
-    unit_ui_options, ui_to_unit_id, unit_id_to_ui = build_unit_ui_options(units_df)
+    unit_options = build_unit_options(units_df)
+    unit_index_map = {u: i for i, u in enumerate(unit_options)}
 
     # Items list
     items_df = read_table(sheet_id, "items")
     if items_df.empty:
-        st.warning("items 沒有資料，請先建立品項。")
+        st.warning("items 沒有資料，請先用 Admin / Items / Create 建立品項。")
         return
 
     if "is_active" in items_df.columns:
@@ -626,16 +755,33 @@ def page_stocktake_order(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_
         st.info("此條件下沒有可用品項。")
         return
 
-    # 只顯示中文品名
-    def _item_name_zh(r):
-        zh = str(r.get("item_name_zh", "")).strip() if "item_name_zh" in items_df.columns else ""
-        if zh:
-            return zh
-        nm = str(r.get("item_name", "")).strip() if "item_name" in items_df.columns else ""
-        return nm if nm else str(r.get("item_id", "")).strip()
+    # Display name: zh only
+    def _item_display_zh_only(r) -> str:
+        if "item_name_zh" in items_df.columns and str(r.get("item_name_zh", "")).strip():
+            return str(r.get("item_name_zh", "")).strip()
+        if "item_name" in items_df.columns and str(r.get("item_name", "")).strip():
+            return str(r.get("item_name", "")).strip()
+        return str(r.get("item_id", "")).strip()
+
+    # Header row (desktop only; hidden on mobile via CSS)
+    st.markdown(
+        """
+        <div class="oms-header-row" style="margin-top:8px; margin-bottom:8px;">
+            <div style="display:flex; gap:8px; align-items:center; opacity:0.85;">
+                <div style="flex:1; font-weight:700;">品項名稱</div>
+                <div style="width:120px; text-align:center; font-weight:700;">庫</div>
+                <div style="width:70px; text-align:center; font-weight:700;">單位</div>
+                <div style="width:120px; text-align:center; font-weight:700;">進</div>
+                <div style="width:70px; text-align:center; font-weight:700;">單位</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.divider()
 
+    # Form: one submit (reduce quota burst)
     with st.form("stocktake_order_form", clear_on_submit=False):
         rows_out = []
 
@@ -644,51 +790,58 @@ def page_stocktake_order(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_
             if not item_id:
                 continue
 
-            item_name = _item_name_zh(r)
+            item_name = _item_display_zh_only(r)
 
-            # defaults from item master: stored as unit_id
             stock_unit_id = str(r.get("stock_unit", "")).strip() if "stock_unit" in items_df.columns else ""
             order_unit_id = str(r.get("order_unit", "")).strip() if "order_unit" in items_df.columns else ""
 
-            default_stock_ui = unit_id_to_ui.get(stock_unit_id, unit_ui_options[0] if unit_ui_options else "(未設定)")
-            default_order_ui = unit_id_to_ui.get(order_unit_id, unit_ui_options[0] if unit_ui_options else "(未設定)")
+            def _id_to_label(uid: str) -> str:
+                if not uid:
+                    return unit_options[0]
+                for u in unit_options:
+                    if _extract_id_from_label(u) == uid:
+                        return u
+                return unit_options[0]
 
-            price_today = float(get_price_today(sheet_id, item_id, record_date) or 0.0)
+            default_stock_unit_label = _id_to_label(stock_unit_id)
+            default_order_unit_label = _id_to_label(order_unit_id)
 
-            # ======= TEST STAGE =======
-            last_order_qty = None   # 顯示 —
-            suggest_qty = 1.0       # 先固定 1
-            # =========================
+            price_today = get_price_today(sheet_id, item_id, record_date)
+            last_order = get_last_order_qty(sheet_id, store_id, item_id)
 
-            stock_qty, stock_unit_ui, order_qty, order_unit_ui = render_item_block_mobile(
+            # TEST STAGE: suggest fixed 1.0
+            suggest = 1.0
+
+            stock_qty, stock_unit_label, order_qty, order_unit_label = render_item_row_mobile_first(
                 item_id=item_id,
-                item_name_zh=item_name,
+                item_name_zh_only=item_name,
+                stock_unit_default_label=default_stock_unit_label,
+                order_unit_default_label=default_order_unit_label,
+                unit_options=unit_options,
+                unit_index_map=unit_index_map,
                 price_today=price_today,
-                last_order_qty=last_order_qty,
-                suggest_qty=suggest_qty,
-                default_stock_unit_ui=default_stock_ui,
-                default_order_unit_ui=default_order_ui,
-                unit_ui_options=unit_ui_options,
+                last_order_qty=last_order,
+                suggest_qty=suggest,
             )
 
             rows_out.append({
                 "item_id": item_id,
                 "item_name": item_name,
                 "stock_qty": stock_qty,
-                "stock_unit_id": ui_to_unit_id.get(stock_unit_ui, ""),
+                "stock_unit_id": _extract_id_from_label(stock_unit_label),
                 "order_qty": order_qty,
-                "order_unit_id": ui_to_unit_id.get(order_unit_ui, ""),
-                "unit_price": price_today,
+                "order_unit_id": _extract_id_from_label(order_unit_label),
+                "unit_price": float(price_today or 0.0),
             })
 
-            st.markdown("---")
-
         note = st.text_area("備註（可空）", value="")
+
         submitted = st.form_submit_button("✅ 一次送出（寫入點貨+叫貨）", use_container_width=True)
 
     if not submitted:
         return
 
+    # keep only rows where any qty > 0
     valid = [x for x in rows_out if (x["stock_qty"] > 0) or (x["order_qty"] > 0)]
     if not valid:
         st.warning("你沒有填任何庫存/進貨數字（全部是 0）。")
@@ -730,7 +883,7 @@ def page_stocktake_order(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_
             "stock_unit_id": x["stock_unit_id"],
             "order_qty": str(round(float(x["order_qty"]), 1)),
             "order_unit_id": x["order_unit_id"],
-            "unit_price": str(x["unit_price"]),
+            "unit_price": str(float(x["unit_price"])),
             "amount": str(round(float(x["order_qty"]) * float(x["unit_price"]), 2)),
             "note": "",
             "created_at": now,
@@ -747,6 +900,187 @@ def page_stocktake_order(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_
     except Exception as e:
         st.error(f"寫入失敗（可能限流/欄位不匹配）：{e}")
         st.info("如果是限流：等 30~60 秒再試一次，或少量分批送出。")
+
+
+# ============================================================
+# Admin Pages (keep minimal - unchanged core)
+# ============================================================
+
+def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
+    st.subheader("Admin / Units / Create")
+
+    unit_name = st.text_input("單位名稱 (unit_name)", value="").strip()
+    is_active = st.checkbox("啟用 (is_active)", value=True)
+
+    submit = st.button("✅ 建立單位", use_container_width=True)
+    if not submit:
+        return
+    if not unit_name:
+        st.warning("請輸入單位名稱")
+        st.stop()
+
+    units_df = read_table(sheet_id, "units")
+    if not units_df.empty and "unit_name" in units_df.columns:
+        existed = units_df["unit_name"].astype(str).str.strip()
+        if (existed == unit_name).any():
+            st.error(f"已存在相同單位名稱：{unit_name}")
+            st.stop()
+
+    unit_id = get_next_id(repo, key="units", env=env, actor_user_id=actor_user_id)
+    now = _now_ts()
+
+    new_unit = {
+        "unit_id": unit_id,
+        "unit_name": unit_name,
+        "is_active": _to_bool_str(is_active),
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    repo.append_row_dict("units", new_unit)
+    bust_cache()
+    st.success(f"✅ 建立成功：{unit_name}（{unit_id}）")
+
+
+def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
+    st.subheader("Admin / Vendors / Create")
+
+    vendor_name = st.text_input("廠商名稱 (vendor_name)", value="").strip()
+    is_active = st.checkbox("啟用 (is_active)", value=True)
+
+    submit = st.button("✅ 建立廠商", use_container_width=True)
+    if not submit:
+        return
+    if not vendor_name:
+        st.warning("請輸入廠商名稱")
+        st.stop()
+
+    vendor_id = get_next_id(repo, key="vendors", env=env, actor_user_id=actor_user_id)
+    now = _now_ts()
+
+    new_vendor = {
+        "vendor_id": vendor_id,
+        "brand_id": "",
+        "vendor_name": vendor_name,
+        "is_active": _to_bool_str(is_active),
+        "audit": "",
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    repo.append_row_dict("vendors", new_vendor)
+    bust_cache()
+    st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
+
+
+def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
+    st.subheader("Admin / Items / Create")
+
+    vendors_df = read_table(sheet_id, "vendors")
+    if vendors_df.empty:
+        st.warning("沒有 vendors，請先建立廠商")
+        return
+
+    if "is_active" in vendors_df.columns:
+        vendors_df = vendors_df[vendors_df["is_active"].astype(str).str.upper() == "TRUE"]
+
+    vendor_map = {
+        f"{row.get('vendor_name','')} ({row.get('vendor_id','')})": row.get("vendor_id", "")
+        for _, row in vendors_df.iterrows()
+        if str(row.get("vendor_id", "")).strip()
+    }
+    if not vendor_map:
+        st.warning("沒有可用的啟用廠商（vendors.is_active=TRUE）")
+        return
+
+    vendor_label = st.selectbox("選擇廠商", options=list(vendor_map.keys()))
+    vendor_id = vendor_map[vendor_label]
+
+    units_df = read_table(sheet_id, "units")
+    unit_options = build_unit_options(units_df)
+    unit_label_to_id = {u: _extract_id_from_label(u) for u in unit_options}
+
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        stock_unit_label = st.selectbox("庫存單位 stock_unit", options=unit_options)
+    with col_u2:
+        order_unit_label = st.selectbox("叫貨單位 order_unit", options=unit_options)
+
+    stock_unit = unit_label_to_id.get(stock_unit_label, "").strip()
+    order_unit = unit_label_to_id.get(order_unit_label, "").strip()
+
+    item_name = st.text_input("品項名稱（內部） item_name", value="").strip()
+    item_name_zh = st.text_input("中文名稱 item_name_zh", value=item_name).strip()
+    item_name_en = st.text_input("英文名稱 item_name_en（可空）", value="").strip()
+    item_code = st.text_input("品項代碼 item_code（可空）", value="").strip()
+    is_active = st.checkbox("啟用", value=True)
+
+    submit = st.button("✅ 建立品項", use_container_width=True)
+    if not submit:
+        return
+
+    if not item_name:
+        st.warning("請輸入 item_name")
+        return
+    if not stock_unit or not order_unit:
+        st.warning("請選擇庫存單位與叫貨單位")
+        return
+
+    item_id = get_next_id(repo, key="items", env=env, actor_user_id=actor_user_id)
+    now = _now_ts()
+
+    new_item = {
+        "item_id": item_id,
+        "brand_id": "",
+        "vendor_id": vendor_id,
+        "item_code": item_code,
+        "item_name": item_name,
+        "item_name_zh": item_name_zh,
+        "item_name_en": item_name_en,
+        "stock_unit": stock_unit,
+        "order_unit": order_unit,
+        "is_active": _to_bool_str(is_active),
+        "audit": "",
+        "note": "",
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+
+    repo.append_row_dict("items", new_item)
+    bust_cache()
+    st.success(f"✅ 建立成功：{item_name}（{item_id}）")
+
+
+def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, actor_user_id: str):
+    require_role("Admin", role_of(actor_user_id))
+
+    st.subheader("Admin / Items / List")
+
+    df = read_table(sheet_id, "items")
+    if df.empty:
+        st.warning("items table 沒有資料")
+        return
+    st.dataframe(df, use_container_width=True)
+
+
+def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str, audit_sheet: str):
+    require_role("Admin", role_of(actor_user_id))
+    st.subheader("Admin / Prices / Create")
+    st.info("此頁先保留原功能（你目前主要在調手機點貨/叫貨 UI）。")
 
 
 # ============================================================
@@ -791,17 +1125,37 @@ def main():
 
         is_admin = ROLE_RANK.get(actor_role, 0) >= ROLE_RANK["Admin"]
 
-        pages = ["Stocktake / Order"] if is_admin else ["(No Access)"]
+        pages = []
+        if is_admin:
+            pages = [
+                "Stocktake / Order",
+                "Vendors / Create",
+                "Units / Create",
+                "Items / Create",
+                "Items / List",
+                "Prices / Create",
+            ]
+        else:
+            pages = ["(No Access)"]
 
         _resolve_nav_target_before_widget(default_page=pages[0])
         page = st.radio("Page", options=pages, key="nav_page")
 
     if page == "Stocktake / Order":
         page_stocktake_order(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    elif page == "Vendors / Create":
+        page_vendors_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    elif page == "Units / Create":
+        page_units_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    elif page == "Items / Create":
+        page_items_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id)
+    elif page == "Items / List":
+        page_items_list(repo, sheet_id=sheet_id, actor_user_id=actor_user_id)
+    elif page == "Prices / Create":
+        page_prices_create(repo, sheet_id=sheet_id, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
     else:
         st.info("目前此角色沒有可用頁面。")
 
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
