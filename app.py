@@ -11,6 +11,9 @@ st.set_page_config(page_title="OMS Compact Row Test (Base+Order Unit)", layout="
 st.markdown(
     """
 <style>
+div[data-testid="stTextInput"]{
+  max-width:120px;
+}
 /* 讓整體左右 padding 小一點（手機更省） */
 @media (max-width: 640px){
   .block-container{
@@ -44,7 +47,7 @@ st.markdown(
 div[data-testid="stTextInput"] input{
   height: 34px !important;
   padding: 0 8px !important;
-  font-size: 8px !important;
+  font-size:10px !important;
 }
 
 /* columns 在手機不要換行（避免變四行） */
@@ -152,6 +155,7 @@ for it in items:
 
 with st.expander("Debug"):
     st.write(st.session_state)
+
 
 
 
