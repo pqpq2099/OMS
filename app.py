@@ -442,6 +442,91 @@ def get_price_for_item_on(repo: GoogleSheetsRepo, sheet_id: str, item_id: str, t
 # ============================================================
 # Admin Pages (Vendors / Units / Items / Prices) — 保留你現況
 # ============================================================
+def apply_compact_mobile_row_style():
+    st.markdown(
+        """
+        <style>
+        /* 讓每列更緊湊 */
+        .block-container { padding-top: 1.5rem; padding-left: 0.6rem; padding-right: 0.6rem; }
+
+        /* 隱藏 number input 的 +/- stepper */
+        div[data-testid="stNumberInputStepUp"],
+        div[data-testid="stNumberInputStepDown"] { display: none !important; }
+        input[type=number] { -moz-appearance: textfield !important; -webkit-appearance: none !important; margin: 0 !important; }
+
+        /* 讓 columns 在手機也盡量不換行（Streamlit 會自己做 RWD，但這能改善很多） */
+        [data-testid="stHorizontalBlock"] { gap: 0.5rem; flex-wrap: nowrap !important; align-items: center !important; }
+        [data-testid="column"] { min-width: 0 !important; }
+
+        /* 壓縮 dataframe/table padding（如果你後面也會顯示表格） */
+        [data-testid="stDataFrame"] [role="gridcell"],
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            padding: 4px 4px !important;
+            font-size: 12px !important;
+            line-height: 1.1 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_item_row(
+    item_id: str,
+    item_name: str,
+    stock_unit_text: str,
+    order_unit_text: str,
+    price_today: float | None = None,
+    prev_stock: float | None = None,
+    suggest_qty: float | None = None,
+):
+    """
+    一列 = 品項名稱（左）+ 庫/進（右兩格）
+    回傳：stock_value, order_value
+    """
+    c_name, c_stock, c_order = st.columns([7, 2, 2])
+
+    with c_name:
+        st.markdown(f"**{item_name}**")
+        meta_parts = []
+        if stock_unit_text:
+            meta_parts.append(f"庫單位：{stock_unit_text}")
+        if order_unit_text:
+            meta_parts.append(f"叫貨單位：{order_unit_text}")
+        if price_today is not None:
+            meta_parts.append(f"單價(當日)：{price_today:.2f}")
+        if prev_stock is not None:
+            meta_parts.append(f"前結：{prev_stock:.1f}")
+        if suggest_qty is not None:
+            meta_parts.append(f"💡建議：{suggest_qty:.1f}")
+
+        if meta_parts:
+            st.caption("｜".join(meta_parts))
+
+        # 顯示 item_id（你原本有綠色 tag 的感覺）
+        st.code(item_id, language=None)
+
+    with c_stock:
+        stock_v = st.number_input(
+            "庫",
+            min_value=0.0,
+            step=0.1,
+            value=0.0,
+            key=f"stk__{item_id}",
+            label_visibility="collapsed",
+        )
+
+    with c_order:
+        order_v = st.number_input(
+            "進",
+            min_value=0.0,
+            step=0.1,
+            value=0.0,
+            key=f"ord__{item_id}",
+            label_visibility="collapsed",
+        )
+
+    return float(stock_v), float(order_v)
 
 def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, env: str, actor_user_id: str):
     require_role("Admin", role_of(actor_user_id))
@@ -1158,3 +1243,4 @@ def main():
 if __name__ == "__main__":
     st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
+
