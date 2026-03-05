@@ -12,7 +12,7 @@ st.markdown(
     """
 <style>
 div[data-testid="stTextInput"]{
-  max-width:120px;
+  max-width:60px;
 }
 /* 讓整體左右 padding 小一點（手機更省） */
 @media (max-width: 640px){
@@ -155,6 +155,7 @@ for it in items:
 
 with st.expander("Debug"):
     st.write(st.session_state)
+
 
 
 
