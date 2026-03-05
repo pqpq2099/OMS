@@ -4,38 +4,30 @@ from datetime import date
 # ============================================================
 # [0] Page config
 # ============================================================
-st.set_page_config(page_title="OMS UI Stable Size Demo", layout="wide")
+st.set_page_config(page_title="OMS Mobile 1-Row Template", layout="wide")
 
 # ============================================================
-# [1] CSS（只做：間距微調 + 移除 number_input stepper；不縮元件寬度）
+# [1] CSS：核心就是「固定寬度 + columns 不撐滿 + 不滑動」
 # ============================================================
 st.markdown(
     """
 <style>
-/* 容器：稍微收斂桌機寬度，避免空得太誇張（但不會把元件變小） */
+/* --------- 容器不要太寬，避免桌機空得離譜 --------- */
 .block-container{
-  max-width: 1100px !important;
+  max-width: 980px !important;
   padding-left: 1rem !important;
   padding-right: 1rem !important;
   padding-top: 1rem !important;
   padding-bottom: 2rem !important;
 }
 
-/* columns 左右 padding 小一點（只是讓行內更緊湊） */
-div[data-testid="column"]{
-  padding-left: .25rem !important;
-  padding-right: .25rem !important;
-}
-
-/* 卡片外框 */
+/* --------- 卡片外框 --------- */
 .orivia-item{
   border: 1px solid rgba(49,51,63,.15);
   border-radius: 12px;
   padding: 12px 12px 10px 12px;
   margin-bottom: 10px;
 }
-
-/* 品名/資訊文字 */
 .orivia-name{
   font-weight: 700;
   font-size: 16px;
@@ -47,10 +39,60 @@ div[data-testid="column"]{
   margin: 0 0 10px 0;
 }
 
-/* ✅ 只移除 stepper，不動寬度（避免你說的格子變怪） */
-div[data-testid="stNumberInput"] button { display: none !important; }
+/* ============================================================
+   [A] 讓 columns 不要撐滿整行（關鍵）
+   - 這樣固定寬度的元件才會靠左貼在一起，不會散開
+   ============================================================ */
+div[data-testid="stHorizontalBlock"]{
+  gap: .45rem !important;
+  flex-wrap: nowrap !important;     /* ✅ 同一行 */
+  overflow-x: hidden !important;    /* ✅ 不滑動 */
+}
+div[data-testid="column"]{
+  flex: 0 0 auto !important;        /* ✅ 不撐滿 */
+  width: auto !important;
+  padding-left: .15rem !important;
+  padding-right: .15rem !important;
+}
+
+/* ============================================================
+   [B] number_input：固定寬度（能輸入 3 位數就夠）
+   ============================================================ */
+div[data-testid="stNumberInput"]{
+  width: 92px !important;           /* ✅ 三位數夠用 */
+  min-width: 92px !important;
+  max-width: 92px !important;
+}
+div[data-testid="stNumberInput"] input{
+  padding: 4px 8px !important;
+  font-size: 14px !important;
+}
+
+/* ✅ 移除 +/- stepper（多版本兼容） */
+div[data-testid="stNumberInput"] button { display:none !important; }
 div[data-testid="stNumberInput"] div:has(> button){ display:none !important; }
 
+/* ============================================================
+   [C] selectbox：固定窄寬（單位下拉）
+   ============================================================ */
+div[data-testid="stSelectbox"]{
+  width: 74px !important;
+  min-width: 74px !important;
+  max-width: 74px !important;
+}
+div[data-testid="stSelectbox"] div[role="combobox"]{
+  padding: 4px 8px !important;
+  font-size: 14px !important;
+  min-height: 34px !important;
+}
+
+/* label 不要佔位（我們用 collapsed） */
+label{ margin-bottom: 0 !important; }
+
+/* 手機：維持同一行、不滑動（如果真的塞不下，就代表要再縮寬度或改單位顯示） */
+@media (max-width: 768px){
+  .block-container{ max-width: 100% !important; }
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -71,9 +113,9 @@ items = [
 # ============================================================
 # [3] Header
 # ============================================================
-st.write("桌機：同一行（庫+單位 / 進+單位）。手機：不滑動，必要時自動變兩行（庫一行、進一行）。")
+st.write("測試模板：手機同一行、不滑動；數字框三位數寬度；單位下拉很窄。")
 
-top1, top2 = st.columns([2.2, 1.2], gap="small")
+top1, top2 = st.columns([2.2, 1.2])
 with top1:
     st.selectbox("分店", ["ORIVIA_001 (STORE_000001)", "ORIVIA_002 (STORE_000002)"], index=0)
 with top2:
@@ -83,15 +125,10 @@ st.selectbox("廠商（可先選，方便分段點貨）", ["(全部廠商)", "V
 st.divider()
 
 # ============================================================
-# [4] Rows
-#   核心策略：
-#   - 不再強制 nowrap / 不做橫向滑動
-#   - 讓 Streamlit 在手機自然換行
-#   - 欄位比例：數字較寬、單位較窄（但都維持正常大小）
+# [4] Rows（重點：columns 比例不重要了，因為寬度由 CSS 固定）
 # ============================================================
 for it in items:
     k = it["item_id"]
-
     st.markdown('<div class="orivia-item">', unsafe_allow_html=True)
 
     st.markdown(f'<div class="orivia-name">{it["item_name_zh"]}</div>', unsafe_allow_html=True)
@@ -100,16 +137,15 @@ for it in items:
         unsafe_allow_html=True,
     )
 
-    # ✅ 桌機通常會維持同一行；手機會自然換行，不會需要滑動
-    c1, c2, c3, c4 = st.columns([1.4, 0.9, 1.4, 0.9], gap="small")
+    c1, c2, c3, c4 = st.columns(4)  # ✅ 這裡比例不用管，CSS 已經把它變成「不撐滿+固定寬」
 
     with c1:
         st.number_input(
             "庫",
             min_value=0.0,
             value=0.0,
-            step=0.5,
-            format="%.1f",
+            step=1.0,
+            format="%.0f",
             key=f"{k}_stock_qty",
             label_visibility="collapsed",
         )
@@ -126,8 +162,8 @@ for it in items:
             "進",
             min_value=0.0,
             value=0.0,
-            step=0.5,
-            format="%.1f",
+            step=1.0,
+            format="%.0f",
             key=f"{k}_order_qty",
             label_visibility="collapsed",
         )
