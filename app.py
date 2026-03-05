@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="OMS Compact Row Test v3", layout="wide")
+st.set_page_config(page_title="OMS Compact Row Test v4", layout="wide")
 
 st.markdown("""
 <style>
@@ -10,59 +10,63 @@ st.markdown("""
 button[aria-label="Increment"], button[aria-label="Decrement"] { display: none !important; }
 [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
 
-/* ✅ 核心：強制 columns 手機也橫排 + 不換行 */
+/* ✅ 手機也強制同一行 + 不換行 */
 div[data-testid="stHorizontalBlock"]{
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  gap: 8px !important;
-  align-items: center !important;
+  display:flex !important;
+  flex-direction:row !important;
+  flex-wrap:nowrap !important;
+  gap:8px !important;
+  align-items:center !important;
 }
 div[data-testid="stHorizontalBlock"] > div{
   flex: 0 0 auto !important;
   min-width: 0 !important;
 }
 
-/* 讓 input / select 吃滿欄位寬 */
+/* ✅ 關鍵：單位欄位「最小寬度」(手機必須有，不然只剩箭頭) */
+div[data-testid="stSelectbox"]{
+  min-width: 84px !important;   /* 你要更大就調這個：84 / 92 / 100 */
+}
+
+/* input / select 吃滿自己的欄 */
 div[data-testid="stNumberInput"], div[data-testid="stSelectbox"] { width: 100% !important; }
 div[data-testid="stNumberInput"] input { width: 100% !important; }
-div[data-testid="stSelectbox"] [data-baseweb="select"] { width: 100% !important; }
 
-/* ✅ 修正：select 內容一定要看得到 */
-div[data-testid="stSelectbox"] [data-baseweb="select"] > div{
+/* ✅ BaseWeb select：文字區一定要留出空間，右側箭頭區保留 */
+div[data-testid="stSelectbox"] div[role="combobox"]{
   min-height: 40px !important;
-  display: flex !important;
-  align-items: center !important;
   padding-left: 10px !important;
-  padding-right: 36px !important;   /* 右側箭頭區保留 */
+  padding-right: 38px !important; /* 箭頭 */
   overflow: visible !important;
 }
 
-/* ✅ 修正：選到的文字（value）不准被吃掉/透明 */
-div[data-testid="stSelectbox"] [data-baseweb="select"] span{
+/* ✅ 選到的值一定顯示（不透明、不隱藏、不省略成空白） */
+div[data-testid="stSelectbox"] div[role="combobox"] span{
   opacity: 1 !important;
   visibility: visible !important;
   display: inline-block !important;
   white-space: nowrap !important;
+  color: inherit !important;
 }
 
-/* 數字欄位 padding */
+/* number input 高度 + padding */
 div[data-testid="stNumberInput"] input{
   min-height: 40px !important;
   padding-left: 10px !important;
   padding-right: 10px !important;
 }
 
-/* 手機微調 */
+/* 手機微調：間距更小 */
 @media (max-width: 640px){
   .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
   div[data-testid="stHorizontalBlock"]{ gap: 6px !important; }
+  div[data-testid="stSelectbox"]{ min-width: 78px !important; } /* 手機再保底一次 */
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("OMS Compact Row Test v3（只測 UI）")
-st.caption("目標：桌機一排、手機也一排；庫存(數字+單位) / 進貨(數字+單位)，單位必顯示。")
+st.title("OMS Compact Row Test v4（只測 UI）")
+st.caption("目標：手機也要同一排，且單位(例如 KG)一定要看得到。")
 st.divider()
 
 ITEMS = [
@@ -75,8 +79,8 @@ def row(i, name, price, stock_units, order_units):
     st.markdown(f"### {name}")
     st.caption(f"單價：{price:.1f}")
 
-    # ✅ 四格同一行：數字稍大、單位稍小（但要看得到）
-    c1, c2, c3, c4 = st.columns([1.35, 0.85, 1.35, 0.85], gap="small")
+    # ✅ 單位格不要太小：比例稍微拉大（避免手機只剩箭頭）
+    c1, c2, c3, c4 = st.columns([1.55, 1.05, 1.55, 1.05], gap="small")
 
     with c1:
         st.number_input("庫存", min_value=0.0, value=0.0, step=0.0, format="%.1f",
