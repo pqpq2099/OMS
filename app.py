@@ -3,7 +3,7 @@ import streamlit as st
 # =========================
 # Page config
 # =========================
-st.set_page_config(page_title="OMS Compact Row Test (Units Below)", layout="wide")
+st.set_page_config(page_title="OMS Compact Row Test (Left Item / Right Inputs)", layout="wide")
 
 # =========================
 # CSS
@@ -11,74 +11,76 @@ st.set_page_config(page_title="OMS Compact Row Test (Units Below)", layout="wide
 st.markdown(
     """
 <style>
-
-/* --- 手機避免左右 padding 吃寬度 --- */
-@media (max-width: 640px){
-  .block-container{
-    padding-left: 6px !important;
-    padding-right: 6px !important;
-  }
-
-  /* columns 保持同一排（上排：庫存/進貨；下排：單位/單位） */
-  div[data-testid="stHorizontalBlock"]{
-    flex-wrap: nowrap !important;
-    column-gap: 10px !important;   /* ✅ 間距稍微打開 */
-  }
-
-  /* column 可以縮小（避免撐爆） */
-  div[data-testid="column"]{
-    min-width: 0 !important;
-  }
+/* 讓整體內容寬一點但不要太散 */
+.block-container{
+  max-width: 1100px;
+  padding-top: 1.2rem;
 }
 
-/* --- 輸入框樣式 --- */
+/* --- 卡片 --- */
+.item-card{
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(120,120,120,0.2);
+  margin-bottom: 14px;
+}
+
+/* 左側文字 */
+.item-name{
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.item-meta{
+  font-size: 13px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+/* --- 控件：再小一點 --- */
 div[data-testid="stTextInput"] input{
-  height: 44px !important;
+  height: 38px !important;          /* ✅ 比 44 小 */
   padding: 0 10px !important;
-  font-size: 16px !important;
+  font-size: 15px !important;
 }
 
-/* --- 下拉選單（combobox） --- */
 div[data-testid="stSelectbox"] div[role="combobox"]{
-  height: 44px !important;
+  height: 38px !important;          /* ✅ 比 44 小 */
   padding: 0 10px !important;
-  font-size: 16px !important;
+  font-size: 15px !important;
   min-width: 0 !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
 
-/* 下拉箭頭不要太肥 */
+/* 箭頭別太肥 */
 div[data-testid="stSelectbox"] svg{
-  width: 18px !important;
-  height: 18px !important;
+  width: 16px !important;
+  height: 16px !important;
 }
 
-/* --- 卡片樣式 --- */
-.item-card{
-  padding: 14px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(120,120,120,0.2);
-  margin-bottom: 16px;
-}
-
-.item-name{
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.item-meta{
-  font-size: 14px;
-  opacity: 0.7;
-  margin-bottom: 10px;
-}
-
-/* 讓「數字列」和「單位列」之間更緊湊 */
-.row-tight{
+/* 右側上下兩排間距縮緊 */
+.tight-gap{
   margin-top: -6px;
 }
 
+/* 手機：左右 padding 少一點；右側維持同一排的 2 欄 */
+@media (max-width: 640px){
+  .block-container{
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+
+  div[data-testid="stHorizontalBlock"]{
+    flex-wrap: nowrap !important;
+    column-gap: 10px !important;
+  }
+
+  div[data-testid="column"]{
+    min-width: 0 !important;
+  }
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -87,12 +89,12 @@ div[data-testid="stSelectbox"] svg{
 # =========================
 # Header
 # =========================
-st.title("OMS Compact Row Test（下拉在下面）")
-st.caption("目標：上排庫存/進貨數字；下排各自單位下拉。手機也不爆版。")
+st.title("OMS Compact Row Test（左品項 / 右庫存進貨）")
+st.caption("目標：品項資訊在左；庫存/進貨在右（上排數字、下排單位），格子更緊湊。")
 st.divider()
 
 # =========================
-# 假資料
+# Fake data
 # =========================
 UNITS = ["KG", "包", "箱", "袋"]
 
@@ -113,48 +115,29 @@ for item in items:
 
     st.markdown('<div class="item-card">', unsafe_allow_html=True)
 
-    st.markdown(f'<div class="item-name">{item["name"]}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="item-meta">單價：{item["price"]:.1f}</div>', unsafe_allow_html=True)
+    # 外層：左(品項) / 右(輸入)
+    left, right = st.columns([1.25, 2.75], gap="medium")
 
-    # -------- 上排：庫存數字 / 進貨數字 --------
-    # ✅ 兩格就好：這樣手機一定能同一排
-    n1, n2 = st.columns([1, 1], gap="small")
+    with left:
+        st.markdown(f'<div class="item-name">{item["name"]}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="item-meta">單價：{item["price"]:.1f}</div>', unsafe_allow_html=True)
 
-    with n1:
-        st.text_input(
-            "庫存",
-            key=f"{item['id']}_stock_qty",
-            label_visibility="collapsed",
-        )
+    with right:
+        # 右側：上排數字（庫存 / 進貨）
+        r1, r2 = st.columns([1, 1], gap="small")
+        with r1:
+            st.text_input("庫存", key=f"{item['id']}_stock_qty", label_visibility="collapsed")
+        with r2:
+            st.text_input("進貨", key=f"{item['id']}_order_qty", label_visibility="collapsed")
 
-    with n2:
-        st.text_input(
-            "進貨",
-            key=f"{item['id']}_order_qty",
-            label_visibility="collapsed",
-        )
-
-    # -------- 下排：庫存單位 / 進貨單位 --------
-    # ✅ 下拉放下面（各自對應）
-    st.markdown('<div class="row-tight">', unsafe_allow_html=True)
-    u1, u2 = st.columns([1, 1], gap="small")
-
-    with u1:
-        st.selectbox(
-            "庫存單位",
-            UNITS,
-            key=f"{item['id']}_stock_unit",
-            label_visibility="collapsed",
-        )
-
-    with u2:
-        st.selectbox(
-            "進貨單位",
-            UNITS,
-            key=f"{item['id']}_order_unit",
-            label_visibility="collapsed",
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
+        # 右側：下排單位（庫存單位 / 進貨單位）
+        st.markdown('<div class="tight-gap">', unsafe_allow_html=True)
+        u1, u2 = st.columns([1, 1], gap="small")
+        with u1:
+            st.selectbox("庫存單位", UNITS, key=f"{item['id']}_stock_unit", label_visibility="collapsed")
+        with u2:
+            st.selectbox("進貨單位", UNITS, key=f"{item['id']}_order_unit", label_visibility="collapsed")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
