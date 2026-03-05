@@ -1,140 +1,154 @@
 import streamlit as st
 
-st.set_page_config(page_title="OMS Compact Row Test", layout="wide")
+# =========================
+# Page config
+# =========================
+st.set_page_config(page_title="OMS Compact Row Test (Base+Order Unit)", layout="wide")
 
-st.markdown("""
+# =========================
+# CSS
+# =========================
+st.markdown(
+    """
 <style>
-/* 基本容器縮一點，手機邊界不要吃太多 */
+/* 讓整體左右 padding 小一點（手機更省） */
 @media (max-width: 640px){
-  .block-container{ padding-left:10px !important; padding-right:10px !important; }
+  .block-container{
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
 }
 
-/* 卡片 */
+/* 卡片更緊湊 */
 .item-card{
-  padding: 14px 12px;
-  border-radius: 14px;
+  padding: 10px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(120,120,120,0.18);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
-/* ---- 桌機版：左品項，右四欄（庫存/單位/進貨/單位）---- */
-.row-grid{
-  display: grid;
-  grid-template-columns: 2.2fr 1fr 0.9fr 1fr 0.9fr;
-  grid-template-rows: auto auto; /* header + inputs */
-  column-gap: 10px;
-  row-gap: 6px;
-  align-items: center;
-}
-
-/* header 字 */
-.hd{
-  font-size: 12px;
-  opacity: 0.7;
-  font-weight: 600;
-  padding-left: 2px;
-}
-
-/* 品項資訊 */
 .item-name{
   font-size: 18px;
   font-weight: 800;
-  line-height: 1.2;
-}
-.item-meta{
-  font-size: 12px;
-  opacity: 0.7;
-  margin-top: 4px;
+  line-height: 1.15;
 }
 
-/* 讓 Streamlit 元件更緊湊 */
+.item-meta{
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+/* 輸入框高度縮一點（但不要小到難按） */
 div[data-testid="stTextInput"] input{
   height: 38px !important;
   padding: 0 10px !important;
   font-size: 16px !important;
 }
-div[data-testid="stSelectbox"] > div{
-  height: 38px !important;
+
+/* columns 在手機不要換行（避免變四行） */
+@media (max-width: 640px){
+  div[data-testid="stHorizontalBlock"]{
+    flex-wrap: nowrap !important;
+    column-gap: 8px !important;
+    align-items: center !important;
+  }
+  div[data-testid="column"]{
+    min-width: 0 !important;
+  }
 }
 
-/* ---- 手機版：改成三行（品項一行；數字一行；單位一行）---- */
-@media (max-width: 640px){
-  .row-grid{
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto auto;
-    column-gap: 8px;
-    row-gap: 6px;
-  }
+/* 把 radio 做成小顆 pill（包/箱） */
+div[role="radiogroup"]{
+  gap: 6px !important;
+}
+div[role="radiogroup"] label{
+  margin: 0 !important;
+}
+div[role="radiogroup"] label > div{
+  padding: 6px 10px !important;
+  border-radius: 10px !important;
+}
 
-  /* 品項跨兩欄 */
-  .cell-item{ grid-column: 1 / -1; }
-
-  /* 手機不顯示 header（省高度） */
-  .cell-hd{ display:none; }
+/* radio 本體不要撐太高 */
+div[role="radiogroup"] label span{
+  font-size: 14px !important;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.title("OMS Compact Row Test（對齊版）")
-st.caption("桌機：左品項 / 右：庫存-單位-進貨-單位 對齊。手機：品項一行、數字一行、單位一行。")
+# =========================
+# Header
+# =========================
+st.title("OMS Compact Row Test（庫存固定基準 / 叫貨包箱切換）")
+st.caption("目標：手機少滑、每品項保持緊湊；庫存=基準單位(固定)，叫貨=包/箱二選一。")
 st.divider()
 
-UNITS = ["KG","包","箱","袋"]
+# =========================
+# Fake data
+# =========================
+BASE_UNIT = "KG"          # 庫存基準單位固定
+ORDER_UNITS = ["包", "箱"] # 叫貨單位固定二選一
 
 items = [
-  {"id":"I001","name":"測試原料","price":10.0},
-  {"id":"I002","name":"魚","price":0.0},
-  {"id":"I003","name":"高麗菜","price":50.0},
+    {"id": "I001", "name": "測試原料", "price": 10.0},
+    {"id": "I002", "name": "魚", "price": 0.0},
+    {"id": "I003", "name": "高麗菜", "price": 50.0},
+    {"id": "I004", "name": "薯條", "price": 65.0},
 ]
 
-def ti(key):
-  return st.text_input("", key=key, label_visibility="collapsed")
+def ensure_defaults(item_id: str):
+    st.session_state.setdefault(f"{item_id}_stock_qty", "0")
+    st.session_state.setdefault(f"{item_id}_order_qty", "0")
+    st.session_state.setdefault(f"{item_id}_order_unit", ORDER_UNITS[0])  # 預設「包」
 
-def sb(key, options):
-  return st.selectbox("", options, key=key, label_visibility="collapsed")
+# =========================
+# Render
+# =========================
+for it in items:
+    ensure_defaults(it["id"])
 
-for item in items:
-  sid = item["id"]
+    st.markdown('<div class="item-card">', unsafe_allow_html=True)
 
-  st.session_state.setdefault(f"{sid}_stock_qty", "0")
-  st.session_state.setdefault(f"{sid}_stock_unit", "KG")
-  st.session_state.setdefault(f"{sid}_order_qty", "0")
-  st.session_state.setdefault(f"{sid}_order_unit", "箱")
+    st.markdown(f'<div class="item-name">{it["name"]}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="item-meta">單價：{it["price"]:.1f} ｜ 庫存基準：{BASE_UNIT}</div>',
+        unsafe_allow_html=True,
+    )
 
-  st.markdown('<div class="item-card">', unsafe_allow_html=True)
-  st.markdown('<div class="row-grid">', unsafe_allow_html=True)
+    # 右側一排：庫存數字 / 叫貨數字 / 叫貨單位(包箱)
+    # 比例：讓數字欄位大一點、包箱切換小一點
+    c1, c2, c3 = st.columns([1.3, 1.3, 1.0], gap="small")
 
-  # ---- Row 1: header（桌機才顯示）----
-  st.markdown(f"""
-    <div class="cell-item cell-hd"></div>
-    <div class="cell-hd hd">庫存</div>
-    <div class="cell-hd hd">單位</div>
-    <div class="cell-hd hd">進貨</div>
-    <div class="cell-hd hd">單位</div>
-  """, unsafe_allow_html=True)
+    with c1:
+        st.text_input(
+            "庫存",
+            key=f"{it['id']}_stock_qty",
+            label_visibility="collapsed",
+            placeholder="庫存",
+        )
 
-  # ---- Row 2+: item + inputs ----
-  # 用 columns 只是為了把 Streamlit 元件塞進 grid 的位置：用 st.container + markdown 佔位不夠，必須用 st.columns hack 配合占位
-  # 這裡採用：先在 grid 放 5 個「定位容器」，每格各放一個 Streamlit 元件
+    with c2:
+        st.text_input(
+            "叫貨",
+            key=f"{it['id']}_order_qty",
+            label_visibility="collapsed",
+            placeholder="叫貨",
+        )
 
-  c_item, c_sqty, c_sunit, c_oqty, c_ounit = st.columns([2.2,1,0.9,1,0.9], gap="small")
+    with c3:
+        st.radio(
+            "叫貨單位",
+            ORDER_UNITS,
+            key=f"{it['id']}_order_unit",
+            horizontal=True,
+            label_visibility="collapsed",
+        )
 
-  with c_item:
-    st.markdown(f'<div class="cell-item item-name">{item["name"]}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="item-meta">單價：{item["price"]:.1f}</div>', unsafe_allow_html=True)
-
-  with c_sqty:
-    ti(f"{sid}_stock_qty")
-  with c_sunit:
-    sb(f"{sid}_stock_unit", UNITS)
-
-  with c_oqty:
-    ti(f"{sid}_order_qty")
-  with c_ounit:
-    sb(f"{sid}_order_unit", UNITS)
-
-  st.markdown("</div>", unsafe_allow_html=True)   # row-grid
-  st.markdown("</div>", unsafe_allow_html=True)   # item-card
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("Debug"):
-  st.write(st.session_state)
+    st.write(st.session_state)
