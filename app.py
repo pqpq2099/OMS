@@ -44,7 +44,7 @@ st.markdown(
 div[data-testid="stTextInput"] input{
   height: 34px !important;
   padding: 0 8px !important;
-  font-size: 15px !important;
+  font-size: 8px !important;
 }
 
 /* columns 在手機不要換行（避免變四行） */
@@ -152,5 +152,6 @@ for it in items:
 
 with st.expander("Debug"):
     st.write(st.session_state)
+
 
 
