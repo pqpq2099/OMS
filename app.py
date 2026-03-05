@@ -42,9 +42,9 @@ st.markdown(
 
 /* 輸入框高度縮一點（但不要小到難按） */
 div[data-testid="stTextInput"] input{
-  height: 38px !important;
-  padding: 0 10px !important;
-  font-size: 16px !important;
+  height: 34px !important;
+  padding: 0 8px !important;
+  font-size: 15px !important;
 }
 
 /* columns 在手機不要換行（避免變四行） */
@@ -121,7 +121,7 @@ for it in items:
 
     # 右側一排：庫存數字 / 叫貨數字 / 叫貨單位(包箱)
     # 比例：讓數字欄位大一點、包箱切換小一點
-    c1, c2, c3 = st.columns([1.3, 1.3, 1.0], gap="small")
+    c1, c2, c3 = st.columns([1, 1, 1.0], gap="small")
 
     with c1:
         st.text_input(
@@ -152,3 +152,4 @@ for it in items:
 
 with st.expander("Debug"):
     st.write(st.session_state)
+
