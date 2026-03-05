@@ -3,7 +3,7 @@ import streamlit as st
 # =========================
 # Page config
 # =========================
-st.set_page_config(page_title="OMS Compact Row Test (Left Item / Right Inputs)", layout="wide")
+st.set_page_config(page_title="OMS Compact Row Test (No Overflow)", layout="wide")
 
 # =========================
 # CSS
@@ -11,7 +11,7 @@ st.set_page_config(page_title="OMS Compact Row Test (Left Item / Right Inputs)",
 st.markdown(
     """
 <style>
-/* 讓整體內容寬一點但不要太散 */
+/* 讓整體內容不要太散 */
 .block-container{
   max-width: 1100px;
   padding-top: 1.2rem;
@@ -37,15 +37,15 @@ st.markdown(
   margin-top: 6px;
 }
 
-/* --- 控件：再小一點 --- */
+/* --- 控件縮小 --- */
 div[data-testid="stTextInput"] input{
-  height: 38px !important;          /* ✅ 比 44 小 */
+  height: 38px !important;
   padding: 0 10px !important;
   font-size: 15px !important;
 }
 
 div[data-testid="stSelectbox"] div[role="combobox"]{
-  height: 38px !important;          /* ✅ 比 44 小 */
+  height: 38px !important;
   padding: 0 10px !important;
   font-size: 15px !important;
   min-width: 0 !important;
@@ -61,24 +61,32 @@ div[data-testid="stSelectbox"] svg{
 }
 
 /* 右側上下兩排間距縮緊 */
-.tight-gap{
-  margin-top: -6px;
-}
+.tight-gap{ margin-top: -6px; }
 
-/* 手機：左右 padding 少一點；右側維持同一排的 2 欄 */
+/* ✅ 手機：避免爆版（最重要） */
 @media (max-width: 640px){
   .block-container{
-    padding-left: 6px !important;
-    padding-right: 6px !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
   }
 
+  /* ✅ 所有 columns 允許換行，避免 overflow */
   div[data-testid="stHorizontalBlock"]{
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     column-gap: 10px !important;
+    row-gap: 10px !important;
   }
 
+  /* ✅ column 最小寬度歸零，才能真的縮 */
   div[data-testid="column"]{
     min-width: 0 !important;
+  }
+
+  /* ✅ 外層（左品項/右輸入）改成上下堆疊：各佔 100% */
+  /* 這個規則會讓任何兩欄 layout 在手機都不硬擠同排，避免爆 */
+  div[data-testid="stHorizontalBlock"] > div[data-testid="column"]{
+    flex: 1 1 100% !important;
+    width: 100% !important;
   }
 }
 </style>
@@ -89,8 +97,8 @@ div[data-testid="stSelectbox"] svg{
 # =========================
 # Header
 # =========================
-st.title("OMS Compact Row Test（左品項 / 右庫存進貨）")
-st.caption("目標：品項資訊在左；庫存/進貨在右（上排數字、下排單位），格子更緊湊。")
+st.title("OMS Compact Row Test（桌機左右 / 手機不爆版）")
+st.caption("桌機：左品項 / 右庫存進貨（上數字下單位）；手機：自動改上下堆疊，保證不超出螢幕。")
 st.divider()
 
 # =========================
@@ -115,7 +123,7 @@ for item in items:
 
     st.markdown('<div class="item-card">', unsafe_allow_html=True)
 
-    # 外層：左(品項) / 右(輸入)
+    # 外層：桌機左右；手機會被 CSS 變成上下堆疊（避免爆版）
     left, right = st.columns([1.25, 2.75], gap="medium")
 
     with left:
@@ -141,8 +149,5 @@ for item in items:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================
-# Debug
-# =========================
 with st.expander("Debug"):
     st.write(dict(st.session_state))
