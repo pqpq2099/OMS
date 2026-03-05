@@ -4,6 +4,7 @@ from datetime import date
 st.set_page_config(page_title="OMS UI Width Test v2", layout="wide")
 
 st.markdown("""
+st.markdown("""
 <style>
 .block-container{ max-width: 980px; padding: 1rem 1rem 2rem; }
 
@@ -11,69 +12,78 @@ st.markdown("""
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"]){
   display:flex !important;
   flex-wrap:nowrap !important;
-  gap:4px !important;
+  gap:2px !important;
   align-items:center !important;
-  width: fit-content !important;     /* ✅ 不要撐滿整行 */
+  width: fit-content !important;
   max-width: 100% !important;
 }
 
-/* column：先把 Streamlit 的撐滿屬性打掉 */
+/* column：把 Streamlit 的滿寬/最小寬度全部打掉 */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]{
   padding:0 !important;
   margin:0 !important;
   min-width:0 !important;
-  width:auto !important;             /* ✅ 不要 100% */
-  flex:0 0 auto !important;          /* ✅ 不要平均分配 */
+  width:auto !important;
+  flex:0 0 auto !important;
 }
 
-/* 數字欄位 column */
+/* ✅ 數字欄位 column（更小） */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]:has(div[data-testid="stNumberInput"]){
-  flex:0 0 40px !important;
-  width:40px !important;
-  max-width:40px !important;
+  flex:0 0 60px !important;
+  width:60px !important;
+  max-width:60px !important;
+  min-width:60px !important;
 }
 
-/* 單位欄位 column */
+/* ✅ 單位欄位 column（更小） */
 div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]):has(div[data-testid="stSelectbox"])
   > div[data-testid="column"]:has(div[data-testid="stSelectbox"]){
-  flex:0 0 40px !important;
-  width:40px !important;
-  max-width:40px !important;
+  flex:0 0 46px !important;
+  width:46px !important;
+  max-width:46px !important;
+  min-width:46px !important;
 }
 
-/* widget 吃滿各自格子 */
-div[data-testid="stNumberInput"], div[data-testid="stSelectbox"]{ width:100% !important; }
+/* widget 吃滿各自格子 + 打掉它們自己的 min-width */
+div[data-testid="stNumberInput"], div[data-testid="stSelectbox"]{
+  width:100% !important;
+  min-width:0 !important;         /* ✅ 重要 */
+  max-width:100% !important;
+}
 
-/* number input 視覺 */
+/* number input 視覺更緊 */
 div[data-testid="stNumberInput"] input{
-  padding:4px 6px !important;
-  font-size:14px !important;
+  padding:2px 4px !important;
+  font-size:13px !important;
+  line-height:1.1 !important;
 }
 
-/* selectbox 視覺 + 文字可見 */
-div[data-testid="stSelectbox"] div[data-baseweb="select"]{ width:100% !important; }
+/* selectbox：真正會撐開的是 baseweb select，本體也要打 min-width */
+div[data-testid="stSelectbox"] div[data-baseweb="select"]{
+  width:100% !important;
+  min-width:0 !important;         /* ✅ 重要 */
+}
 div[data-testid="stSelectbox"] div[role="combobox"]{
-  padding:4px 4px !important;
-  min-height:34px !important;
-  font-size:14px !important;
+  padding:2px 2px !important;
+  min-height:28px !important;
+  font-size:13px !important;
 }
 div[data-testid="stSelectbox"] span{
   white-space:nowrap !important;
-  overflow:visible !important;
+  overflow:hidden !important;
   text-overflow:clip !important;
 }
 div[data-testid="stSelectbox"] svg{
-  width:16px !important;
-  height:16px !important;
+  width:14px !important;
+  height:14px !important;
 }
 
 /* Stepper 永久移除 */
 div[data-testid="stNumberInput"] button{ display:none !important; }
 div[data-testid="stNumberInput"] svg{ display:none !important; }
 div[data-testid="stNumberInput"] [data-baseweb="input"] button{ display:none !important; }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,4 +122,5 @@ for it in items:
                      key=f"ou_{it['id']}", label_visibility="collapsed")
 
     st.markdown("---")
+
 
