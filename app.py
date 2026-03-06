@@ -1,162 +1,155 @@
 import streamlit as st
 
 # ============================================================
-# OMS Compact Row Test - Full single-file demo (UI only)
-# 目標：
-# - 桌機：左=品項資訊；右=庫存數字/叫貨數字/包箱切換 (同一列)
-# - 手機：維持同一列，不自動變直排、不超出螢幕
-# - 庫存單位固定基準(顯示用)；叫貨單位用包/箱切換(可改)
+# [0] Page config
 # ============================================================
+st.set_page_config(page_title="OMS Compact Row Test", layout="wide")
 
-st.set_page_config(page_title="OMS Compact Row Test (Full)", layout="wide")
+# ============================================================
+# [1] Tuning knobs (你只改這裡)
+# ============================================================
+# 欄位間距
+DESKTOP_GAP_PX = 10
+MOBILE_GAP_PX = 8
 
-# -------------------------
-# Tunables (你要改寬度就改這裡)
-# -------------------------
-MOBILE_BREAKPOINT = 640  # px
+# 右側區塊內：兩個數字欄的比例（越小越窄）
+# 注意：這是「比例」，不是 px。Streamlit 用比例分配寬度
+NUM_RATIO = 1.0
+NUM_RATIO_2 = 1.0
+TOGGLE_RATIO = 2.2
 
-# 數字欄位寬度（手機/桌機）
-MOBILE_NUM_W = 10        # px
-DESKTOP_NUM_W = 92       # px
+# 卡片內 padding
+CARD_PAD_Y = 10
+CARD_PAD_X = 10
 
-# 包箱切換區寬度（手機/桌機）
-MOBILE_TOGGLE_W = 10    # px
-DESKTOP_TOGGLE_W = 190   # px
-
-# 欄位間距（手機/桌機）
-MOBILE_GAP = 5          # px
-DESKTOP_GAP = 10         # px
-
-# 輸入框高度（手機/桌機）
-INPUT_H = 10             # px
-
-# -------------------------
-# CSS
-# -------------------------
+# ============================================================
+# [2] CSS (不要用 f-string，避免 {} 爆掉)
+# ============================================================
 st.markdown(
-    f"""
+    """
 <style>
-/* 讓整體左右 padding 小一點（手機更省） */
-@media (max-width: {MOBILE_BREAKPOINT}px){{
-  .block-container{{
+/* ------------------------------
+   全局：讓 columns 在小螢幕不要自己換行
+   ------------------------------ */
+@media (max-width: 640px){
+  .block-container{
     padding-left: 8px !important;
     padding-right: 8px !important;
-  }}
-}}
+  }
+  /* columns 的外層：不要 wrap */
+  div[data-testid="stHorizontalBlock"]{
+    flex-wrap: nowrap !important;
+    column-gap: var(--mobile-gap) !important;
+    align-items: center !important;
+  }
+  div[data-testid="column"]{
+    min-width: 0 !important;
+  }
+}
 
-/* 卡片 */
-.item-card{{
-  padding: 10px 10px;
+/* 桌機 gap */
+div[data-testid="stHorizontalBlock"]{
+  column-gap: var(--desktop-gap) !important;
+}
+
+/* ------------------------------
+   讓 TextInput/Radio 可以被「壓窄」
+   主要是把 min-width 拿掉，不然手機永遠撐爆
+   ------------------------------ */
+div[data-testid="stTextInput"]{
+  min-width: 0 !important;
+  width: 100% !important;
+}
+div[data-testid="stTextInput"] input{
+  min-width: 0 !important;
+  width: 100% !important;
+  height: 36px !important;
+  padding: 0 10px !important;
+  font-size: 15px !important;
+}
+
+/* radio group 不要撐爆 */
+div[role="radiogroup"]{
+  min-width: 0 !important;
+  width: 100% !important;
+  gap: 8px !important;
+}
+div[role="radiogroup"] label{
+  margin: 0 !important;
+}
+div[role="radiogroup"] label > div{
+  padding: 6px 10px !important;
+  border-radius: 10px !important;
+}
+div[role="radiogroup"] label span{
+  font-size: 14px !important;
+}
+
+/* ------------------------------
+   卡片樣式
+   ------------------------------ */
+.oms-card{
+  padding: var(--card-pad-y) var(--card-pad-x);
   border-radius: 12px;
   border: 1px solid rgba(120,120,120,0.18);
   margin-bottom: 10px;
-}}
-.item-name{{
+}
+.oms-name{
   font-size: 18px;
   font-weight: 800;
   line-height: 1.15;
-}}
-.item-meta{{
+}
+.oms-meta{
   font-size: 12px;
   opacity: 0.75;
   margin-top: 4px;
   margin-bottom: 8px;
-}}
-.hint-head{{
-  font-size: 12px;
-  opacity: .65;
-  margin-bottom: 4px;
-}}
-/* 把每列底下 Streamlit 的空白 margin 壓小 */
-div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stTextInput"]),
-div[data-testid="stVerticalBlock"] > div:has(> div[role="radiogroup"]){{
-  margin-bottom: 0px !important;
-}}
-
-/* 輸入框高度與字 */
-div[data-testid="stTextInput"] input{{
-  height: {INPUT_H}px !important;
-  padding: 0 10px !important;
-  font-size: 16px !important;
-}}
-
-/* ----- 核心：手機不要讓 columns 自動變直排 ----- */
-@media (max-width: {MOBILE_BREAKPOINT}px){{
-  div[data-testid="stHorizontalBlock"]{{
-    flex-wrap: nowrap !important;
-    gap: {MOBILE_GAP}px !important;
-    align-items: center !important;
-  }}
-  div[data-testid="column"]{{
-    min-width: 0 !important;        /* 允許縮到內容寬 */
-  }}
-}}
-
-/* 桌機 columns gap */
-@media (min-width: {MOBILE_BREAKPOINT+1}px){{
-  div[data-testid="stHorizontalBlock"]{{
-    gap: {DESKTOP_GAP}px !important;
-    align-items: center !important;
-  }}
-}}
-
-/* 只留一組 class，靠 media query 決定寬度 */
-.numwrap div[data-testid="stTextInput"]{ max-width: 92px !important; }
-.togglewrap div[role="radiogroup"]{ max-width: 190px !important; }
-
-@media (max-width: 640px){
-  .numwrap div[data-testid="stTextInput"]{ max-width: 64px !important; }
-  .togglewrap div[role="radiogroup"]{ max-width: 140px !important; }
-
-  /* 手機欄位更靠近 */
-  div[data-testid="stHorizontalBlock"]{
-    gap: 6px !important;
-    flex-wrap: nowrap !important;
-  }
-  div[data-testid="column"]{ min-width: 0 !important; }
 }
 
-/* --- radio 做成小顆 pill，並縮高度 --- */
-div[role="radiogroup"]{{
-  gap: 6px !important;
-}}
-div[role="radiogroup"] label{{
-  margin: 0 !important;
-}}
-div[role="radiogroup"] label > div{{
-  padding: 6px 10px !important;
-  border-radius: 10px !important;
-}}
-div[role="radiogroup"] label span{{
-  font-size: 14px !important;
-}}
+/* ------------------------------
+   右側兩個數字欄：同一排、靠近一點
+   （這裡是讓兩個輸入欄看起來更緊）
+   ------------------------------ */
+.oms-right-tight div[data-testid="stHorizontalBlock"]{
+  column-gap: 8px !important;
+}
+@media (max-width: 640px){
+  .oms-right-tight div[data-testid="stHorizontalBlock"]{
+    column-gap: 8px !important;
+  }
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
-/* 讓右側控制區不要撐爆 */
-.ctrl-row{{
-  display:flex;
-  justify-content:flex-end;
-  gap: {DESKTOP_GAP}px;
-}}
-@media (max-width: {MOBILE_BREAKPOINT}px){{
-  .ctrl-row{{ gap: {MOBILE_GAP}px; }}
+# 把 tuning knobs 丟成 CSS 變數（用 set_option 方式做不到，只能塞到 :root）
+st.markdown(
+    f"""
+<style>
+:root {{
+  --desktop-gap: {DESKTOP_GAP_PX}px;
+  --mobile-gap: {MOBILE_GAP_PX}px;
+  --card-pad-y: {CARD_PAD_Y}px;
+  --card-pad-x: {CARD_PAD_X}px;
 }}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-# -------------------------
-# Header
-# -------------------------
+# ============================================================
+# [3] Header
+# ============================================================
 st.title("OMS Compact Row Test（庫存固定基準 / 叫貨包箱切換）")
-st.caption("目標：桌機左品項右輸入；手機也維持同一排，不自動變直排、不超出螢幕。")
+st.caption("目標：手機不要變直排、不超出螢幕；左品項、右庫存/叫貨，包/箱用切換。")
 st.divider()
 
-# -------------------------
-# Fake data
-# -------------------------
-BASE_UNIT = "KG"                 # 庫存基準單位固定（顯示用）
-ORDER_UNITS = ["包", "箱"]        # 叫貨單位：包/箱（之後可改成包/條/罐…）
+# ============================================================
+# [4] Fake data
+# ============================================================
+BASE_UNIT = "KG"               # 庫存基準（固定，不下拉）
+ORDER_UNITS = ["包", "箱"]      # 叫貨單位（先固定二選一，未來可改成動態）
 
 items = [
     {"id": "I001", "name": "測試原料", "price": 10.0},
@@ -169,80 +162,58 @@ items = [
 def ensure_defaults(item_id: str):
     st.session_state.setdefault(f"{item_id}_stock_qty", "0")
     st.session_state.setdefault(f"{item_id}_order_qty", "0")
-    st.session_state.setdefault(f"{item_id}_order_unit", ORDER_UNITS[0])  # default 包
+    st.session_state.setdefault(f"{item_id}_order_unit", ORDER_UNITS[0])  # 預設包
 
-# -------------------------
-# Render
-# -------------------------
-# 桌機才顯示欄位提示（避免你說「誰是誰」）
-# 手機不顯示，省高度
-is_mobile_hint = st.checkbox("（測試用）強制顯示欄位標題", value=False, help="桌機通常要顯示「庫存/叫貨/單位」，手機可關掉省空間")
-
+# ============================================================
+# [5] Render
+# ============================================================
 for it in items:
     ensure_defaults(it["id"])
 
-    st.markdown('<div class="item-card">', unsafe_allow_html=True)
+    st.markdown('<div class="oms-card">', unsafe_allow_html=True)
 
-    # 兩大區：左(品項) / 右(控制)
-    left, right = st.columns([1.6, 1.4], gap="small")
+    # 外層：左品項、右輸入區
+    left, right = st.columns([2.2, 3.8], gap="large")
 
     with left:
-        st.markdown(f'<div class="item-name">{it["name"]}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="oms-name">{it["name"]}</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="item-meta">單價：{it["price"]:.1f} / {BASE_UNIT}</div>',
+            f'<div class="oms-meta">單價：{it["price"]:.1f} ｜ 庫存基準：{BASE_UNIT}</div>',
             unsafe_allow_html=True,
         )
 
     with right:
-        # 桌機提示：庫存 / 叫貨 / 包箱
-        if is_mobile_hint:
-            h1, h2, h3 = st.columns([0.9, 0.9, 1.2], gap="small")
-            with h1: st.markdown('<div class="hint-head">庫存</div>', unsafe_allow_html=True)
-            with h2: st.markdown('<div class="hint-head">叫貨</div>', unsafe_allow_html=True)
-            with h3: st.markdown('<div class="hint-head">單位</div>', unsafe_allow_html=True)
+        st.markdown('<div class="oms-right-tight">', unsafe_allow_html=True)
 
-        c1, c2, c3 = st.columns([0.9, 0.9, 1.2], gap="small")
-
-        with c1:
-            # 依螢幕套不同寬度 class（手機更小）
-            st.markdown('<div class="numwrap">', unsafe_allow_html=True)
+        # 第一排：庫存數字 / 叫貨數字（同一排）
+        n1, n2 = st.columns([NUM_RATIO, NUM_RATIO_2], gap="small")
+        with n1:
             st.text_input(
                 "庫存",
                 key=f"{it['id']}_stock_qty",
                 label_visibility="collapsed",
-                placeholder="庫",
+                placeholder=f"庫存({BASE_UNIT})",
             )
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with c2:
-            st.markdown('<div class="numwrap">', unsafe_allow_html=True)
+        with n2:
             st.text_input(
                 "叫貨",
                 key=f"{it['id']}_order_qty",
                 label_visibility="collapsed",
-                placeholder="進",
+                placeholder="叫貨",
             )
-            st.markdown('</div>', unsafe_allow_html=True)
 
-        with c3:
-            st.markdown('<div class="togglewrap">', unsafe_allow_html=True)
-            st.radio(
-                "叫貨單位",
-                ORDER_UNITS,
-                key=f"{it['id']}_order_unit",
-                horizontal=True,
-                label_visibility="collapsed",
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
+        # 第二排：包/箱切換（放下面，避免手機爆寬）
+        st.radio(
+            "叫貨單位",
+            ORDER_UNITS,
+            key=f"{it['id']}_order_unit",
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------------
-# Debug
-# -------------------------
-with st.expander("Debug (session_state)"):
+with st.expander("Debug"):
     st.write(st.session_state)
-
-
-
-
