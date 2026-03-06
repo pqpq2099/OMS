@@ -1026,43 +1026,48 @@ def page_order_entry():
 
         append_row_by_header("stocktakes", stocktake_header, stocktake_row)
 
-        for r in submit_rows:
-            stocktake_line_id = get_next_id("stocktake_lines")
+for r in submit_rows:
 
-            try:
-                stock_base_qty, stock_base_unit = convert_to_base(
-                    item_id=r["item_id"],
-                    qty=r["stock_qty"],
-                    from_unit=r["stock_unit"],
-                    items_df=vendor_items,
-                    conversions_df=conversions_df,
-                    as_of_date=st.session_state.record_date,
-                )
-            except Exception:
-                stock_base_qty = r["stock_qty"]
-                stock_base_unit = r["stock_unit"]
+    # 沒變動就不寫入
+    if abs(r["stock_qty"] - item_meta[r["item_id"]]["current_stock_qty"]) < 0.0001:
+        continue
 
-            line_row = {c: "" for c in stl_header}
-            defaults_line = {
-                "stocktake_line_id": stocktake_line_id,
-                "stocktake_id": stocktake_id,
-                "item_id": r["item_id"],
-                "qty": str(r["stock_qty"]),
-                "stock_qty": str(r["stock_qty"]),
-                "unit_id": r["stock_unit"],
-                "stock_unit": r["stock_unit"],
-                "base_qty": str(round(stock_base_qty, 3)),
-                "base_unit": stock_base_unit,
-                "created_at": now,
-                "created_by": "SYSTEM",
-                "updated_at": "",
-                "updated_by": "",
-            }
-            for k, v in defaults_line.items():
-                if k in line_row:
-                    line_row[k] = v
+    stocktake_line_id = get_next_id("stocktake_lines")
 
-            append_row_by_header("stocktake_lines", stl_header, line_row)
+    try:
+        stock_base_qty, stock_base_unit = convert_to_base(
+            item_id=r["item_id"],
+            qty=r["stock_qty"],
+            from_unit=r["stock_unit"],
+            items_df=vendor_items,
+            conversions_df=conversions_df,
+            as_of_date=st.session_state.record_date,
+        )
+    except Exception:
+        stock_base_qty = r["stock_qty"]
+        stock_base_unit = r["stock_unit"]
+
+    line_row = {c: "" for c in stl_header}
+    defaults_line = {
+        "stocktake_line_id": stocktake_line_id,
+        "stocktake_id": stocktake_id,
+        "item_id": r["item_id"],
+        "qty": str(r["stock_qty"]),
+        "stock_qty": str(r["stock_qty"]),
+        "unit_id": r["stock_unit"],
+        "stock_unit": r["stock_unit"],
+        "base_qty": str(round(stock_base_qty, 3)),
+        "base_unit": stock_base_unit,
+        "created_at": now,
+        "created_by": "SYSTEM",
+        "updated_at": "",
+        "updated_by": "",
+    }
+    for k, v in defaults_line.items():
+        if k in line_row:
+            line_row[k] = v
+
+    append_row_by_header("stocktake_lines", stl_header, line_row)
 
         order_rows = [r for r in submit_rows if r["order_qty"] > 0]
         po_id = ""
@@ -1172,4 +1177,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
