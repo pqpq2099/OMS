@@ -986,11 +986,11 @@ def page_order_entry():
                     min_value=0.0,
                     step=0.1,
                     format="%.1f",
-                    value=0.0,
+                    value=float(suggest_qty),
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
-                st.caption(order_unit)
+                st.caption(f"{order_unit}｜可修改")
 
             submit_rows.append(
                 {
@@ -1182,6 +1182,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
