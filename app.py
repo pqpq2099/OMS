@@ -16,7 +16,7 @@ st.set_page_config(page_title="OMS Compact Row Test (Full)", layout="wide")
 MOBILE_BREAKPOINT = 640  # px
 
 # 數字欄位寬度（手機/桌機）
-MOBILE_NUM_W = 64        # px
+MOBILE_NUM_W = 15        # px
 DESKTOP_NUM_W = 92       # px
 
 # 包箱切換區寬度（手機/桌機）
@@ -234,3 +234,4 @@ for it in items:
 # -------------------------
 with st.expander("Debug (session_state)"):
     st.write(st.session_state)
+
