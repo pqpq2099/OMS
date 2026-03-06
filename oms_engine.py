@@ -8,10 +8,9 @@ import pandas as pd
 
 
 # ============================================================
-# [E0] Date helpers
+# Basic helpers
 # ============================================================
 def _to_date(value) -> Optional[date]:
-    """Convert common date-like values to date. Return None if empty."""
     if value is None:
         return None
     if isinstance(value, date) and not isinstance(value, datetime):
@@ -30,14 +29,12 @@ def _to_date(value) -> Optional[date]:
 
 
 def _normalize_text(value) -> str:
-    """Normalize text for safer comparisons."""
     if value is None:
         return ""
     return str(value).strip()
 
 
 def _to_bool(value) -> bool:
-    """Convert common truthy/falsy values to bool."""
     if isinstance(value, bool):
         return value
     text = str(value).strip().lower()
@@ -45,50 +42,35 @@ def _to_bool(value) -> bool:
 
 
 # ============================================================
-# [E1] Conversion filtering
+# Conversion filtering
 # ============================================================
 def _filter_active_conversions(
     conversions_df: pd.DataFrame,
     item_id: str,
     as_of_date: Optional[date] = None,
 ) -> pd.DataFrame:
-    """
-    Keep only valid conversion rules for the given item and date.
-    Required columns:
-      - item_id
-      - from_unit
-      - to_unit
-      - ratio
-    Optional columns:
-      - is_active
-      - effective_date
-      - end_date
-    """
     if conversions_df is None or conversions_df.empty:
         return pd.DataFrame()
 
     work = conversions_df.copy()
 
-    # Normalize key fields
     for col in ["item_id", "from_unit", "to_unit"]:
         if col in work.columns:
             work[col] = work[col].apply(_normalize_text)
 
+    # 對齊你的 DB：使用 ratio
     if "ratio" in work.columns:
         work["ratio"] = pd.to_numeric(work["ratio"], errors="coerce")
+    else:
+        raise ValueError("unit_conversions 缺少 ratio 欄位")
 
-    # Filter item
     work = work[work["item_id"] == _normalize_text(item_id)]
-
-    # Filter valid ratio
     work = work[work["ratio"].notna()]
     work = work[work["ratio"] > 0]
 
-    # Filter active
     if "is_active" in work.columns:
         work = work[work["is_active"].apply(_to_bool)]
 
-    # Filter by date window
     if as_of_date is not None:
         if "effective_date" in work.columns:
             work["_effective_date"] = work["effective_date"].apply(_to_date)
@@ -106,14 +88,9 @@ def _filter_active_conversions(
 
 
 # ============================================================
-# [E2] Unit graph builder
+# Build graph
 # ============================================================
 def _build_unit_graph(valid_df: pd.DataFrame) -> dict:
-    """
-    Build a graph of unit conversion rules.
-    A -> B uses ratio
-    B -> A uses 1 / ratio
-    """
     graph = {}
 
     for _, row in valid_df.iterrows():
@@ -131,7 +108,7 @@ def _build_unit_graph(valid_df: pd.DataFrame) -> dict:
 
 
 # ============================================================
-# [E3] Core converter
+# Core converter
 # ============================================================
 def convert_unit(
     item_id: str,
@@ -141,22 +118,6 @@ def convert_unit(
     conversions_df: pd.DataFrame,
     as_of_date: Optional[date] = None,
 ) -> float:
-    """
-    Convert item quantity from one unit to another using item-level conversion rules.
-
-    Example:
-        item_id = "ING_030"
-        qty = 1
-        from_unit = "箱"
-        to_unit = "KG"
-
-    If rules are:
-        箱 -> 包 = 8
-        包 -> KG = 1
-
-    Result:
-        1 箱 -> 8 KG
-    """
     item_id = _normalize_text(item_id)
     from_unit = _normalize_text(from_unit)
     to_unit = _normalize_text(to_unit)
@@ -189,7 +150,6 @@ def convert_unit(
     if to_unit not in graph:
         raise ValueError(f"品項 {item_id} 沒有單位 {to_unit} 的換算規則")
 
-    # BFS search for conversion path
     queue = deque([(from_unit, 1.0)])
     visited = {from_unit}
 
@@ -210,15 +170,9 @@ def convert_unit(
 
 
 # ============================================================
-# [E4] Convert to base unit
+# Base unit helpers
 # ============================================================
 def get_base_unit(items_df: pd.DataFrame, item_id: str) -> str:
-    """
-    Read base_unit from items table.
-    Required columns:
-      - item_id
-      - base_unit
-    """
     if items_df is None or items_df.empty:
         raise ValueError("items_df 為空，無法取得 base_unit")
 
@@ -228,6 +182,9 @@ def get_base_unit(items_df: pd.DataFrame, item_id: str) -> str:
     row = work.loc[work["item_id"] == _normalize_text(item_id)]
     if row.empty:
         raise ValueError(f"items 找不到 item_id: {item_id}")
+
+    if "base_unit" not in row.columns:
+        raise ValueError("items 缺少 base_unit 欄位")
 
     base_unit = _normalize_text(row.iloc[0]["base_unit"])
     if not base_unit:
@@ -244,10 +201,6 @@ def convert_to_base(
     conversions_df: pd.DataFrame,
     as_of_date: Optional[date] = None,
 ) -> Tuple[float, str]:
-    """
-    Convert quantity to the item's base_unit.
-    Return: (base_qty, base_unit)
-    """
     base_unit = get_base_unit(items_df, item_id)
     base_qty = convert_unit(
         item_id=item_id,
@@ -260,9 +213,6 @@ def convert_to_base(
     return base_qty, base_unit
 
 
-# ============================================================
-# [E5] Simple validation helper
-# ============================================================
 def can_convert_to_base(
     item_id: str,
     from_unit: str,
@@ -270,7 +220,6 @@ def can_convert_to_base(
     conversions_df: pd.DataFrame,
     as_of_date: Optional[date] = None,
 ) -> bool:
-    """Return True if conversion path exists, otherwise False."""
     try:
         convert_to_base(
             item_id=item_id,
