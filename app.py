@@ -10,6 +10,7 @@ from collections import deque
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
+from oms_engine import convert_to_base, convert_unit, get_base_unit
 
 import gspread
 import pandas as pd
@@ -717,7 +718,166 @@ def page_order_entry():
     vendor_items = vendor_items.sort_values(by=["_display_name"], ascending=True)
 
     # ------------------------------------------------------------
-    # 折疊式參考表格
+    # 上次叫貨
+    # ------------------------------------------------------------
+    def _get_last_po_summary(
+        po_df: pd.DataFrame,
+        pol_df: pd.DataFrame,
+        store_id: str,
+        vendor_id: str,
+        item_id: str,
+    ):
+        if po_df.empty or pol_df.empty:
+            return 0.0, ""
+
+        need_po = {"po_id", "store_id", "vendor_id", "order_date"}
+        need_pol = {"po_id", "item_id"}
+        if not need_po.issubset(set(po_df.columns)) or not need_pol.issubset(set(pol_df.columns)):
+            return 0.0, ""
+
+        po = po_df.copy()
+        pol = pol_df.copy()
+
+        po["po_id"] = po["po_id"].astype(str).str.strip()
+        pol["po_id"] = pol["po_id"].astype(str).str.strip()
+        pol["item_id"] = pol["item_id"].astype(str).str.strip()
+
+        po = po[
+            (po["store_id"].astype(str).str.strip() == str(store_id).strip())
+            & (po["vendor_id"].astype(str).str.strip() == str(vendor_id).strip())
+        ].copy()
+
+        if po.empty:
+            return 0.0, ""
+
+        merged = pol.merge(po[["po_id", "order_date"]], on="po_id", how="inner")
+        merged = merged[merged["item_id"] == str(item_id).strip()].copy()
+
+        if merged.empty:
+            return 0.0, ""
+
+        merged["__date"] = merged["order_date"].apply(_parse_date)
+        merged = merged.sort_values("__date", ascending=True)
+        latest = merged.iloc[-1].to_dict()
+
+        qty = _safe_float(latest.get("order_qty", latest.get("qty", 0)))
+        unit = _norm(latest.get("order_unit", latest.get("unit_id", "")))
+        return qty, unit
+
+    # ------------------------------------------------------------
+    # 目前庫存（抓最近一次盤點，轉成 default_stock_unit 顯示）
+    # ------------------------------------------------------------
+    def _get_latest_stock_qty_in_display_unit(
+        stocktakes_df: pd.DataFrame,
+        stocktake_lines_df: pd.DataFrame,
+        items_df: pd.DataFrame,
+        conversions_df: pd.DataFrame,
+        store_id: str,
+        item_id: str,
+        display_unit: str,
+    ):
+        if stocktakes_df.empty or stocktake_lines_df.empty:
+            return 0.0
+
+        need_st = {"stocktake_id", "store_id", "stocktake_date"}
+        need_stl = {"stocktake_id", "item_id"}
+        if not need_st.issubset(set(stocktakes_df.columns)) or not need_stl.issubset(set(stocktake_lines_df.columns)):
+            return 0.0
+
+        stx = stocktakes_df.copy()
+        stl = stocktake_lines_df.copy()
+
+        stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+        stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+        stl["item_id"] = stl["item_id"].astype(str).str.strip()
+
+        stx = stx[stx["store_id"].astype(str).str.strip() == str(store_id).strip()].copy()
+        if stx.empty:
+            return 0.0
+
+        merged = stl.merge(stx[["stocktake_id", "stocktake_date"]], on="stocktake_id", how="inner")
+        merged = merged[merged["item_id"] == str(item_id).strip()].copy()
+        if merged.empty:
+            return 0.0
+
+        merged["__date"] = merged["stocktake_date"].apply(_parse_date)
+        merged = merged.sort_values("__date", ascending=True)
+        latest = merged.iloc[-1].to_dict()
+
+        base_qty = _safe_float(latest.get("base_qty", 0))
+        base_unit = _norm(latest.get("base_unit", ""))
+
+        # 舊資料可能還沒有 base_qty / base_unit，就從原始值轉
+        if base_qty <= 0 or not base_unit:
+            raw_qty = _safe_float(latest.get("stock_qty", latest.get("qty", 0)))
+            raw_unit = _norm(latest.get("stock_unit", latest.get("unit_id", "")))
+
+            if raw_qty <= 0 or not raw_unit:
+                return 0.0
+
+            try:
+                base_qty, base_unit = convert_to_base(
+                    item_id=item_id,
+                    qty=raw_qty,
+                    from_unit=raw_unit,
+                    items_df=items_df,
+                    conversions_df=conversions_df,
+                    as_of_date=_parse_date(latest.get("stocktake_date")),
+                )
+            except Exception:
+                return round(raw_qty, 1)
+
+        try:
+            if display_unit == base_unit:
+                return round(base_qty, 1)
+
+            qty = convert_unit(
+                item_id=item_id,
+                qty=base_qty,
+                from_unit=base_unit,
+                to_unit=display_unit,
+                conversions_df=conversions_df,
+                as_of_date=_parse_date(latest.get("stocktake_date")),
+            )
+            return round(qty, 1)
+        except Exception:
+            return round(base_qty, 1)
+
+    # ------------------------------------------------------------
+    # 價格
+    # ------------------------------------------------------------
+    def _get_latest_price_for_item(prices_df: pd.DataFrame, item_id: str, target_date: date) -> float:
+        if prices_df.empty or "item_id" not in prices_df.columns:
+            return 0.0
+
+        tmp = prices_df.copy()
+        for col in ["effective_date", "end_date", "unit_price", "is_active"]:
+            if col not in tmp.columns:
+                tmp[col] = ""
+
+        tmp = tmp[tmp["item_id"].astype(str).str.strip() == str(item_id).strip()].copy()
+        if tmp.empty:
+            return 0.0
+
+        tmp["__eff"] = tmp["effective_date"].apply(_parse_date)
+        tmp["__end"] = tmp["end_date"].apply(_parse_date)
+        tmp["__active"] = tmp["is_active"].apply(lambda x: (str(x).strip() == "" or _to_bool(x)))
+        tmp["unit_price"] = pd.to_numeric(tmp["unit_price"], errors="coerce").fillna(0)
+
+        tmp = tmp[tmp["__active"]]
+        tmp = tmp[
+            (tmp["__eff"].isna() | (tmp["__eff"] <= target_date))
+            & (tmp["__end"].isna() | (tmp["__end"] >= target_date))
+        ].copy()
+
+        if tmp.empty:
+            return 0.0
+
+        tmp = tmp.sort_values("__eff", ascending=True)
+        return float(tmp.iloc[-1]["unit_price"])
+
+    # ------------------------------------------------------------
+    # 參考資料
     # ------------------------------------------------------------
     ref_rows = []
     item_meta = {}
@@ -725,8 +885,10 @@ def page_order_entry():
     for _, row in vendor_items.iterrows():
         item_id = _norm(row.get("item_id", ""))
         item_name = _item_display_name(row)
-        stock_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
-        order_unit = _norm(row.get("default_order_unit", "")) or _norm(row.get("base_unit", ""))
+
+        base_unit = _norm(row.get("base_unit", ""))
+        stock_unit = _norm(row.get("default_stock_unit", "")) or base_unit
+        order_unit = _norm(row.get("default_order_unit", "")) or base_unit
         price = _get_latest_price_for_item(prices_df, item_id, st.session_state.record_date)
 
         last_order_qty, _ = _get_last_po_summary(
@@ -757,6 +919,7 @@ def page_order_entry():
 
         item_meta[item_id] = {
             "item_name": item_name,
+            "base_unit": base_unit,
             "stock_unit": stock_unit,
             "order_unit": order_unit,
             "price": round(price, 1),
@@ -782,9 +945,6 @@ def page_order_entry():
     h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
     h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
 
-    # ------------------------------------------------------------
-    # 主表單
-    # ------------------------------------------------------------
     with st.form("order_entry_form"):
         submit_rows = []
 
@@ -842,7 +1002,6 @@ def page_order_entry():
         submitted = st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True)
 
     if submitted:
-        # 先寫盤點
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
 
@@ -871,7 +1030,7 @@ def page_order_entry():
             stocktake_line_id = get_next_id("stocktake_lines")
 
             try:
-                base_qty, base_unit = convert_to_base(
+                stock_base_qty, stock_base_unit = convert_to_base(
                     item_id=r["item_id"],
                     qty=r["stock_qty"],
                     from_unit=r["stock_unit"],
@@ -880,8 +1039,8 @@ def page_order_entry():
                     as_of_date=st.session_state.record_date,
                 )
             except Exception:
-                base_qty = r["stock_qty"]
-                base_unit = r["stock_unit"]
+                stock_base_qty = r["stock_qty"]
+                stock_base_unit = r["stock_unit"]
 
             line_row = {c: "" for c in stl_header}
             defaults_line = {
@@ -892,8 +1051,8 @@ def page_order_entry():
                 "stock_qty": str(r["stock_qty"]),
                 "unit_id": r["stock_unit"],
                 "stock_unit": r["stock_unit"],
-                "base_qty": str(round(base_qty, 3)),
-                "base_unit": base_unit,
+                "base_qty": str(round(stock_base_qty, 3)),
+                "base_unit": stock_base_unit,
                 "created_at": now,
                 "created_by": "SYSTEM",
                 "updated_at": "",
@@ -905,7 +1064,6 @@ def page_order_entry():
 
             append_row_by_header("stocktake_lines", stl_header, line_row)
 
-        # 有叫貨才寫 PO
         order_rows = [r for r in submit_rows if r["order_qty"] > 0]
         po_id = ""
 
@@ -938,7 +1096,7 @@ def page_order_entry():
                 po_line_id = get_next_id("purchase_order_lines")
 
                 try:
-                    base_qty, base_unit = convert_to_base(
+                    order_base_qty, order_base_unit = convert_to_base(
                         item_id=r["item_id"],
                         qty=r["order_qty"],
                         from_unit=r["order_unit"],
@@ -947,8 +1105,8 @@ def page_order_entry():
                         as_of_date=st.session_state.record_date,
                     )
                 except Exception:
-                    base_qty = r["order_qty"]
-                    base_unit = r["order_unit"]
+                    order_base_qty = r["order_qty"]
+                    order_base_unit = r["order_unit"]
 
                 line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
 
@@ -961,8 +1119,8 @@ def page_order_entry():
                     "order_qty": str(r["order_qty"]),
                     "unit_id": r["order_unit"],
                     "order_unit": r["order_unit"],
-                    "base_qty": str(round(base_qty, 3)),
-                    "base_unit": base_unit,
+                    "base_qty": str(round(order_base_qty, 3)),
+                    "base_unit": order_base_unit,
                     "unit_price": str(r["unit_price"]),
                     "amount": str(line_amount),
                     "line_amount": str(line_amount),
@@ -1014,3 +1172,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
