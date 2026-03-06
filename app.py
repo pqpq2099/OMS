@@ -9,14 +9,14 @@ st.set_page_config(page_title="OMS Compact Row Test", layout="wide")
 # [1] Tuning knobs (你只改這裡)
 # ============================================================
 # 欄位間距
-DESKTOP_GAP_PX = 10
-MOBILE_GAP_PX = 8
+DESKTOP_GAP_PX = 3
+MOBILE_GAP_PX = 1
 
 # 右側區塊內：兩個數字欄的比例（越小越窄）
 # 注意：這是「比例」，不是 px。Streamlit 用比例分配寬度
-NUM_RATIO = 1.0
-NUM_RATIO_2 = 1.0
-TOGGLE_RATIO = 2.2
+NUM_RATIO = 0.1
+NUM_RATIO_2 = 0.1
+TOGGLE_RATIO = 0.1
 
 # 卡片內 padding
 CARD_PAD_Y = 10
@@ -217,3 +217,4 @@ for it in items:
 
 with st.expander("Debug"):
     st.write(st.session_state)
+
