@@ -1143,7 +1143,7 @@ for r in submit_rows:
     bust_cache()
     st.success(f"✅ 已儲存庫存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
 
-        if st.button("返回廠商列表", use_container_width=True):
+    if st.button("返回廠商列表", use_container_width=True):
             st.session_state.step = "select_vendor"
             st.rerun()
 
@@ -1177,6 +1177,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
