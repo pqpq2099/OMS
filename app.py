@@ -975,7 +975,8 @@ def page_order_entry():
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
-
+                st.caption(base_unit)   # ⭐ 庫存欄下方小字，固定顯示基準單位
+            
             with c3:
                 order_input = st.number_input(
                     "進",
@@ -986,7 +987,8 @@ def page_order_entry():
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
-
+                st.caption(order_unit)  # ⭐ 進貨欄下方小字，顯示目前叫貨單位
+    
             submit_rows.append(
                 {
                     "item_id": item_id,
@@ -1177,6 +1179,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
