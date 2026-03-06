@@ -1026,53 +1026,53 @@ def page_order_entry():
 
         append_row_by_header("stocktakes", stocktake_header, stocktake_row)
 
-for r in submit_rows:
+        # 只寫入有變動的庫存
+        for r in submit_rows:
+            if abs(r["stock_qty"] - item_meta[r["item_id"]]["current_stock_qty"]) < 0.0001:
+                continue
 
-    # 沒變動就不寫入
-    if abs(r["stock_qty"] - item_meta[r["item_id"]]["current_stock_qty"]) < 0.0001:
-        continue
+            stocktake_line_id = get_next_id("stocktake_lines")
 
-    stocktake_line_id = get_next_id("stocktake_lines")
+            try:
+                stock_base_qty, stock_base_unit = convert_to_base(
+                    item_id=r["item_id"],
+                    qty=r["stock_qty"],
+                    from_unit=r["stock_unit"],
+                    items_df=vendor_items,
+                    conversions_df=conversions_df,
+                    as_of_date=st.session_state.record_date,
+                )
+            except Exception:
+                stock_base_qty = r["stock_qty"]
+                stock_base_unit = r["stock_unit"]
 
-    try:
-        stock_base_qty, stock_base_unit = convert_to_base(
-            item_id=r["item_id"],
-            qty=r["stock_qty"],
-            from_unit=r["stock_unit"],
-            items_df=vendor_items,
-            conversions_df=conversions_df,
-            as_of_date=st.session_state.record_date,
-        )
-    except Exception:
-        stock_base_qty = r["stock_qty"]
-        stock_base_unit = r["stock_unit"]
+            line_row = {c: "" for c in stl_header}
+            defaults_line = {
+                "stocktake_line_id": stocktake_line_id,
+                "stocktake_id": stocktake_id,
+                "item_id": r["item_id"],
+                "qty": str(r["stock_qty"]),
+                "stock_qty": str(r["stock_qty"]),
+                "unit_id": r["stock_unit"],
+                "stock_unit": r["stock_unit"],
+                "base_qty": str(round(stock_base_qty, 3)),
+                "base_unit": stock_base_unit,
+                "created_at": now,
+                "created_by": "SYSTEM",
+                "updated_at": "",
+                "updated_by": "",
+            }
+            for k, v in defaults_line.items():
+                if k in line_row:
+                    line_row[k] = v
 
-    line_row = {c: "" for c in stl_header}
-    defaults_line = {
-        "stocktake_line_id": stocktake_line_id,
-        "stocktake_id": stocktake_id,
-        "item_id": r["item_id"],
-        "qty": str(r["stock_qty"]),
-        "stock_qty": str(r["stock_qty"]),
-        "unit_id": r["stock_unit"],
-        "stock_unit": r["stock_unit"],
-        "base_qty": str(round(stock_base_qty, 3)),
-        "base_unit": stock_base_unit,
-        "created_at": now,
-        "created_by": "SYSTEM",
-        "updated_at": "",
-        "updated_by": "",
-    }
-    for k, v in defaults_line.items():
-        if k in line_row:
-            line_row[k] = v
+            append_row_by_header("stocktake_lines", stl_header, line_row)
 
-    append_row_by_header("stocktake_lines", stl_header, line_row)
+        # 只寫入有叫貨的品項
+        order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+        po_id = ""
 
-    order_rows = [r for r in submit_rows if r["order_qty"] > 0]
-    po_id = ""
-
-    if order_rows:
+        if order_rows:
             po_header = get_header("purchase_orders")
             pol_header = get_header("purchase_order_lines")
 
@@ -1140,10 +1140,10 @@ for r in submit_rows:
 
                 append_row_by_header("purchase_order_lines", pol_header, pol_row)
 
-    bust_cache()
-    st.success(f"✅ 已儲存庫存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
+        bust_cache()
+        st.success(f"✅ 已儲存庫存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
 
-    if st.button("返回廠商列表", use_container_width=True):
+        if st.button("返回廠商列表", use_container_width=True):
             st.session_state.step = "select_vendor"
             st.rerun()
 
@@ -1177,6 +1177,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
