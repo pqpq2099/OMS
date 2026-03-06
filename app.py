@@ -953,7 +953,8 @@ def page_order_entry():
             meta = item_meta[item_id]
 
             item_name = meta["item_name"]
-            stock_unit = meta["stock_unit"]
+            base_unit = meta["base_unit"]
+            stock_unit = base_unit
             order_unit = meta["order_unit"]
             current_stock_qty = _safe_float(meta["current_stock_qty"])
             price = _safe_float(meta["price"])
@@ -963,7 +964,9 @@ def page_order_entry():
 
             with c1:
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
-                st.caption(f"{stock_unit} (前結:{current_stock_qty:.1f} | 單價:{price:.1f} | 💡建議:{suggest_qty:.1f})")
+                st.caption(
+                    f"{base_unit} (前結:{current_stock_qty:.1f} | 單價:{price:.1f} | 💡建議:{suggest_qty:.1f})"
+                )
 
             with c2:
                 stock_input = st.number_input(
@@ -975,24 +978,20 @@ def page_order_entry():
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
-                st.caption(base_unit)   # ⭐ 庫存欄下方小字，固定顯示基準單位
-            
+                st.caption(base_unit)
+
             with c3:
-                order_input = st.number_input(...)
+                order_input = st.number_input(
+                    "進",
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    value=0.0,
+                    key=f"order_{item_id}",
+                    label_visibility="collapsed",
+                )
                 st.caption(order_unit)
-            
-                if st.button("單位", key=f"btn_unit_{item_id}"):
-                    st.session_state[f"show_unit_{item_id}"] = not st.session_state.get(f"show_unit_{item_id}", False)
-            
-                if st.session_state.get(f"show_unit_{item_id}", False):
-                    selected_unit = st.selectbox(
-                        "選單位",
-                        options=orderable_unit_options,
-                        key=f"select_unit_{item_id}",
-                        label_visibility="collapsed",
-                    )
-                st.caption(order_unit)  # ⭐ 進貨欄下方小字，顯示目前叫貨單位
-    
+
             submit_rows.append(
                 {
                     "item_id": item_id,
@@ -1183,6 +1182,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
