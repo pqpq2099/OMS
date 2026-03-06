@@ -1002,8 +1002,7 @@ def page_order_entry():
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
-
-                selected_order_unit = st.selectbox(
+            
                     "進貨單位",
                     options=orderable_unit_options,
                     index=orderable_unit_options.index(order_unit) if order_unit in orderable_unit_options else 0,
@@ -1202,6 +1201,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
