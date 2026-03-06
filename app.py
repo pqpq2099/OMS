@@ -21,6 +21,7 @@ import gspread
 from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
+st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
 
 # ============================================================
 # Basic helpers
@@ -971,6 +972,26 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, e
 
 def main():
     page_header()
+    st.subheader("測試區")
+
+    df_items = pd.DataFrame([
+        {"item_id": "ING_001", "base_unit": "KG"}
+    ])
+
+    df_conv = pd.DataFrame([
+        {"item_id": "ING_001", "from_unit": "箱", "to_unit": "包", "multiplier": 8, "is_active": True},
+        {"item_id": "ING_001", "from_unit": "包", "to_unit": "KG", "multiplier": 1, "is_active": True},
+    ])
+
+    base_qty, base_unit = convert_to_base(
+        item_id="ING_001",
+        qty=1,
+        from_unit="箱",
+        items_df=df_items,
+        conversions_df=df_conv
+    )
+
+    st.write("測試結果：", base_qty, base_unit)
 
     sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
     actor_user_id, actor_role = sidebar_actor_selector()
@@ -1042,5 +1063,4 @@ def main():
 
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
     main()
