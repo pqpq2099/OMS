@@ -917,11 +917,21 @@ def page_order_entry():
             }
         )
 
+        orderable_units_raw = _norm(row.get("orderable_units", ""))
+        orderable_unit_options = [u.strip() for u in orderable_units_raw.split(",") if u.strip()]
+
+        if order_unit and order_unit not in orderable_unit_options:
+            orderable_unit_options.insert(0, order_unit)
+
+        if not orderable_unit_options:
+            orderable_unit_options = [order_unit] if order_unit else [base_unit]
+
         item_meta[item_id] = {
             "item_name": item_name,
             "base_unit": base_unit,
             "stock_unit": stock_unit,
             "order_unit": order_unit,
+            "orderable_unit_options": orderable_unit_options,
             "price": round(price, 1),
             "current_stock_qty": round(current_stock_qty, 1),
             "suggest_qty": 0.0,
@@ -980,6 +990,8 @@ def page_order_entry():
                 )
                 st.caption(base_unit)
 
+            orderable_unit_options = meta["orderable_unit_options"]
+
             with c3:
                 order_input = st.number_input(
                     "進",
@@ -988,6 +1000,14 @@ def page_order_entry():
                     format="%.1f",
                     value=float(suggest_qty),
                     key=f"order_{item_id}",
+                    label_visibility="collapsed",
+                )
+
+                selected_order_unit = st.selectbox(
+                    "進貨單位",
+                    options=orderable_unit_options,
+                    index=orderable_unit_options.index(order_unit) if order_unit in orderable_unit_options else 0,
+                    key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
                 st.caption(base_unit)
@@ -999,7 +1019,7 @@ def page_order_entry():
                     "stock_qty": float(stock_input),
                     "stock_unit": stock_unit,
                     "order_qty": float(order_input),
-                    "order_unit": order_unit,
+                    "order_unit": selected_order_unit,
                     "unit_price": float(price),
                 }
             )
@@ -1182,6 +1202,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
