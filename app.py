@@ -1,14 +1,11 @@
 # ============================================================
-# ORIVIA OMS Admin UI (Stable + Cache + Actor Selector + RBAC)
-# Single-file app.py for GitHub + Streamlit Cloud
-#
-# B2: Global rate limit (4 req/s) + retry/backoff
-# + Header cache (avoid repeated get_all_values for header)
-# + Proper navigation (nav_target) to avoid StreamlitAPIException
+# ORIVIA OMS Admin UI
+# Stable + Cache + Actor Selector + RBAC
+# + Purchase Orders / Create
 # ============================================================
 
 from __future__ import annotations
-from oms_engine import convert_to_base
+
 from pathlib import Path
 from datetime import timedelta, date
 import time
@@ -20,6 +17,8 @@ import pandas as pd
 import gspread
 from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
+
+from oms_engine import convert_to_base
 
 st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
 
@@ -34,7 +33,7 @@ def fail(msg: str):
 
 def page_header():
     st.title("ORIVIA OMS Admin UI")
-    st.caption("BUILD: stable + cache + actor + rbac")
+    st.caption("BUILD: stable + cache + actor + rbac + purchase orders")
 
 
 def sidebar_system_config():
@@ -78,7 +77,7 @@ def _parse_date(s) -> date | None:
 
 
 # ============================================================
-# Actor + Role (方案1：UI選操作者)
+# Actor + Role
 # ============================================================
 
 ACTOR_OPTIONS = ["OWNER", "ADMIN_01", "ADMIN_02", "ADMIN_03"]
@@ -122,13 +121,10 @@ def sidebar_actor_selector():
 
 
 # ============================================================
-# Global rate limiter (B2: 4 req/sec)
+# Global rate limiter
 # ============================================================
 
 class RateLimiter:
-    """
-    Simple sliding-window limiter: allow at most `rate` events per `per` seconds.
-    """
     def __init__(self, rate: int = 4, per: float = 1.0):
         self.rate = int(rate)
         self.per = float(per)
@@ -137,7 +133,6 @@ class RateLimiter:
     def acquire(self):
         now = time.monotonic()
 
-        # drop old
         while self._q and (now - self._q[0]) >= self.per:
             self._q.popleft()
 
@@ -145,7 +140,6 @@ class RateLimiter:
             self._q.append(now)
             return
 
-        # need wait until oldest expires
         wait = self.per - (now - self._q[0])
         if wait > 0:
             time.sleep(wait)
@@ -158,7 +152,6 @@ class RateLimiter:
 
 @st.cache_resource(show_spinner=False)
 def get_rate_limiter_b2():
-    # B2: 4 requests per second
     return RateLimiter(rate=4, per=1.0)
 
 
@@ -168,10 +161,10 @@ def _is_retryable_api_error(e: Exception) -> bool:
             code = int(getattr(e.response, "status_code", 0) or 0)
         except Exception:
             code = 0
-        # 429 too many requests; 5xx transient
+
         if code == 429 or (500 <= code <= 599):
             return True
-        # Sometimes APIError contains JSON with "code"
+
         try:
             payload = getattr(e, "response", None)
             if payload is not None and hasattr(payload, "json"):
@@ -181,18 +174,16 @@ def _is_retryable_api_error(e: Exception) -> bool:
                     return True
         except Exception:
             pass
+
         return False
-    # network-ish transient
+
     return False
 
 
 def _with_retry(fn, *, tries: int = 6, base_sleep: float = 0.6):
-    """
-    Retry with exponential backoff + jitter, while also passing through global limiter.
-    """
     limiter = get_rate_limiter_b2()
-
     last_err = None
+
     for i in range(tries):
         try:
             limiter.acquire()
@@ -202,10 +193,9 @@ def _with_retry(fn, *, tries: int = 6, base_sleep: float = 0.6):
             if not _is_retryable_api_error(e):
                 raise
 
-            # exponential backoff with jitter
             sleep = base_sleep * (2 ** i)
             sleep = min(sleep, 8.0)
-            sleep = sleep * (0.85 + random.random() * 0.3)  # jitter
+            sleep = sleep * (0.85 + random.random() * 0.3)
             time.sleep(sleep)
 
     raise last_err
@@ -248,9 +238,6 @@ class GoogleSheetsRepo:
         return _with_retry(lambda: ws.get_all_values())
 
     def fetch_header(self, table: str) -> list[str]:
-        """
-        只取第一列（header），比 get_all_values() 便宜很多。
-        """
         ws = self.get_ws(table)
         return _with_retry(lambda: ws.row_values(1))
 
@@ -294,7 +281,7 @@ class GoogleSheetsRepo:
 
 
 # ============================================================
-# Cache layer (quota protection)
+# Cache layer
 # ============================================================
 
 @st.cache_resource(show_spinner=False)
@@ -304,9 +291,6 @@ def get_repo_cached(sheet_id: str, creds_path: str | None):
 
 @st.cache_data(show_spinner=False, ttl=600)
 def cached_header(sheet_id: str, creds_path: str, table: str) -> list[str]:
-    """
-    Header cache (10 min). creds_path 在 Cloud 可傳空字串。
-    """
     repo = get_repo_cached(sheet_id, None if not creds_path else creds_path)
     return repo.fetch_header(table)
 
@@ -347,15 +331,12 @@ def read_table_with_rownum(repo: GoogleSheetsRepo, sheet_id: str, creds_path: st
     header = values[0]
     rows = values[1:]
     df = pd.DataFrame(rows, columns=header)
-    df["_row"] = list(range(2, 2 + len(rows)))  # header row=1
+    df["_row"] = list(range(2, 2 + len(rows)))
     return df
 
 
 # ============================================================
-# Audit (best-effort)
-# Supports either:
-# 1) {ts, actor, action, entity, detail}  (legacy)
-# 2) {ts, env, action, table, entity_id, actor_user_id, before_json, after_json, note} (your current sheet)
+# Audit
 # ============================================================
 
 def try_append_audit(
@@ -376,7 +357,6 @@ def try_append_audit(
         header = get_header(repo, sheet_id, creds_path, audit_sheet)
         row = {c: "" for c in header}
 
-        # v2
         mapping_v2 = {
             "ts": _now_ts(),
             "env": env,
@@ -388,7 +368,7 @@ def try_append_audit(
             "after_json": after_json,
             "note": note,
         }
-        # v1 fallback
+
         mapping_v1 = {
             "ts": _now_ts(),
             "actor": actor_user_id,
@@ -410,7 +390,7 @@ def try_append_audit(
 
 
 # ============================================================
-# ID Generator (from id_sequences)
+# ID Generator
 # ============================================================
 
 def _make_id(prefix: str, width: int, n: int) -> str:
@@ -441,7 +421,7 @@ def get_next_id(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, key: str
     next_value = int(rec["next_value"])
 
     new_id = _make_id(prefix, width, next_value)
-    sheet_row_index = int(hit.index[0]) + 2  # + header row
+    sheet_row_index = int(hit.index[0]) + 2
 
     updated = rec.copy()
     updated["next_value"] = str(next_value + 1)
@@ -462,7 +442,7 @@ def get_next_id(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, key: str
 
 
 # ============================================================
-# Pages (Admin only)
+# Pages
 # ============================================================
 
 def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, env: str, actor_user_id: str):
@@ -504,7 +484,6 @@ def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, 
         "updated_by": "",
     }
 
-    # fill missing columns (future-proof)
     for c in header:
         if c not in new_vendor:
             new_vendor[c] = ""
@@ -538,7 +517,6 @@ def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, en
         st.warning("請輸入單位名稱")
         st.stop()
 
-    # Fail-fast: unit_name 必須唯一（避免重複）
     units_df = read_table(repo, sheet_id, creds_path, "units")
     if not units_df.empty and "unit_name" in units_df.columns:
         existed = units_df["unit_name"].astype(str).str.strip()
@@ -614,9 +592,9 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, en
 
     col_u1, col_u2 = st.columns(2)
     with col_u1:
-        stock_unit_label = st.selectbox("庫存單位 stock_unit", options=unit_options) if unit_options else st.text_input("庫存單位 stock_unit（先手輸入）")
+        stock_unit_label = st.selectbox("庫存單位 default_stock_unit", options=unit_options) if unit_options else st.text_input("庫存單位 default_stock_unit")
     with col_u2:
-        order_unit_label = st.selectbox("叫貨單位 order_unit", options=unit_options) if unit_options else st.text_input("叫貨單位 order_unit（先手輸入）")
+        order_unit_label = st.selectbox("叫貨單位 default_order_unit", options=unit_options) if unit_options else st.text_input("叫貨單位 default_order_unit")
 
     stock_unit = unit_map.get(stock_unit_label, stock_unit_label).strip() if isinstance(stock_unit_label, str) else ""
     order_unit = unit_map.get(order_unit_label, order_unit_label).strip() if isinstance(order_unit_label, str) else ""
@@ -642,6 +620,7 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, en
     item_id = get_next_id(repo, sheet_id, creds_path, key="items", env=env, actor_user_id=actor_user_id)
     now = _now_ts()
 
+    # base_unit 先預設等於 default_stock_unit，之後你可再調整
     new_item = {
         "item_id": item_id,
         "brand_id": "",
@@ -650,8 +629,10 @@ def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, en
         "item_name": item_name,
         "item_name_zh": item_name_zh,
         "item_name_en": item_name_en,
-        "stock_unit": stock_unit,
-        "order_unit": order_unit,
+        "base_unit": stock_unit,
+        "default_stock_unit": stock_unit,
+        "default_order_unit": order_unit,
+        "orderable_units": order_unit,
         "is_active": _to_bool_str(is_active),
         "audit": "",
         "note": "",
@@ -699,7 +680,6 @@ def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, acto
     st.write("你選到：", pick)
 
     if st.button("✏️ 進入 Edit", use_container_width=True):
-        # ✅ 正規作法：用 nav_target，避免改動已存在的 radio key
         st.session_state["edit_item_id"] = pick
         st.session_state["nav_target"] = "Items / Edit"
         st.rerun()
@@ -731,7 +711,7 @@ def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, acto
 
 
 def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, env: str, actor_user_id: str, audit_sheet: str):
-    require_role("Admin", role_of(actor_user_id))  # ✅ 店長不能改價格（你選 A）
+    require_role("Admin", role_of(actor_user_id))
 
     st.subheader("Admin / Prices / Create")
     st.markdown("### 新增價格（歷史價格）")
@@ -966,32 +946,243 @@ def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, e
     st.rerun()
 
 
+def page_purchase_orders_create(
+    repo: GoogleSheetsRepo,
+    sheet_id: str,
+    creds_path: str,
+    env: str,
+    actor_user_id: str,
+    audit_sheet: str,
+):
+    require_role("Admin", role_of(actor_user_id))
+
+    st.subheader("Admin / Purchase Orders / Create")
+    st.markdown("### 新增叫貨單")
+
+    items_df = read_table(repo, sheet_id, creds_path, "items")
+    conv_df = read_table(repo, sheet_id, creds_path, "unit_conversions")
+    prices_df = read_table(repo, sheet_id, creds_path, "prices")
+
+    if items_df.empty:
+        st.warning("items 沒有資料，請先建立品項")
+        return
+
+    if "is_active" in items_df.columns:
+        items_df = items_df[items_df["is_active"].astype(str).str.upper() == "TRUE"]
+
+    if items_df.empty:
+        st.warning("沒有啟用中的品項")
+        return
+
+    def _item_label(r):
+        name = str(r.get("item_name_zh", "")).strip()
+        if not name:
+            name = str(r.get("item_name", "")).strip()
+        iid = str(r.get("item_id", "")).strip()
+        return f"{name} ({iid})" if name else iid
+
+    item_map = {
+        _item_label(r): str(r.get("item_id", "")).strip()
+        for _, r in items_df.iterrows()
+        if str(r.get("item_id", "")).strip()
+    }
+
+    item_label = st.selectbox("品項", options=list(item_map.keys()))
+    item_id = item_map[item_label]
+
+    item_row = items_df[items_df["item_id"].astype(str) == str(item_id)]
+    if item_row.empty:
+        st.error("找不到品項資料")
+        return
+
+    item_rec = item_row.iloc[0].to_dict()
+
+    default_order_unit = str(item_rec.get("default_order_unit", "")).strip()
+    orderable_units_raw = str(item_rec.get("orderable_units", "")).strip()
+
+    order_unit_options = []
+    if orderable_units_raw:
+        order_unit_options = [u.strip() for u in orderable_units_raw.split(",") if u.strip()]
+
+    if default_order_unit and default_order_unit not in order_unit_options:
+        order_unit_options.insert(0, default_order_unit)
+
+    if not order_unit_options and default_order_unit:
+        order_unit_options = [default_order_unit]
+
+    if not order_unit_options:
+        st.warning("此品項沒有 default_order_unit / orderable_units，請先補主檔")
+        return
+
+    col1, col2, col3 = st.columns([2, 2, 2])
+
+    with col1:
+        order_date = st.date_input("叫貨日期", value=date.today())
+
+    with col2:
+        order_qty = st.number_input("叫貨數量", min_value=0.0, step=1.0, format="%.1f")
+
+    with col3:
+        order_unit = st.selectbox("叫貨單位", options=order_unit_options)
+
+    note = st.text_input("備註", value="").strip()
+
+    preview_ok = False
+    base_qty = None
+    base_unit = None
+
+    if order_qty > 0:
+        try:
+            base_qty, base_unit = convert_to_base(
+                item_id=item_id,
+                qty=order_qty,
+                from_unit=order_unit,
+                items_df=items_df,
+                conversions_df=conv_df,
+                as_of_date=order_date,
+            )
+            preview_ok = True
+            st.success(f"換算結果：{order_qty} {order_unit} → {base_qty:.3f} {base_unit}")
+        except Exception as e:
+            st.error(f"單位換算失敗：{e}")
+
+    unit_price = 0.0
+
+    if not prices_df.empty and "item_id" in prices_df.columns:
+        tmp = prices_df.copy()
+
+        for col in ["effective_date", "end_date", "unit_price", "is_active"]:
+            if col not in tmp.columns:
+                tmp[col] = ""
+
+        tmp = tmp[tmp["item_id"].astype(str) == str(item_id)].copy()
+
+        if not tmp.empty:
+            tmp["__eff"] = tmp["effective_date"].apply(_parse_date)
+            tmp["__end"] = tmp["end_date"].apply(_parse_date)
+            tmp["__active"] = tmp["is_active"].apply(
+                lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE")
+            )
+
+            tmp = tmp[tmp["__active"]]
+
+            tmp = tmp[
+                (tmp["__eff"].isna() | (tmp["__eff"] <= order_date)) &
+                (tmp["__end"].isna() | (tmp["__end"] >= order_date))
+            ].copy()
+
+            if not tmp.empty:
+                tmp = tmp.sort_values(by="__eff", ascending=True)
+                hit = tmp.iloc[-1].to_dict()
+                try:
+                    unit_price = float(hit.get("unit_price", 0) or 0)
+                except Exception:
+                    unit_price = 0.0
+
+    line_amount = float(order_qty) * float(unit_price)
+    st.caption(f"參考單價：{unit_price:.2f} ／ 小計：{line_amount:.2f}")
+
+    submit = st.button("✅ 建立叫貨單", use_container_width=True)
+
+    if not submit:
+        return
+
+    if order_qty <= 0:
+        st.warning("叫貨數量必須大於 0")
+        return
+
+    if not preview_ok:
+        st.warning("單位換算未成功，無法建立叫貨單")
+        return
+
+    po_header = get_header(repo, sheet_id, creds_path, "purchase_orders")
+    pol_header = get_header(repo, sheet_id, creds_path, "purchase_order_lines")
+
+    po_id = get_next_id(repo, sheet_id, creds_path, key="purchase_orders", env=env, actor_user_id=actor_user_id)
+    po_line_id = get_next_id(repo, sheet_id, creds_path, key="purchase_order_lines", env=env, actor_user_id=actor_user_id)
+
+    now = _now_ts()
+
+    po_row = {c: "" for c in po_header}
+    defaults_po = {
+        "po_id": po_id,
+        "brand_id": "",
+        "store_id": "",
+        "vendor_id": str(item_rec.get("vendor_id", "")).strip(),
+        "order_date": str(order_date),
+        "status": "draft",
+        "note": note,
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+    for k, v in defaults_po.items():
+        if k in po_row:
+            po_row[k] = v
+
+    repo.append_row_by_header("purchase_orders", po_header, po_row)
+
+    pol_row = {c: "" for c in pol_header}
+    defaults_pol = {
+        "po_line_id": po_line_id,
+        "po_id": po_id,
+        "item_id": item_id,
+        "qty": str(order_qty),
+        "order_qty": str(order_qty),
+        "unit_id": order_unit,
+        "order_unit": order_unit,
+        "base_qty": str(base_qty),
+        "base_unit": str(base_unit),
+        "unit_price": str(unit_price),
+        "amount": str(line_amount),
+        "line_amount": str(line_amount),
+        "note": note,
+        "created_at": now,
+        "created_by": actor_user_id,
+        "updated_at": "",
+        "updated_by": "",
+    }
+    for k, v in defaults_pol.items():
+        if k in pol_row:
+            pol_row[k] = v
+
+    repo.append_row_by_header("purchase_order_lines", pol_header, pol_row)
+    bust_cache()
+
+    try_append_audit(
+        repo=repo,
+        sheet_id=sheet_id,
+        creds_path=creds_path,
+        audit_sheet=audit_sheet,
+        env=env,
+        actor_user_id=actor_user_id,
+        action="CREATE_PURCHASE_ORDER",
+        table="purchase_orders",
+        entity_id=po_id,
+        note=f"item_id={item_id}, qty={order_qty}, unit={order_unit}, base_qty={base_qty}, base_unit={base_unit}",
+    )
+
+    st.success(f"✅ 建立成功：{po_id}")
+    st.json({
+        "po_id": po_id,
+        "po_line_id": po_line_id,
+        "item_id": item_id,
+        "qty": order_qty,
+        "unit": order_unit,
+        "base_qty": base_qty,
+        "base_unit": base_unit,
+        "unit_price": unit_price,
+        "amount": line_amount,
+    })
+
+
 # ============================================================
 # Main
 # ============================================================
 
 def main():
     page_header()
-    st.subheader("測試區")
-
-    df_items = pd.DataFrame([
-        {"item_id": "ING_001", "base_unit": "KG"}
-    ])
-
-    df_conv = pd.DataFrame([
-        {"item_id": "ING_001", "from_unit": "箱", "to_unit": "包", "multiplier": 8, "is_active": True},
-        {"item_id": "ING_001", "from_unit": "包", "to_unit": "KG", "multiplier": 1, "is_active": True},
-    ])
-
-    base_qty, base_unit = convert_to_base(
-        item_id="ING_001",
-        qty=1,
-        from_unit="箱",
-        items_df=df_items,
-        conversions_df=df_conv
-    )
-
-    st.write("測試結果：", base_qty, base_unit)
 
     sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
     actor_user_id, actor_role = sidebar_actor_selector()
@@ -999,7 +1190,6 @@ def main():
     if not sheet_id:
         fail("Sheet ID 不能空白。")
 
-    # Cloud: creds_path 不用
     cp = "" if "gcp" in st.secrets else creds_path
 
     if "gcp" not in st.secrets:
@@ -1026,16 +1216,15 @@ def main():
                 "Items / List",
                 "Items / Edit",
                 "Prices / Create",
+                "Purchase Orders / Create",
             ]
         else:
             pages = ["(No Access)"]
 
-        # ✅ nav_target：在 radio 建立「之前」先套用，避免 StreamlitAPIException
         if st.session_state.get("nav_target") in pages:
             st.session_state["nav_page"] = st.session_state["nav_target"]
             st.session_state["nav_target"] = None
 
-        # default
         st.session_state.setdefault("nav_page", pages[0])
 
         page = st.radio("Page", options=pages, key="nav_page", index=pages.index(st.session_state["nav_page"]))
@@ -1056,7 +1245,24 @@ def main():
         page_items_edit(repo, sheet_id=sheet_id, creds_path=cp, actor_user_id=actor_user_id)
 
     elif page == "Prices / Create":
-        page_prices_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id, audit_sheet=audit_sheet)
+        page_prices_create(
+            repo,
+            sheet_id=sheet_id,
+            creds_path=cp,
+            env=env,
+            actor_user_id=actor_user_id,
+            audit_sheet=audit_sheet,
+        )
+
+    elif page == "Purchase Orders / Create":
+        page_purchase_orders_create(
+            repo,
+            sheet_id=sheet_id,
+            creds_path=cp,
+            env=env,
+            actor_user_id=actor_user_id,
+            audit_sheet=audit_sheet,
+        )
 
     else:
         st.info("目前此角色沒有可用頁面。")
