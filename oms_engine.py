@@ -18,7 +18,6 @@ import gspread
 from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
-from oms_engine import convert_to_base
 
 st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
 
@@ -1270,3 +1269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
