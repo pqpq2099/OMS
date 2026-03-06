@@ -1072,7 +1072,7 @@ for r in submit_rows:
     order_rows = [r for r in submit_rows if r["order_qty"] > 0]
     po_id = ""
 
-        if order_rows:
+    if order_rows:
             po_header = get_header("purchase_orders")
             pol_header = get_header("purchase_order_lines")
 
@@ -1177,6 +1177,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
