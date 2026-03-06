@@ -16,15 +16,15 @@ st.set_page_config(page_title="OMS Compact Row Test (Full)", layout="wide")
 MOBILE_BREAKPOINT = 640  # px
 
 # 數字欄位寬度（手機/桌機）
-MOBILE_NUM_W = 2        # px
+MOBILE_NUM_W = 10        # px
 DESKTOP_NUM_W = 92       # px
 
 # 包箱切換區寬度（手機/桌機）
-MOBILE_TOGGLE_W = 2    # px
+MOBILE_TOGGLE_W = 10    # px
 DESKTOP_TOGGLE_W = 190   # px
 
 # 欄位間距（手機/桌機）
-MOBILE_GAP = 2           # px
+MOBILE_GAP = 5          # px
 DESKTOP_GAP = 10         # px
 
 # 輸入框高度（手機/桌機）
@@ -100,13 +100,21 @@ div[data-testid="stTextInput"] input{{
   }}
 }}
 
-/* --- 控制「數字欄位」寬度：用 wrapper class 精準鎖 --- */
-.numwrap-desktop div[data-testid="stTextInput"]{{ max-width: {DESKTOP_NUM_W}px !important; }}
-.numwrap-mobile  div[data-testid="stTextInput"]{{ max-width: {MOBILE_NUM_W}px !important; }}
+/* 只留一組 class，靠 media query 決定寬度 */
+.numwrap div[data-testid="stTextInput"]{ max-width: 92px !important; }
+.togglewrap div[role="radiogroup"]{ max-width: 190px !important; }
 
-/* --- 控制「包箱切換」寬度 --- */
-.togglewrap-desktop div[role="radiogroup"]{{ max-width: {DESKTOP_TOGGLE_W}px !important; }}
-.togglewrap-mobile  div[role="radiogroup"]{{ max-width: {MOBILE_TOGGLE_W}px !important; }}
+@media (max-width: 640px){
+  .numwrap div[data-testid="stTextInput"]{ max-width: 64px !important; }
+  .togglewrap div[role="radiogroup"]{ max-width: 140px !important; }
+
+  /* 手機欄位更靠近 */
+  div[data-testid="stHorizontalBlock"]{
+    gap: 6px !important;
+    flex-wrap: nowrap !important;
+  }
+  div[data-testid="column"]{ min-width: 0 !important; }
+}
 
 /* --- radio 做成小顆 pill，並縮高度 --- */
 div[role="radiogroup"]{{
@@ -197,7 +205,7 @@ for it in items:
 
         with c1:
             # 依螢幕套不同寬度 class（手機更小）
-            st.markdown('<div class="numwrap-mobile numwrap-desktop">', unsafe_allow_html=True)
+            st.markdown('<div class="numwrap">', unsafe_allow_html=True)
             st.text_input(
                 "庫存",
                 key=f"{it['id']}_stock_qty",
@@ -207,7 +215,7 @@ for it in items:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c2:
-            st.markdown('<div class="numwrap-mobile numwrap-desktop">', unsafe_allow_html=True)
+            st.markdown('<div class="numwrap">', unsafe_allow_html=True)
             st.text_input(
                 "叫貨",
                 key=f"{it['id']}_order_qty",
@@ -217,7 +225,7 @@ for it in items:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c3:
-            st.markdown('<div class="togglewrap-mobile togglewrap-desktop">', unsafe_allow_html=True)
+            st.markdown('<div class="togglewrap">', unsafe_allow_html=True)
             st.radio(
                 "叫貨單位",
                 ORDER_UNITS,
@@ -234,6 +242,7 @@ for it in items:
 # -------------------------
 with st.expander("Debug (session_state)"):
     st.write(st.session_state)
+
 
 
 
