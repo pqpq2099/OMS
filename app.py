@@ -1069,7 +1069,7 @@ for r in submit_rows:
 
     append_row_by_header("stocktake_lines", stl_header, line_row)
 
-        order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+    order_rows = [r for r in submit_rows if r["order_qty"] > 0]
         po_id = ""
 
         if order_rows:
@@ -1177,5 +1177,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
