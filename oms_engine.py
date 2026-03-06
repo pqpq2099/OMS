@@ -58,7 +58,7 @@ def _filter_active_conversions(
       - item_id
       - from_unit
       - to_unit
-      - multiplier
+      - ratio
     Optional columns:
       - is_active
       - effective_date
@@ -74,15 +74,15 @@ def _filter_active_conversions(
         if col in work.columns:
             work[col] = work[col].apply(_normalize_text)
 
-    if "multiplier" in work.columns:
-        work["multiplier"] = pd.to_numeric(work["multiplier"], errors="coerce")
+    if "ratio" in work.columns:
+        work["ratio"] = pd.to_numeric(work["ratio"], errors="coerce")
 
     # Filter item
     work = work[work["item_id"] == _normalize_text(item_id)]
 
-    # Filter valid multiplier
-    work = work[work["multiplier"].notna()]
-    work = work[work["multiplier"] > 0]
+    # Filter valid ratio
+    work = work[work["ratio"].notna()]
+    work = work[work["ratio"] > 0]
 
     # Filter active
     if "is_active" in work.columns:
@@ -111,21 +111,21 @@ def _filter_active_conversions(
 def _build_unit_graph(valid_df: pd.DataFrame) -> dict:
     """
     Build a graph of unit conversion rules.
-    A -> B uses multiplier
-    B -> A uses 1 / multiplier
+    A -> B uses ratio
+    B -> A uses 1 / ratio
     """
     graph = {}
 
     for _, row in valid_df.iterrows():
         from_unit = _normalize_text(row["from_unit"])
         to_unit = _normalize_text(row["to_unit"])
-        multiplier = float(row["multiplier"])
+        ratio = float(row["ratio"])
 
-        if not from_unit or not to_unit or multiplier <= 0:
+        if not from_unit or not to_unit or ratio <= 0:
             continue
 
-        graph.setdefault(from_unit, []).append((to_unit, multiplier))
-        graph.setdefault(to_unit, []).append((from_unit, 1 / multiplier))
+        graph.setdefault(from_unit, []).append((to_unit, ratio))
+        graph.setdefault(to_unit, []).append((from_unit, 1 / ratio))
 
     return graph
 
@@ -199,10 +199,10 @@ def convert_unit(
         if current_unit == to_unit:
             return qty * current_factor
 
-        for next_unit, multiplier in graph.get(current_unit, []):
+        for next_unit, ratio in graph.get(current_unit, []):
             if next_unit not in visited:
                 visited.add(next_unit)
-                queue.append((next_unit, current_factor * multiplier))
+                queue.append((next_unit, current_factor * ratio))
 
     raise ValueError(
         f"品項 {item_id} 無法從 {from_unit} 換算到 {to_unit}，請檢查 unit_conversions"
