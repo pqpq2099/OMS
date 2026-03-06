@@ -1,1271 +1,1015 @@
 # ============================================================
-# ORIVIA OMS Admin UI
-# Stable + Cache + Actor Selector + RBAC
-# + Purchase Orders / Create
+# ORIVIA OMS 2.0 - 作業頁版
+# 分店 -> 廠商 -> 同頁庫存/叫貨
+# Google Sheets DB version
 # ============================================================
 
 from __future__ import annotations
 
-from pathlib import Path
-from datetime import timedelta, date
-import time
-import random
 from collections import deque
+from datetime import date, datetime
+from pathlib import Path
+from typing import Optional
 
-import streamlit as st
-import pandas as pd
 import gspread
-from gspread.exceptions import APIError
+import pandas as pd
+import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from oms_engine import convert_to_base
+# ============================================================
+# [A1] Config
+# ============================================================
+DEFAULT_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"  # ORIVIA_OMS_DB
+LOCAL_SERVICE_ACCOUNT = "service_account.json"
 
-st.set_page_config(page_title="ORIVIA OMS Admin UI", layout="wide")
 
 # ============================================================
-# Basic helpers
+# [A2] Page / Global Style
 # ============================================================
-
-def fail(msg: str):
-    st.error(msg)
-    st.stop()
+st.set_page_config(page_title="OMS 系統", layout="centered")
 
 
-def page_header():
-    st.title("ORIVIA OMS Admin UI")
-    st.caption("BUILD: stable + cache + actor + rbac + purchase orders")
+def apply_global_style():
+    st.markdown(
+        """
+        <style>
+        /* 全域表格微縮 */
+        [data-testid="stTable"] td:nth-child(1),
+        [data-testid="stTable"] th:nth-child(1),
+        [data-testid="stDataFrame"] [role="row"] [role="gridcell"]:first-child {
+            display: none !important;
+        }
+
+        [data-testid="stTable"] td,
+        [data-testid="stTable"] th,
+        [data-testid="stDataFrame"] [role="gridcell"],
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            font-size: 11px !important;
+            font-weight: 400 !important;
+            padding: 4px 2px !important;
+            line-height: 1.1 !important;
+        }
+
+        [data-testid="stTable"] th,
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            font-weight: 600 !important;
+        }
+
+        /* number_input +/- 隱藏 */
+        div[data-testid="stNumberInputStepUp"],
+        div[data-testid="stNumberInputStepDown"] {
+            display: none !important;
+        }
+
+        input[type=number] {
+            -moz-appearance: textfield !important;
+            -webkit-appearance: none !important;
+            margin: 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-def sidebar_system_config():
-    with st.sidebar:
-        st.subheader("System Config")
+# ============================================================
+# [B1] Basic Helpers
+# ============================================================
+def _norm(v) -> str:
+    return str(v).strip() if v is not None else ""
 
-        sheet_id = st.text_input(
-            "Sheet ID",
-            value="1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ",
-        ).strip()
 
-        creds_path = st.text_input(
-            "Service Account JSON Path (local only)",
-            value="secrets/service_account.json",
-        ).strip()
+def _safe_float(v, default: float = 0.0) -> float:
+    try:
+        if v is None or str(v).strip() == "":
+            return float(default)
+        return float(v)
+    except Exception:
+        return float(default)
 
-        env = st.text_input("ENV", value="prod").strip()
-        audit_sheet = st.text_input("Audit Sheet", value="audit_log_test").strip()
 
-        st.caption("✅ Streamlit Cloud 會自動用 st.secrets['gcp']，不看本機路徑。")
+def _to_bool(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    text = str(v).strip().lower()
+    return text in {"true", "1", "yes", "y", "是"}
 
-    return sheet_id, creds_path, env, audit_sheet
+
+def _parse_date(v) -> Optional[date]:
+    if v is None:
+        return None
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+
+    text = str(v).strip()
+    if not text or text.lower() in {"nan", "none", "nat"}:
+        return None
+
+    try:
+        return pd.to_datetime(text).date()
+    except Exception:
+        return None
 
 
 def _now_ts() -> str:
     return pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _to_bool_str(v: bool) -> str:
-    return "TRUE" if bool(v) else "FALSE"
-
-
-def _parse_date(s) -> date | None:
-    s = str(s).strip()
-    if not s:
-        return None
-    try:
-        return pd.to_datetime(s, errors="raise").date()
-    except Exception:
-        return None
-
-
 # ============================================================
-# Actor + Role
+# [B2] Google Sheets Client
 # ============================================================
-
-ACTOR_OPTIONS = ["OWNER", "ADMIN_01", "ADMIN_02", "ADMIN_03"]
-
-ROLE_MAP = {
-    "OWNER": "Owner",
-    "ADMIN_01": "Admin",
-    "ADMIN_02": "Admin",
-    "ADMIN_03": "Admin",
-}
-
-ROLE_RANK = {"Owner": 3, "Admin": 2, "StoreManager": 1}
-
-
-def role_of(actor_user_id: str) -> str:
-    return ROLE_MAP.get(actor_user_id, "StoreManager")
-
-
-def require_role(min_role: str, actor_role: str):
-    if ROLE_RANK.get(actor_role, 0) < ROLE_RANK.get(min_role, 0):
-        st.warning("⚠️ 權限不足，無法進入此頁面。")
-        st.stop()
-
-
-def sidebar_actor_selector():
-    with st.sidebar:
-        st.divider()
-        st.subheader("Operator (方案1)")
-
-        actor_user_id = st.selectbox(
-            "操作者 actor_user_id",
-            options=ACTOR_OPTIONS,
-            index=0,
-            key="actor_user_id",
-        )
-
-        actor_role = role_of(actor_user_id)
-        st.caption(f"role: **{actor_role}**")
-
-    return actor_user_id, actor_role
-
-
-# ============================================================
-# Global rate limiter
-# ============================================================
-
-class RateLimiter:
-    def __init__(self, rate: int = 4, per: float = 1.0):
-        self.rate = int(rate)
-        self.per = float(per)
-        self._q = deque()
-
-    def acquire(self):
-        now = time.monotonic()
-
-        while self._q and (now - self._q[0]) >= self.per:
-            self._q.popleft()
-
-        if len(self._q) < self.rate:
-            self._q.append(now)
-            return
-
-        wait = self.per - (now - self._q[0])
-        if wait > 0:
-            time.sleep(wait)
-
-        now2 = time.monotonic()
-        while self._q and (now2 - self._q[0]) >= self.per:
-            self._q.popleft()
-        self._q.append(now2)
-
-
 @st.cache_resource(show_spinner=False)
-def get_rate_limiter_b2():
-    return RateLimiter(rate=4, per=1.0)
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
 
-
-def _is_retryable_api_error(e: Exception) -> bool:
-    if isinstance(e, APIError):
-        try:
-            code = int(getattr(e.response, "status_code", 0) or 0)
-        except Exception:
-            code = 0
-
-        if code == 429 or (500 <= code <= 599):
-            return True
-
-        try:
-            payload = getattr(e, "response", None)
-            if payload is not None and hasattr(payload, "json"):
-                j = payload.json()
-                c = int(j.get("error", {}).get("code", 0))
-                if c == 429 or (500 <= c <= 599):
-                    return True
-        except Exception:
-            pass
-
-        return False
-
-    return False
-
-
-def _with_retry(fn, *, tries: int = 6, base_sleep: float = 0.6):
-    limiter = get_rate_limiter_b2()
-    last_err = None
-
-    for i in range(tries):
-        try:
-            limiter.acquire()
-            return fn()
-        except Exception as e:
-            last_err = e
-            if not _is_retryable_api_error(e):
-                raise
-
-            sleep = base_sleep * (2 ** i)
-            sleep = min(sleep, 8.0)
-            sleep = sleep * (0.85 + random.random() * 0.3)
-            time.sleep(sleep)
-
-    raise last_err
-
-
-# ============================================================
-# Repo (Google Sheets)
-# ============================================================
-
-class GoogleSheetsRepo:
-    def __init__(self, sheet_id: str, creds_path: str | None = None):
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-
+    try:
         if "gcp" in st.secrets:
-            creds = Credentials.from_service_account_info(st.secrets["gcp"], scopes=scopes)
+            creds = Credentials.from_service_account_info(
+                dict(st.secrets["gcp"]),
+                scopes=scopes,
+            )
         else:
-            if not creds_path:
-                raise FileNotFoundError("Missing creds_path (service_account.json path)")
-            p = Path(creds_path)
+            p = Path(LOCAL_SERVICE_ACCOUNT)
             if not p.exists():
-                raise FileNotFoundError(f"No such file: {p}")
+                st.error(f"找不到本機金鑰：{LOCAL_SERVICE_ACCOUNT}")
+                return None
             creds = Credentials.from_service_account_file(str(p), scopes=scopes)
 
-        gc = _with_retry(lambda: gspread.authorize(creds))
-        self.sh = _with_retry(lambda: gc.open_by_key(sheet_id))
-        self._ws_cache: dict[str, gspread.Worksheet] = {}
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"Google Sheets 連線失敗：{e}")
+        return None
 
-    def get_ws(self, table: str) -> gspread.Worksheet:
-        if table in self._ws_cache:
-            return self._ws_cache[table]
-        ws = _with_retry(lambda: self.sh.worksheet(table))
-        self._ws_cache[table] = ws
-        return ws
-
-    def fetch_all_values(self, table: str) -> list[list[str]]:
-        ws = self.get_ws(table)
-        return _with_retry(lambda: ws.get_all_values())
-
-    def fetch_header(self, table: str) -> list[str]:
-        ws = self.get_ws(table)
-        return _with_retry(lambda: ws.row_values(1))
-
-    def append_row_by_header(self, table: str, header: list[str], row: dict):
-        ws = self.get_ws(table)
-
-        missing = [c for c in header if c not in row]
-        if missing:
-            raise ValueError(f"Append '{table}' missing fields: {missing}")
-
-        out = [row.get(c, "") for c in header]
-        _with_retry(lambda: ws.append_row(out, value_input_option="USER_ENTERED"))
-
-    def update_row_by_header(self, table: str, header: list[str], row_index_1based: int, new_row: dict):
-        ws = self.get_ws(table)
-
-        missing = [c for c in header if c not in new_row]
-        if missing:
-            raise ValueError(f"Update '{table}' missing fields: {missing}")
-
-        row_values = [new_row.get(c, "") for c in header]
-        start = gspread.utils.rowcol_to_a1(row_index_1based, 1)
-        end = gspread.utils.rowcol_to_a1(row_index_1based, len(header))
-        _with_retry(lambda: ws.update(f"{start}:{end}", [row_values], value_input_option="USER_ENTERED"))
-
-    def update_fields_by_row(self, table: str, header: list[str], row_index_1based: int, patch: dict):
-        ws = self.get_ws(table)
-        row_vals = _with_retry(lambda: ws.row_values(row_index_1based))
-        row_vals = row_vals + [""] * (len(header) - len(row_vals))
-        cur = dict(zip(header, row_vals))
-
-        for k, v in patch.items():
-            if k in header:
-                cur[k] = "" if v is None else str(v)
-
-        for c in header:
-            if c not in cur:
-                cur[c] = ""
-
-        self.update_row_by_header(table, header, row_index_1based, cur)
-
-
-# ============================================================
-# Cache layer
-# ============================================================
 
 @st.cache_resource(show_spinner=False)
-def get_repo_cached(sheet_id: str, creds_path: str | None):
-    return GoogleSheetsRepo(sheet_id=sheet_id, creds_path=creds_path)
+def get_spreadsheet():
+    client = get_gspread_client()
+    if not client:
+        return None
+
+    try:
+        sheet_id = st.secrets.get("sheet_id", DEFAULT_SHEET_ID) if hasattr(st.secrets, "get") else DEFAULT_SHEET_ID
+    except Exception:
+        sheet_id = DEFAULT_SHEET_ID
+
+    try:
+        return client.open_by_key(sheet_id)
+    except Exception as e:
+        st.error(f"開啟 Sheet 失敗：{e}")
+        return None
 
 
-@st.cache_data(show_spinner=False, ttl=600)
-def cached_header(sheet_id: str, creds_path: str, table: str) -> list[str]:
-    repo = get_repo_cached(sheet_id, None if not creds_path else creds_path)
-    return repo.fetch_header(table)
+# ============================================================
+# [B3] Sheet Read / Write
+# ============================================================
+@st.cache_data(show_spinner=False, ttl=60)
+def read_table(sheet_name: str) -> pd.DataFrame:
+    sh = get_spreadsheet()
+    if sh is None:
+        return pd.DataFrame()
+
+    try:
+        ws = sh.worksheet(sheet_name)
+        records = ws.get_all_records()
+        df = pd.DataFrame(records)
+        if not df.empty:
+            df.columns = [_norm(c) for c in df.columns]
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 
-@st.cache_data(show_spinner=False, ttl=120)
-def cached_table_values(sheet_id: str, creds_path: str, table: str, cache_bust: int) -> list[list[str]]:
-    repo = get_repo_cached(sheet_id, None if not creds_path else creds_path)
-    return repo.fetch_all_values(table)
+def get_header(sheet_name: str) -> list[str]:
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet(sheet_name)
+    header = ws.row_values(1)
+    if not header:
+        raise ValueError(f"{sheet_name} 沒有 header")
+    return [_norm(h) for h in header]
+
+
+def append_row_by_header(sheet_name: str, header: list[str], row: dict):
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet(sheet_name)
+    values = [row.get(col, "") for col in header]
+    ws.append_row(values, value_input_option="USER_ENTERED")
 
 
 def bust_cache():
-    st.session_state["cache_bust"] = int(st.session_state.get("cache_bust", 0)) + 1
     st.cache_data.clear()
 
 
-def get_header(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, table: str) -> list[str]:
-    h = cached_header(sheet_id, creds_path, table)
-    if not h:
-        raise ValueError(f"Table '{table}' has no header row.")
-    return h
-
-
-def read_table(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, table: str) -> pd.DataFrame:
-    bust = int(st.session_state.get("cache_bust", 0))
-    values = cached_table_values(sheet_id, creds_path, table, bust)
-    if not values:
-        return pd.DataFrame()
-    header = values[0]
-    rows = values[1:]
-    return pd.DataFrame(rows, columns=header)
-
-
-def read_table_with_rownum(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, table: str) -> pd.DataFrame:
-    bust = int(st.session_state.get("cache_bust", 0))
-    values = cached_table_values(sheet_id, creds_path, table, bust)
-    if not values:
-        return pd.DataFrame()
-    header = values[0]
-    rows = values[1:]
-    df = pd.DataFrame(rows, columns=header)
-    df["_row"] = list(range(2, 2 + len(rows)))
-    return df
-
-
 # ============================================================
-# Audit
+# [B4] ID Sequence
 # ============================================================
-
-def try_append_audit(
-    repo: GoogleSheetsRepo,
-    sheet_id: str,
-    creds_path: str,
-    audit_sheet: str,
-    env: str,
-    actor_user_id: str,
-    action: str,
-    table: str,
-    entity_id: str,
-    note: str,
-    before_json: str = "",
-    after_json: str = "",
-):
-    try:
-        header = get_header(repo, sheet_id, creds_path, audit_sheet)
-        row = {c: "" for c in header}
-
-        mapping_v2 = {
-            "ts": _now_ts(),
-            "env": env,
-            "action": action,
-            "table": table,
-            "entity_id": entity_id,
-            "actor_user_id": actor_user_id,
-            "before_json": before_json,
-            "after_json": after_json,
-            "note": note,
-        }
-
-        mapping_v1 = {
-            "ts": _now_ts(),
-            "actor": actor_user_id,
-            "action": action,
-            "entity": entity_id,
-            "detail": note,
-        }
-
-        used = mapping_v2 if ("actor_user_id" in row or "entity_id" in row or "before_json" in row) else mapping_v1
-
-        for k, v in used.items():
-            if k in row:
-                row[k] = v
-
-        repo.append_row_by_header(audit_sheet, header, row)
-        bust_cache()
-    except Exception:
-        return
-
-
-# ============================================================
-# ID Generator
-# ============================================================
-
 def _make_id(prefix: str, width: int, n: int) -> str:
     return f"{prefix}{str(n).zfill(int(width))}"
 
 
-def get_next_id(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, key: str, env: str, actor_user_id: str) -> str:
-    table = "id_sequences"
-    values = repo.fetch_all_values(table)
+def get_next_id(key: str, env: str = "prod") -> str:
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet("id_sequences")
+    values = ws.get_all_values()
     if not values or len(values) < 2:
-        raise ValueError("id_sequences is empty or missing header.")
+        raise ValueError("id_sequences 為空")
 
-    header = values[0]
+    header = [_norm(x) for x in values[0]]
     rows = values[1:]
-
-    required = {"key", "env", "prefix", "width", "next_value"}
-    if not required.issubset(set(header)):
-        raise ValueError(f"id_sequences missing columns: {sorted(list(required - set(header)))}")
-
     df = pd.DataFrame(rows, columns=header)
-    hit = df[(df["key"] == key) & (df["env"] == env)]
+
+    hit = df[(df["key"].astype(str).str.strip() == str(key).strip()) & (df["env"].astype(str).str.strip() == str(env).strip())]
     if hit.empty:
-        raise ValueError(f"id_sequences not found for key='{key}', env='{env}'")
+        raise ValueError(f"id_sequences 找不到 key={key}, env={env}")
 
     rec = hit.iloc[0].to_dict()
-    prefix = str(rec["prefix"])
-    width = int(rec["width"])
-    next_value = int(rec["next_value"])
+    prefix = _norm(rec.get("prefix", ""))
+    width = int(_safe_float(rec.get("width", 0), 0))
+    next_value = int(_safe_float(rec.get("next_value", 0), 0))
+
+    if not prefix or width <= 0 or next_value <= 0:
+        raise ValueError(f"id_sequences 設定錯誤：key={key}")
 
     new_id = _make_id(prefix, width, next_value)
-    sheet_row_index = int(hit.index[0]) + 2
 
-    updated = rec.copy()
-    updated["next_value"] = str(next_value + 1)
-    if "last_number" in updated:
-        updated["last_number"] = str(next_value)
-    if "updated_at" in updated:
-        updated["updated_at"] = _now_ts()
-    if "updated_by" in updated:
-        updated["updated_by"] = actor_user_id
+    row_index = int(hit.index[0]) + 2  # +1 header, +1 1-based
+    col_next_value = header.index("next_value") + 1
+    col_updated_at = header.index("updated_at") + 1 if "updated_at" in header else None
 
-    for c in header:
-        if c not in updated:
-            updated[c] = ""
+    ws.update_cell(row_index, col_next_value, str(next_value + 1))
+    if col_updated_at:
+        ws.update_cell(row_index, col_updated_at, _now_ts())
 
-    repo.update_row_by_header(table, header, sheet_row_index, updated)
     bust_cache()
     return new_id
 
 
 # ============================================================
-# Pages
+# [C1] Unit Conversion (self-contained)
 # ============================================================
+def _filter_active_conversions(
+    conversions_df: pd.DataFrame,
+    item_id: str,
+    as_of_date: Optional[date] = None,
+) -> pd.DataFrame:
+    if conversions_df is None or conversions_df.empty:
+        return pd.DataFrame()
 
-def page_vendors_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, env: str, actor_user_id: str):
-    require_role("Admin", role_of(actor_user_id))
+    work = conversions_df.copy()
 
-    st.subheader("Admin / Vendors / Create")
-    st.markdown("### 新增廠商")
+    for col in ["item_id", "from_unit", "to_unit"]:
+        if col in work.columns:
+            work[col] = work[col].astype(str).str.strip()
 
-    vendor_name = st.text_input("廠商名稱 (vendor_name)", value="").strip()
-    is_active = st.checkbox("啟用 (is_active)", value=True)
+    if "ratio" not in work.columns:
+        return pd.DataFrame()
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        submit = st.button("✅ 建立廠商", use_container_width=True)
-    with col2:
-        st.caption("ID 由 id_sequences 自動產生，並寫回 next_value。")
+    work["ratio"] = pd.to_numeric(work["ratio"], errors="coerce")
+    work = work[work["item_id"] == str(item_id).strip()]
+    work = work[work["ratio"].notna()]
+    work = work[work["ratio"] > 0]
 
-    if not submit:
-        return
+    if "is_active" in work.columns:
+        work = work[work["is_active"].apply(_to_bool)]
 
-    if not vendor_name:
-        st.warning("請輸入廠商名稱")
-        st.stop()
+    if as_of_date is not None:
+        if "effective_date" in work.columns:
+            work["_eff"] = work["effective_date"].apply(_parse_date)
+            work = work[work["_eff"].isna() | (work["_eff"] <= as_of_date)]
+        if "end_date" in work.columns:
+            work["_end"] = work["end_date"].apply(_parse_date)
+            work = work[work["_end"].isna() | (work["_end"] >= as_of_date)]
 
-    header = get_header(repo, sheet_id, creds_path, "vendors")
-    vendor_id = get_next_id(repo, sheet_id, creds_path, key="vendors", env=env, actor_user_id=actor_user_id)
-    now = _now_ts()
-
-    new_vendor = {
-        "vendor_id": vendor_id,
-        "brand_id": "",
-        "vendor_name": vendor_name,
-        "is_active": _to_bool_str(is_active),
-        "audit": "",
-        "note": "",
-        "created_at": now,
-        "created_by": actor_user_id,
-        "updated_at": "",
-        "updated_by": "",
-    }
-
-    for c in header:
-        if c not in new_vendor:
-            new_vendor[c] = ""
-
-    repo.append_row_by_header("vendors", header, new_vendor)
-    bust_cache()
-
-    st.success(f"✅ 建立成功：{vendor_name}（{vendor_id}）")
-    st.json(new_vendor)
+    return work.copy()
 
 
-def page_units_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, env: str, actor_user_id: str):
-    require_role("Admin", role_of(actor_user_id))
+def _build_unit_graph(valid_df: pd.DataFrame) -> dict:
+    graph = {}
 
-    st.subheader("Admin / Units / Create")
-    st.markdown("### 新增單位")
+    for _, row in valid_df.iterrows():
+        from_unit = _norm(row["from_unit"])
+        to_unit = _norm(row["to_unit"])
+        ratio = float(row["ratio"])
 
-    unit_name = st.text_input("單位名稱 (unit_name)", value="").strip()
-    is_active = st.checkbox("啟用 (is_active)", value=True)
+        if not from_unit or not to_unit or ratio <= 0:
+            continue
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        submit = st.button("✅ 建立單位", use_container_width=True)
-    with col2:
-        st.caption("ID 由 id_sequences 自動產生，並寫回 next_value。")
+        graph.setdefault(from_unit, []).append((to_unit, ratio))
+        graph.setdefault(to_unit, []).append((from_unit, 1 / ratio))
 
-    if not submit:
-        return
-
-    if not unit_name:
-        st.warning("請輸入單位名稱")
-        st.stop()
-
-    units_df = read_table(repo, sheet_id, creds_path, "units")
-    if not units_df.empty and "unit_name" in units_df.columns:
-        existed = units_df["unit_name"].astype(str).str.strip()
-        if (existed == unit_name).any():
-            st.error(f"已存在相同單位名稱：{unit_name}")
-            st.stop()
-
-    header = get_header(repo, sheet_id, creds_path, "units")
-    unit_id = get_next_id(repo, sheet_id, creds_path, key="units", env=env, actor_user_id=actor_user_id)
-    now = _now_ts()
-
-    new_unit = {
-        "unit_id": unit_id,
-        "unit_name": unit_name,
-        "is_active": _to_bool_str(is_active),
-        "note": "",
-        "created_at": now,
-        "created_by": actor_user_id,
-        "updated_at": "",
-        "updated_by": "",
-    }
-
-    for c in header:
-        if c not in new_unit:
-            new_unit[c] = ""
-
-    repo.append_row_by_header("units", header, new_unit)
-    bust_cache()
-
-    st.success(f"✅ 建立成功：{unit_name}（{unit_id}）")
-    st.json(new_unit)
+    return graph
 
 
-def page_items_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, env: str, actor_user_id: str):
-    require_role("Admin", role_of(actor_user_id))
+def get_base_unit(items_df: pd.DataFrame, item_id: str) -> str:
+    if items_df.empty:
+        raise ValueError("items 為空")
 
-    st.subheader("Admin / Items / Create")
-    st.markdown("### 新增品項")
+    work = items_df.copy()
+    work["item_id"] = work["item_id"].astype(str).str.strip()
 
-    vendors_df = read_table(repo, sheet_id, creds_path, "vendors")
-    if vendors_df.empty:
-        st.warning("沒有 vendors，請先建立廠商")
-        return
+    row = work[work["item_id"] == str(item_id).strip()]
+    if row.empty:
+        raise ValueError(f"items 找不到 item_id={item_id}")
 
-    if "is_active" in vendors_df.columns:
-        vendors_df = vendors_df[vendors_df["is_active"].astype(str).str.upper() == "TRUE"]
-
-    vendor_map = {
-        f"{row.get('vendor_name','')} ({row.get('vendor_id','')})": row.get("vendor_id", "")
-        for _, row in vendors_df.iterrows()
-        if str(row.get("vendor_id", "")).strip()
-    }
-    if not vendor_map:
-        st.warning("沒有可用的啟用廠商（vendors.is_active=TRUE）")
-        return
-
-    vendor_label = st.selectbox("選擇廠商", options=list(vendor_map.keys()))
-    vendor_id = vendor_map[vendor_label]
-
-    units_df = read_table(repo, sheet_id, creds_path, "units")
-    unit_map, unit_options = {}, []
-    if not units_df.empty and "unit_id" in units_df.columns:
-        if "is_active" in units_df.columns:
-            units_df = units_df[units_df["is_active"].astype(str).str.upper() == "TRUE"]
-
-        def _u_label(r):
-            name = str(r.get("unit_name", "")).strip() if "unit_name" in units_df.columns else ""
-            uid = str(r.get("unit_id", "")).strip()
-            return f"{name} ({uid})" if name else uid
-
-        unit_map = {_u_label(r): str(r.get("unit_id", "")).strip() for _, r in units_df.iterrows()}
-        unit_options = list(unit_map.keys())
-
-    col_u1, col_u2 = st.columns(2)
-    with col_u1:
-        stock_unit_label = st.selectbox("庫存單位 default_stock_unit", options=unit_options) if unit_options else st.text_input("庫存單位 default_stock_unit")
-    with col_u2:
-        order_unit_label = st.selectbox("叫貨單位 default_order_unit", options=unit_options) if unit_options else st.text_input("叫貨單位 default_order_unit")
-
-    stock_unit = unit_map.get(stock_unit_label, stock_unit_label).strip() if isinstance(stock_unit_label, str) else ""
-    order_unit = unit_map.get(order_unit_label, order_unit_label).strip() if isinstance(order_unit_label, str) else ""
-
-    item_name = st.text_input("品項名稱（內部） item_name", value="").strip()
-    item_name_zh = st.text_input("中文名稱 item_name_zh", value=item_name).strip()
-    item_name_en = st.text_input("英文名稱 item_name_en（可空）", value="").strip()
-    item_code = st.text_input("品項代碼 item_code（可空）", value="").strip()
-    is_active = st.checkbox("啟用", value=True)
-
-    submit = st.button("建立品項", use_container_width=True)
-    if not submit:
-        return
-
-    if not item_name:
-        st.warning("請輸入 item_name")
-        return
-    if not stock_unit or not order_unit:
-        st.warning("請選擇（或填寫）庫存單位與叫貨單位")
-        return
-
-    header = get_header(repo, sheet_id, creds_path, "items")
-    item_id = get_next_id(repo, sheet_id, creds_path, key="items", env=env, actor_user_id=actor_user_id)
-    now = _now_ts()
-
-    # base_unit 先預設等於 default_stock_unit，之後你可再調整
-    new_item = {
-        "item_id": item_id,
-        "brand_id": "",
-        "vendor_id": vendor_id,
-        "item_code": item_code,
-        "item_name": item_name,
-        "item_name_zh": item_name_zh,
-        "item_name_en": item_name_en,
-        "base_unit": stock_unit,
-        "default_stock_unit": stock_unit,
-        "default_order_unit": order_unit,
-        "orderable_units": order_unit,
-        "is_active": _to_bool_str(is_active),
-        "audit": "",
-        "note": "",
-        "created_at": now,
-        "created_by": actor_user_id,
-        "updated_at": "",
-        "updated_by": "",
-    }
-
-    for c in header:
-        if c not in new_item:
-            new_item[c] = ""
-
-    repo.append_row_by_header("items", header, new_item)
-    bust_cache()
-
-    st.success(f"✅ 建立成功：{item_name}（{item_id}）")
-    st.json(new_item)
+    base_unit = _norm(row.iloc[0].get("base_unit", ""))
+    if not base_unit:
+        raise ValueError(f"{item_id} 缺少 base_unit")
+    return base_unit
 
 
-def page_items_list(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, actor_user_id: str):
-    require_role("Admin", role_of(actor_user_id))
+def convert_unit(
+    item_id: str,
+    qty: float,
+    from_unit: str,
+    to_unit: str,
+    conversions_df: pd.DataFrame,
+    as_of_date: Optional[date] = None,
+) -> float:
+    item_id = _norm(item_id)
+    from_unit = _norm(from_unit)
+    to_unit = _norm(to_unit)
 
-    st.subheader("Admin / Items / List")
+    qty = float(qty)
+    if from_unit == to_unit:
+        return qty
 
-    df = read_table(repo, sheet_id, creds_path, "items")
-    if df.empty:
-        st.warning("items table 沒有資料")
-        return
-    if "item_id" not in df.columns:
-        st.error("items table 缺少 item_id 欄位")
-        return
+    valid_df = _filter_active_conversions(conversions_df, item_id, as_of_date)
+    if valid_df.empty:
+        raise ValueError(f"{item_id} 沒有有效換算規則")
 
-    st.dataframe(df, use_container_width=True)
+    graph = _build_unit_graph(valid_df)
+    if from_unit not in graph:
+        raise ValueError(f"{item_id} 缺少單位 {from_unit} 的換算")
+    if to_unit not in graph:
+        raise ValueError(f"{item_id} 缺少單位 {to_unit} 的換算")
 
-    st.divider()
-    st.markdown("### 🔎 選取一筆 → 進入 Edit")
+    queue = deque([(from_unit, 1.0)])
+    visited = {from_unit}
 
-    pick = st.selectbox(
-        "item_id",
-        options=df["item_id"].astype(str).tolist(),
-        index=0,
-        key="pick_item_id",
+    while queue:
+        current_unit, current_factor = queue.popleft()
+        if current_unit == to_unit:
+            return qty * current_factor
+
+        for next_unit, ratio in graph.get(current_unit, []):
+            if next_unit not in visited:
+                visited.add(next_unit)
+                queue.append((next_unit, current_factor * ratio))
+
+    raise ValueError(f"{item_id} 無法從 {from_unit} 換算到 {to_unit}")
+
+
+def convert_to_base(
+    item_id: str,
+    qty: float,
+    from_unit: str,
+    items_df: pd.DataFrame,
+    conversions_df: pd.DataFrame,
+    as_of_date: Optional[date] = None,
+):
+    base_unit = get_base_unit(items_df, item_id)
+    base_qty = convert_unit(
+        item_id=item_id,
+        qty=qty,
+        from_unit=from_unit,
+        to_unit=base_unit,
+        conversions_df=conversions_df,
+        as_of_date=as_of_date,
     )
-    st.write("你選到：", pick)
+    return base_qty, base_unit
 
-    if st.button("✏️ 進入 Edit", use_container_width=True):
-        st.session_state["edit_item_id"] = pick
-        st.session_state["nav_target"] = "Items / Edit"
+
+# ============================================================
+# [C2] Data Helpers
+# ============================================================
+def _get_active_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    if "is_active" in df.columns:
+        return df[df["is_active"].apply(_to_bool)].copy()
+    return df.copy()
+
+
+def _label_store(r) -> str:
+    name = _norm(r.get("store_name_zh", "")) or _norm(r.get("store_name", ""))
+    sid = _norm(r.get("store_id", ""))
+    return f"{name}" if name else sid
+
+
+def _label_vendor(r) -> str:
+    name = _norm(r.get("vendor_name", ""))
+    vid = _norm(r.get("vendor_id", ""))
+    return f"{name}" if name else vid
+
+
+def _get_latest_price_for_item(prices_df: pd.DataFrame, item_id: str, target_date: date) -> float:
+    if prices_df.empty or "item_id" not in prices_df.columns:
+        return 0.0
+
+    tmp = prices_df.copy()
+    for col in ["effective_date", "end_date", "unit_price", "is_active"]:
+        if col not in tmp.columns:
+            tmp[col] = ""
+
+    tmp = tmp[tmp["item_id"].astype(str).str.strip() == str(item_id).strip()].copy()
+    if tmp.empty:
+        return 0.0
+
+    tmp["__eff"] = tmp["effective_date"].apply(_parse_date)
+    tmp["__end"] = tmp["end_date"].apply(_parse_date)
+    tmp["__active"] = tmp["is_active"].apply(lambda x: (str(x).strip() == "" or _to_bool(x)))
+    tmp["unit_price"] = pd.to_numeric(tmp["unit_price"], errors="coerce").fillna(0)
+
+    tmp = tmp[tmp["__active"]]
+    tmp = tmp[
+        (tmp["__eff"].isna() | (tmp["__eff"] <= target_date))
+        & (tmp["__end"].isna() | (tmp["__end"] >= target_date))
+    ].copy()
+
+    if tmp.empty:
+        return 0.0
+
+    tmp = tmp.sort_values("__eff", ascending=True)
+    return float(tmp.iloc[-1]["unit_price"])
+
+
+def _get_last_po_summary(
+    po_df: pd.DataFrame,
+    pol_df: pd.DataFrame,
+    store_id: str,
+    vendor_id: str,
+    item_id: str,
+):
+    if po_df.empty or pol_df.empty:
+        return 0.0, ""
+
+    need_po = {"po_id", "store_id", "vendor_id", "order_date"}
+    need_pol = {"po_id", "item_id"}
+    if not need_po.issubset(set(po_df.columns)) or not need_pol.issubset(set(pol_df.columns)):
+        return 0.0, ""
+
+    po = po_df.copy()
+    pol = pol_df.copy()
+
+    po["po_id"] = po["po_id"].astype(str).str.strip()
+    pol["po_id"] = pol["po_id"].astype(str).str.strip()
+    pol["item_id"] = pol["item_id"].astype(str).str.strip()
+
+    po = po[
+        (po["store_id"].astype(str).str.strip() == str(store_id).strip())
+        & (po["vendor_id"].astype(str).str.strip() == str(vendor_id).strip())
+    ].copy()
+
+    if po.empty:
+        return 0.0, ""
+
+    merged = pol.merge(po[["po_id", "order_date"]], on="po_id", how="inner")
+    merged = merged[merged["item_id"] == str(item_id).strip()].copy()
+    if merged.empty:
+        return 0.0, ""
+
+    merged["__date"] = merged["order_date"].apply(_parse_date)
+    merged = merged.sort_values("__date", ascending=True)
+    latest = merged.iloc[-1].to_dict()
+
+    qty = _safe_float(latest.get("order_qty", latest.get("qty", 0)))
+    unit = _norm(latest.get("order_unit", latest.get("unit_id", "")))
+    return qty, unit
+
+
+def _get_latest_stock_qty_in_display_unit(
+    stocktakes_df: pd.DataFrame,
+    stocktake_lines_df: pd.DataFrame,
+    items_df: pd.DataFrame,
+    conversions_df: pd.DataFrame,
+    store_id: str,
+    item_id: str,
+    display_unit: str,
+):
+    if stocktakes_df.empty or stocktake_lines_df.empty:
+        return 0.0
+
+    need_st = {"stocktake_id", "store_id", "stocktake_date"}
+    need_stl = {"stocktake_id", "item_id"}
+    if not need_st.issubset(set(stocktakes_df.columns)) or not need_stl.issubset(set(stocktake_lines_df.columns)):
+        return 0.0
+
+    stx = stocktakes_df.copy()
+    stl = stocktake_lines_df.copy()
+
+    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+    stl["item_id"] = stl["item_id"].astype(str).str.strip()
+
+    stx = stx[stx["store_id"].astype(str).str.strip() == str(store_id).strip()].copy()
+    if stx.empty:
+        return 0.0
+
+    merged = stl.merge(stx[["stocktake_id", "stocktake_date"]], on="stocktake_id", how="inner")
+    merged = merged[merged["item_id"] == str(item_id).strip()].copy()
+    if merged.empty:
+        return 0.0
+
+    merged["__date"] = merged["stocktake_date"].apply(_parse_date)
+    merged = merged.sort_values("__date", ascending=True)
+    latest = merged.iloc[-1].to_dict()
+
+    base_qty = _safe_float(latest.get("base_qty", latest.get("stock_qty", latest.get("qty", 0))))
+    if base_qty <= 0:
+        return 0.0
+
+    try:
+        base_unit = get_base_unit(items_df, item_id)
+        if display_unit == base_unit:
+            return round(base_qty, 1)
+
+        qty = convert_unit(
+            item_id=item_id,
+            qty=base_qty,
+            from_unit=base_unit,
+            to_unit=display_unit,
+            conversions_df=conversions_df,
+            as_of_date=_parse_date(latest.get("stocktake_date")),
+        )
+        return round(qty, 1)
+    except Exception:
+        return round(base_qty, 1)
+
+
+# ============================================================
+# [D1] Session State
+# ============================================================
+def init_session():
+    if "step" not in st.session_state:
+        st.session_state.step = "select_store"
+    if "record_date" not in st.session_state:
+        st.session_state.record_date = date.today()
+    if "store_id" not in st.session_state:
+        st.session_state.store_id = ""
+    if "store_name" not in st.session_state:
+        st.session_state.store_name = ""
+    if "vendor_id" not in st.session_state:
+        st.session_state.vendor_id = ""
+    if "vendor_name" not in st.session_state:
+        st.session_state.vendor_name = ""
+
+
+# ============================================================
+# [E1] Select Store
+# ============================================================
+def page_select_store():
+    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
+    st.title("🏠 選擇分店")
+
+    stores_df = _get_active_df(read_table("stores"))
+    if stores_df.empty:
+        st.warning("⚠️ 分店資料讀取失敗")
+        return
+
+    for _, row in stores_df.iterrows():
+        label = _label_store(row)
+        store_id = _norm(row.get("store_id", ""))
+        if st.button(f"📍 {label}", key=f"store_{store_id}", use_container_width=True):
+            st.session_state.store_id = store_id
+            st.session_state.store_name = label
+            st.session_state.step = "select_vendor"
+            st.rerun()
+
+
+# ============================================================
+# [E2] Select Vendor
+# ============================================================
+def page_select_vendor():
+    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
+    st.title(f"🏢 {st.session_state.store_name}")
+
+    st.session_state.record_date = st.date_input("🗓️ 作業日期", value=st.session_state.record_date)
+
+    vendors_df = _get_active_df(read_table("vendors"))
+    if vendors_df.empty:
+        st.warning("⚠️ 廠商資料讀取失敗")
+        return
+
+    vendors = vendors_df.sort_values(by=["vendor_name"], ascending=True).reset_index(drop=True)
+
+    for i in range(0, len(vendors), 2):
+        cols = st.columns(2)
+
+        left = vendors.iloc[i]
+        with cols[0]:
+            if st.button(f"📦 {_label_vendor(left)}", key=f"vendor_{left.get('vendor_id','')}", use_container_width=True):
+                st.session_state.vendor_id = _norm(left.get("vendor_id", ""))
+                st.session_state.vendor_name = _label_vendor(left)
+                st.session_state.step = "order_entry"
+                st.rerun()
+
+        if i + 1 < len(vendors):
+            right = vendors.iloc[i + 1]
+            with cols[1]:
+                if st.button(f"📦 {_label_vendor(right)}", key=f"vendor_{right.get('vendor_id','')}", use_container_width=True):
+                    st.session_state.vendor_id = _norm(right.get("vendor_id", ""))
+                    st.session_state.vendor_name = _label_vendor(right)
+                    st.session_state.step = "order_entry"
+                    st.rerun()
+
+    if st.button("⬅️ 返回分店列表", use_container_width=True):
+        st.session_state.step = "select_store"
         st.rerun()
 
 
-def page_items_edit(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, actor_user_id: str):
-    require_role("Admin", role_of(actor_user_id))
+# ============================================================
+# [E3] Order Entry - 同頁庫存 / 叫貨
+# ============================================================
+def page_order_entry():
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 2rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }
 
-    st.subheader("Admin / Items / Edit")
+        [data-testid='stHorizontalBlock'] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            gap: 0.35rem !important;
+        }
 
-    item_id = st.session_state.get("edit_item_id")
-    if not item_id:
-        st.info("請先到 Items / List 選一筆，再進 Edit。")
-        return
+        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0px !important;
+        }
 
-    df = read_table(repo, sheet_id, creds_path, "items")
-    if df.empty:
-        st.warning("items table 沒資料")
-        return
+        div[data-testid='stHorizontalBlock'] > div:nth-child(2),
+        div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
+            flex: 0 0 84px !important;
+            min-width: 84px !important;
+            max-width: 84px !important;
+        }
 
-    row = df[df["item_id"].astype(str) == str(item_id)]
-    if row.empty:
-        st.error(f"找不到 item_id：{item_id}")
-        return
+        div[data-testid='stNumberInput'] label {
+            display: none !important;
+        }
 
-    rec = row.iloc[0].to_dict()
-    st.success(f"目前編輯：{item_id}")
-    st.json(rec)
+        div[data-testid="stNumberInput"] input {
+            text-align: center !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
 
+        .order-divider {
+            margin: 10px 0 14px 0;
+            border-top: 1px solid rgba(128,128,128,0.25);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-def page_prices_create(repo: GoogleSheetsRepo, sheet_id: str, creds_path: str, env: str, actor_user_id: str, audit_sheet: str):
-    require_role("Admin", role_of(actor_user_id))
+    st.title(f"📝 {st.session_state.vendor_name}")
 
-    st.subheader("Admin / Prices / Create")
-    st.markdown("### 新增價格（歷史價格）")
+    items_df = _get_active_df(read_table("items"))
+    prices_df = read_table("prices")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
+    stocktakes_df = read_table("stocktakes")
+    stocktake_lines_df = read_table("stocktake_lines")
+    po_df = read_table("purchase_orders")
+    pol_df = read_table("purchase_order_lines")
 
-    items_df = read_table(repo, sheet_id, creds_path, "items")
     if items_df.empty:
-        st.warning("沒有 items，請先建立品項")
+        st.warning("⚠️ 品項資料讀取失敗")
         return
 
-    if "is_active" in items_df.columns:
-        items_df = items_df[items_df["is_active"].astype(str).str.upper() == "TRUE"]
-
-    def _item_label(r):
-        name = ""
-        if "item_name_zh" in items_df.columns and str(r.get("item_name_zh", "")).strip():
-            name = str(r.get("item_name_zh", "")).strip()
-        elif "item_name" in items_df.columns and str(r.get("item_name", "")).strip():
-            name = str(r.get("item_name", "")).strip()
-        iid = str(r.get("item_id", "")).strip()
-        return f"{name} ({iid})" if name else iid
-
-    item_map = {
-        _item_label(r): str(r.get("item_id", "")).strip()
-        for _, r in items_df.iterrows()
-        if str(r.get("item_id", "")).strip()
-    }
-    if not item_map:
-        st.warning("沒有可用品項（items.is_active=TRUE）")
+    if "default_vendor_id" not in items_df.columns:
+        st.warning("⚠️ items 缺少 default_vendor_id")
         return
 
-    item_label = st.selectbox("選擇品項", options=list(item_map.keys()))
-    item_id = item_map[item_label]
+    vendor_items = items_df[
+        items_df["default_vendor_id"].astype(str).str.strip() == str(st.session_state.vendor_id).strip()
+    ].copy()
 
-    prices_df = read_table_with_rownum(repo, sheet_id, creds_path, "prices")
-    if prices_df.empty:
-        st.info("prices 目前沒有資料，你將建立第一筆價格。")
-    else:
-        for col in ["item_id", "price_id", "unit_price", "effective_date", "end_date", "is_active"]:
-            if col not in prices_df.columns:
-                prices_df[col] = ""
+    if vendor_items.empty:
+        st.info("💡 此廠商目前沒有對應品項")
+        if st.button("⬅️ 返回功能選單", use_container_width=True):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
 
-    current_row = None
-    if not prices_df.empty:
-        tmp = prices_df.copy()
-        tmp["__eff"] = tmp["effective_date"].apply(_parse_date)
-        tmp["__end"] = tmp["end_date"].apply(_parse_date)
-        tmp["__active"] = tmp["is_active"].apply(lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE"))
+    def _item_display_name(r) -> str:
+        return _norm(r.get("item_name_zh", "")) or _norm(r.get("item_name", ""))
 
-        cur = tmp[
-            (tmp["item_id"].astype(str) == str(item_id)) &
-            (tmp["__active"]) &
-            (tmp["__end"].isna())
-        ].copy()
+    vendor_items["_display_name"] = vendor_items.apply(_item_display_name, axis=1)
+    vendor_items = vendor_items.sort_values(by=["_display_name"], ascending=True)
 
-        if len(cur) > 0:
-            cur = cur.sort_values(by="__eff", ascending=True)
-            current_row = cur.iloc[-1].to_dict()
+    # ------------------------------------------------------------
+    # 折疊式參考表格
+    # ------------------------------------------------------------
+    ref_rows = []
+    item_meta = {}
 
-    if current_row:
-        st.markdown("#### 目前現行價")
-        st.write(
-            f"- price_id：`{current_row.get('price_id','')}`\n"
-            f"- unit_price：`{current_row.get('unit_price','')}`\n"
-            f"- effective_date：`{current_row.get('effective_date','')}`\n"
-            f"- end_date：`(空)`"
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        item_name = _item_display_name(row)
+        stock_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
+        order_unit = _norm(row.get("default_order_unit", "")) or _norm(row.get("base_unit", ""))
+        price = _get_latest_price_for_item(prices_df, item_id, st.session_state.record_date)
+
+        last_order_qty, _ = _get_last_po_summary(
+            po_df=po_df,
+            pol_df=pol_df,
+            store_id=st.session_state.store_id,
+            vendor_id=st.session_state.vendor_id,
+            item_id=item_id,
         )
 
-        cur_eff = _parse_date(current_row.get("effective_date", ""))
-        prev_row = None
+        current_stock_qty = _get_latest_stock_qty_in_display_unit(
+            stocktakes_df=stocktakes_df,
+            stocktake_lines_df=stocktake_lines_df,
+            items_df=vendor_items,
+            conversions_df=conversions_df,
+            store_id=st.session_state.store_id,
+            item_id=item_id,
+            display_unit=stock_unit,
+        )
 
-        if cur_eff and not prices_df.empty:
-            tmp2 = prices_df.copy()
-            tmp2["__eff"] = tmp2["effective_date"].apply(_parse_date)
-            tmp2["__end"] = tmp2["end_date"].apply(_parse_date)
-            tmp2["__active"] = tmp2["is_active"].apply(lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE"))
+        ref_rows.append(
+            {
+                "品項名稱": item_name,
+                "上次叫貨": round(last_order_qty, 1),
+                "目前庫存": round(current_stock_qty, 1),
+            }
+        )
 
-            target_end = cur_eff - timedelta(days=1)
-            prev = tmp2[
-                (tmp2["item_id"].astype(str) == str(item_id)) &
-                (tmp2["__active"]) &
-                (tmp2["__end"] == target_end)
-            ].copy()
+        item_meta[item_id] = {
+            "item_name": item_name,
+            "stock_unit": stock_unit,
+            "order_unit": order_unit,
+            "price": round(price, 1),
+            "current_stock_qty": round(current_stock_qty, 1),
+            "suggest_qty": 0.0,
+        }
 
-            if len(prev) > 0:
-                prev = prev.sort_values(by="__eff", ascending=True)
-                prev_row = prev.iloc[-1].to_dict()
+    ref_df = pd.DataFrame(ref_rows)
+    ref_df = ref_df[(ref_df["上次叫貨"] > 0) | (ref_df["目前庫存"] > 0)].copy()
 
-        col_rb1, col_rb2 = st.columns([1, 2])
-        with col_rb1:
-            do_rb = st.button("⏪ 撤回最新一次換價", use_container_width=True)
-        with col_rb2:
-            st.caption("只撤回『最新現行價』，並把上一筆價格恢復成現行價（end_date 清空）。")
+    with st.expander("📊 查看上次叫貨 / 庫存參考（已自動隱藏無紀錄品項）", expanded=False):
+        if ref_df.empty:
+            st.caption("目前沒有可參考的資料")
+        else:
+            for col in ["上次叫貨", "目前庫存"]:
+                ref_df[col] = ref_df[col].map(lambda x: f"{x:.1f}")
+            st.table(ref_df)
 
-        if do_rb:
-            if not cur_eff:
-                st.error("現行價 effective_date 解析失敗，無法撤回。")
-                st.stop()
-            if not prev_row:
-                st.error("找不到上一筆可恢復的價格（需要上一筆 end_date = 現行價生效日前一天）。")
-                st.stop()
+    st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
 
-            now = _now_ts()
-            prices_header = get_header(repo, sheet_id, creds_path, "prices")
+    h1, h2, h3 = st.columns([6, 1, 1])
+    h1.write("**品項名稱**")
+    h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+    h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
 
-            repo.update_fields_by_row(
-                "prices",
-                prices_header,
-                int(current_row["_row"]),
+    # ------------------------------------------------------------
+    # 主表單
+    # ------------------------------------------------------------
+    with st.form("order_entry_form"):
+        submit_rows = []
+
+        for _, row in vendor_items.iterrows():
+            item_id = _norm(row.get("item_id", ""))
+            meta = item_meta[item_id]
+
+            item_name = meta["item_name"]
+            stock_unit = meta["stock_unit"]
+            order_unit = meta["order_unit"]
+            current_stock_qty = _safe_float(meta["current_stock_qty"])
+            price = _safe_float(meta["price"])
+            suggest_qty = _safe_float(meta["suggest_qty"])
+
+            c1, c2, c3 = st.columns([6, 1, 1])
+
+            with c1:
+                st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
+                st.caption(f"{stock_unit} (前結:{current_stock_qty:.1f} | 單價:{price:.1f} | 💡建議:{suggest_qty:.1f})")
+
+            with c2:
+                stock_input = st.number_input(
+                    "庫",
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    value=float(current_stock_qty),
+                    key=f"stock_{item_id}",
+                    label_visibility="collapsed",
+                )
+
+            with c3:
+                order_input = st.number_input(
+                    "進",
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    value=0.0,
+                    key=f"order_{item_id}",
+                    label_visibility="collapsed",
+                )
+
+            submit_rows.append(
                 {
-                    "is_active": "FALSE",
-                    "updated_at": now,
-                    "updated_by": actor_user_id,
-                    "note": f"[ROLLBACK] void current price {current_row.get('price_id','')}",
-                },
+                    "item_id": item_id,
+                    "item_name": item_name,
+                    "stock_qty": float(stock_input),
+                    "stock_unit": stock_unit,
+                    "order_qty": float(order_input),
+                    "order_unit": order_unit,
+                    "unit_price": float(price),
+                }
             )
 
-            repo.update_fields_by_row(
-                "prices",
-                prices_header,
-                int(prev_row["_row"]),
-                {
-                    "end_date": "",
-                    "updated_at": now,
-                    "updated_by": actor_user_id,
-                    "note": f"[ROLLBACK] restore as current (from {current_row.get('price_id','')})",
-                },
-            )
+        submitted = st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True)
 
-            try_append_audit(
-                repo=repo,
-                sheet_id=sheet_id,
-                creds_path=creds_path,
-                audit_sheet=audit_sheet,
-                env=env,
-                actor_user_id=actor_user_id,
-                action="PRICE_ROLLBACK",
-                table="prices",
-                entity_id=str(item_id),
-                note=f"void={current_row.get('price_id','')}, restore={prev_row.get('price_id','')}",
-            )
+    if submitted:
+        # 先寫盤點
+        stocktake_header = get_header("stocktakes")
+        stl_header = get_header("stocktake_lines")
 
-            bust_cache()
-            st.success("✅ 已撤回最新一次換價：新價已作廢，上一筆已恢復為現行價。")
+        stocktake_id = get_next_id("stocktakes")
+        now = _now_ts()
+
+        stocktake_row = {c: "" for c in stocktake_header}
+        defaults_stocktake = {
+            "stocktake_id": stocktake_id,
+            "store_id": st.session_state.store_id,
+            "stocktake_date": str(st.session_state.record_date),
+            "status": "done",
+            "note": f"vendor={st.session_state.vendor_id}",
+            "created_at": now,
+            "created_by": "SYSTEM",
+            "updated_at": "",
+            "updated_by": "",
+        }
+        for k, v in defaults_stocktake.items():
+            if k in stocktake_row:
+                stocktake_row[k] = v
+
+        append_row_by_header("stocktakes", stocktake_header, stocktake_row)
+
+        for r in submit_rows:
+            stocktake_line_id = get_next_id("stocktake_lines")
+
+            try:
+                base_qty, base_unit = convert_to_base(
+                    item_id=r["item_id"],
+                    qty=r["stock_qty"],
+                    from_unit=r["stock_unit"],
+                    items_df=vendor_items,
+                    conversions_df=conversions_df,
+                    as_of_date=st.session_state.record_date,
+                )
+            except Exception:
+                base_qty = r["stock_qty"]
+                base_unit = r["stock_unit"]
+
+            line_row = {c: "" for c in stl_header}
+            defaults_line = {
+                "stocktake_line_id": stocktake_line_id,
+                "stocktake_id": stocktake_id,
+                "item_id": r["item_id"],
+                "qty": str(r["stock_qty"]),
+                "stock_qty": str(r["stock_qty"]),
+                "unit_id": r["stock_unit"],
+                "stock_unit": r["stock_unit"],
+                "base_qty": str(round(base_qty, 3)),
+                "base_unit": base_unit,
+                "created_at": now,
+                "created_by": "SYSTEM",
+                "updated_at": "",
+                "updated_by": "",
+            }
+            for k, v in defaults_line.items():
+                if k in line_row:
+                    line_row[k] = v
+
+            append_row_by_header("stocktake_lines", stl_header, line_row)
+
+        # 有叫貨才寫 PO
+        order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+        po_id = ""
+
+        if order_rows:
+            po_header = get_header("purchase_orders")
+            pol_header = get_header("purchase_order_lines")
+
+            po_id = get_next_id("purchase_orders")
+            po_row = {c: "" for c in po_header}
+
+            defaults_po = {
+                "po_id": po_id,
+                "store_id": st.session_state.store_id,
+                "vendor_id": st.session_state.vendor_id,
+                "order_date": str(st.session_state.record_date),
+                "status": "draft",
+                "note": "",
+                "created_at": now,
+                "created_by": "SYSTEM",
+                "updated_at": "",
+                "updated_by": "",
+            }
+            for k, v in defaults_po.items():
+                if k in po_row:
+                    po_row[k] = v
+
+            append_row_by_header("purchase_orders", po_header, po_row)
+
+            for r in order_rows:
+                po_line_id = get_next_id("purchase_order_lines")
+
+                try:
+                    base_qty, base_unit = convert_to_base(
+                        item_id=r["item_id"],
+                        qty=r["order_qty"],
+                        from_unit=r["order_unit"],
+                        items_df=vendor_items,
+                        conversions_df=conversions_df,
+                        as_of_date=st.session_state.record_date,
+                    )
+                except Exception:
+                    base_qty = r["order_qty"]
+                    base_unit = r["order_unit"]
+
+                line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
+
+                pol_row = {c: "" for c in pol_header}
+                defaults_pol = {
+                    "po_line_id": po_line_id,
+                    "po_id": po_id,
+                    "item_id": r["item_id"],
+                    "qty": str(r["order_qty"]),
+                    "order_qty": str(r["order_qty"]),
+                    "unit_id": r["order_unit"],
+                    "order_unit": r["order_unit"],
+                    "base_qty": str(round(base_qty, 3)),
+                    "base_unit": base_unit,
+                    "unit_price": str(r["unit_price"]),
+                    "amount": str(line_amount),
+                    "line_amount": str(line_amount),
+                    "created_at": now,
+                    "created_by": "SYSTEM",
+                    "updated_at": "",
+                    "updated_by": "",
+                }
+                for k, v in defaults_pol.items():
+                    if k in pol_row:
+                        pol_row[k] = v
+
+                append_row_by_header("purchase_order_lines", pol_header, pol_row)
+
+        bust_cache()
+        st.success(f"✅ 已儲存庫存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
+
+        if st.button("返回廠商列表", use_container_width=True):
+            st.session_state.step = "select_vendor"
             st.rerun()
 
-    st.divider()
-    st.markdown("#### 套用新現行價（自動封存舊價）")
-
-    unit_price = st.number_input("單價 unit_price", min_value=0.0, step=1.0, format="%.2f")
-    effective_date = st.date_input("生效日 effective_date")
-    is_active = st.checkbox("啟用 (is_active)", value=True)
-
-    do_apply = st.button("✅ 套用新現行價", use_container_width=True)
-    if not do_apply:
-        return
-
-    if unit_price <= 0:
-        st.warning("單價必須 > 0")
-        return
-
-    new_eff: date = effective_date
-    now = _now_ts()
-    prices_header = get_header(repo, sheet_id, creds_path, "prices")
-
-    if current_row:
-        old_eff = _parse_date(current_row.get("effective_date", ""))
-        if not old_eff:
-            st.error("現行價 effective_date 解析失敗，無法換價。")
-            st.stop()
-
-        if new_eff <= old_eff:
-            st.error("⚠️ 新生效日必須晚於目前現行價的生效日。")
-            st.stop()
-
-        old_end: date = new_eff - timedelta(days=1)
-        if old_end < old_eff:
-            st.error("⚠️ 會造成舊價格區間不合法（end_date < effective_date）。請調整新生效日。")
-            st.stop()
-
-        repo.update_fields_by_row(
-            "prices",
-            prices_header,
-            int(current_row["_row"]),
-            {
-                "end_date": str(old_end),
-                "updated_at": now,
-                "updated_by": actor_user_id,
-                "note": f"[CLOSE] close by new price effective_date={new_eff}",
-            },
-        )
-
-    price_id = get_next_id(repo, sheet_id, creds_path, key="prices", env=env, actor_user_id=actor_user_id)
-
-    new_price = {
-        "price_id": price_id,
-        "brand_id": "",
-        "vendor_id": "",
-        "item_id": str(item_id),
-        "unit_price": str(unit_price),
-        "effective_date": str(new_eff),
-        "end_date": "",
-        "is_active": _to_bool_str(is_active),
-        "audit": "",
-        "note": "",
-        "created_at": now,
-        "created_by": actor_user_id,
-        "updated_at": "",
-        "updated_by": "",
-    }
-
-    for c in prices_header:
-        if c not in new_price:
-            new_price[c] = ""
-
-    repo.append_row_by_header("prices", prices_header, new_price)
-    bust_cache()
-
-    try_append_audit(
-        repo=repo,
-        sheet_id=sheet_id,
-        creds_path=creds_path,
-        audit_sheet=audit_sheet,
-        env=env,
-        actor_user_id=actor_user_id,
-        action="PRICE_APPLY_NEW",
-        table="prices",
-        entity_id=str(item_id),
-        note=f"new_price_id={price_id}, unit_price={unit_price}, effective_date={new_eff}",
-    )
-
-    st.success(f"✅ 已套用新現行價：{item_label} / {unit_price}（{price_id}）")
-    st.rerun()
-
-
-def page_purchase_orders_create(
-    repo: GoogleSheetsRepo,
-    sheet_id: str,
-    creds_path: str,
-    env: str,
-    actor_user_id: str,
-    audit_sheet: str,
-):
-    require_role("Admin", role_of(actor_user_id))
-
-    st.subheader("Admin / Purchase Orders / Create")
-    st.markdown("### 新增叫貨單")
-
-    items_df = read_table(repo, sheet_id, creds_path, "items")
-    conv_df = read_table(repo, sheet_id, creds_path, "unit_conversions")
-    prices_df = read_table(repo, sheet_id, creds_path, "prices")
-
-    if items_df.empty:
-        st.warning("items 沒有資料，請先建立品項")
-        return
-
-    if "is_active" in items_df.columns:
-        items_df = items_df[items_df["is_active"].astype(str).str.upper() == "TRUE"]
-
-    if items_df.empty:
-        st.warning("沒有啟用中的品項")
-        return
-
-    def _item_label(r):
-        name = str(r.get("item_name_zh", "")).strip()
-        if not name:
-            name = str(r.get("item_name", "")).strip()
-        iid = str(r.get("item_id", "")).strip()
-        return f"{name} ({iid})" if name else iid
-
-    item_map = {
-        _item_label(r): str(r.get("item_id", "")).strip()
-        for _, r in items_df.iterrows()
-        if str(r.get("item_id", "")).strip()
-    }
-
-    item_label = st.selectbox("品項", options=list(item_map.keys()))
-    item_id = item_map[item_label]
-
-    item_row = items_df[items_df["item_id"].astype(str) == str(item_id)]
-    if item_row.empty:
-        st.error("找不到品項資料")
-        return
-
-    item_rec = item_row.iloc[0].to_dict()
-
-    default_order_unit = str(item_rec.get("default_order_unit", "")).strip()
-    orderable_units_raw = str(item_rec.get("orderable_units", "")).strip()
-
-    order_unit_options = []
-    if orderable_units_raw:
-        order_unit_options = [u.strip() for u in orderable_units_raw.split(",") if u.strip()]
-
-    if default_order_unit and default_order_unit not in order_unit_options:
-        order_unit_options.insert(0, default_order_unit)
-
-    if not order_unit_options and default_order_unit:
-        order_unit_options = [default_order_unit]
-
-    if not order_unit_options:
-        st.warning("此品項沒有 default_order_unit / orderable_units，請先補主檔")
-        return
-
-    col1, col2, col3 = st.columns([2, 2, 2])
-
-    with col1:
-        order_date = st.date_input("叫貨日期", value=date.today())
-
-    with col2:
-        order_qty = st.number_input("叫貨數量", min_value=0.0, step=1.0, format="%.1f")
-
-    with col3:
-        order_unit = st.selectbox("叫貨單位", options=order_unit_options)
-
-    note = st.text_input("備註", value="").strip()
-
-    preview_ok = False
-    base_qty = None
-    base_unit = None
-
-    if order_qty > 0:
-        try:
-            base_qty, base_unit = convert_to_base(
-                item_id=item_id,
-                qty=order_qty,
-                from_unit=order_unit,
-                items_df=items_df,
-                conversions_df=conv_df,
-                as_of_date=order_date,
-            )
-            preview_ok = True
-            st.success(f"換算結果：{order_qty} {order_unit} → {base_qty:.3f} {base_unit}")
-        except Exception as e:
-            st.error(f"單位換算失敗：{e}")
-
-    unit_price = 0.0
-
-    if not prices_df.empty and "item_id" in prices_df.columns:
-        tmp = prices_df.copy()
-
-        for col in ["effective_date", "end_date", "unit_price", "is_active"]:
-            if col not in tmp.columns:
-                tmp[col] = ""
-
-        tmp = tmp[tmp["item_id"].astype(str) == str(item_id)].copy()
-
-        if not tmp.empty:
-            tmp["__eff"] = tmp["effective_date"].apply(_parse_date)
-            tmp["__end"] = tmp["end_date"].apply(_parse_date)
-            tmp["__active"] = tmp["is_active"].apply(
-                lambda x: (str(x).strip() == "" or str(x).strip().upper() == "TRUE")
-            )
-
-            tmp = tmp[tmp["__active"]]
-
-            tmp = tmp[
-                (tmp["__eff"].isna() | (tmp["__eff"] <= order_date)) &
-                (tmp["__end"].isna() | (tmp["__end"] >= order_date))
-            ].copy()
-
-            if not tmp.empty:
-                tmp = tmp.sort_values(by="__eff", ascending=True)
-                hit = tmp.iloc[-1].to_dict()
-                try:
-                    unit_price = float(hit.get("unit_price", 0) or 0)
-                except Exception:
-                    unit_price = 0.0
-
-    line_amount = float(order_qty) * float(unit_price)
-    st.caption(f"參考單價：{unit_price:.2f} ／ 小計：{line_amount:.2f}")
-
-    submit = st.button("✅ 建立叫貨單", use_container_width=True)
-
-    if not submit:
-        return
-
-    if order_qty <= 0:
-        st.warning("叫貨數量必須大於 0")
-        return
-
-    if not preview_ok:
-        st.warning("單位換算未成功，無法建立叫貨單")
-        return
-
-    po_header = get_header(repo, sheet_id, creds_path, "purchase_orders")
-    pol_header = get_header(repo, sheet_id, creds_path, "purchase_order_lines")
-
-    po_id = get_next_id(repo, sheet_id, creds_path, key="purchase_orders", env=env, actor_user_id=actor_user_id)
-    po_line_id = get_next_id(repo, sheet_id, creds_path, key="purchase_order_lines", env=env, actor_user_id=actor_user_id)
-
-    now = _now_ts()
-
-    po_row = {c: "" for c in po_header}
-    defaults_po = {
-        "po_id": po_id,
-        "brand_id": "",
-        "store_id": "",
-        "vendor_id": str(item_rec.get("vendor_id", "")).strip(),
-        "order_date": str(order_date),
-        "status": "draft",
-        "note": note,
-        "created_at": now,
-        "created_by": actor_user_id,
-        "updated_at": "",
-        "updated_by": "",
-    }
-    for k, v in defaults_po.items():
-        if k in po_row:
-            po_row[k] = v
-
-    repo.append_row_by_header("purchase_orders", po_header, po_row)
-
-    pol_row = {c: "" for c in pol_header}
-    defaults_pol = {
-        "po_line_id": po_line_id,
-        "po_id": po_id,
-        "item_id": item_id,
-        "qty": str(order_qty),
-        "order_qty": str(order_qty),
-        "unit_id": order_unit,
-        "order_unit": order_unit,
-        "base_qty": str(base_qty),
-        "base_unit": str(base_unit),
-        "unit_price": str(unit_price),
-        "amount": str(line_amount),
-        "line_amount": str(line_amount),
-        "note": note,
-        "created_at": now,
-        "created_by": actor_user_id,
-        "updated_at": "",
-        "updated_by": "",
-    }
-    for k, v in defaults_pol.items():
-        if k in pol_row:
-            pol_row[k] = v
-
-    repo.append_row_by_header("purchase_order_lines", pol_header, pol_row)
-    bust_cache()
-
-    try_append_audit(
-        repo=repo,
-        sheet_id=sheet_id,
-        creds_path=creds_path,
-        audit_sheet=audit_sheet,
-        env=env,
-        actor_user_id=actor_user_id,
-        action="CREATE_PURCHASE_ORDER",
-        table="purchase_orders",
-        entity_id=po_id,
-        note=f"item_id={item_id}, qty={order_qty}, unit={order_unit}, base_qty={base_qty}, base_unit={base_unit}",
-    )
-
-    st.success(f"✅ 建立成功：{po_id}")
-    st.json({
-        "po_id": po_id,
-        "po_line_id": po_line_id,
-        "item_id": item_id,
-        "qty": order_qty,
-        "unit": order_unit,
-        "base_qty": base_qty,
-        "base_unit": base_unit,
-        "unit_price": unit_price,
-        "amount": line_amount,
-    })
+    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
 
 
 # ============================================================
-# Main
+# [F1] Router
 # ============================================================
+def router():
+    step = st.session_state.step
 
+    if step == "select_store":
+        page_select_store()
+    elif step == "select_vendor":
+        page_select_vendor()
+    elif step == "order_entry":
+        page_order_entry()
+
+
+# ============================================================
+# [G1] Main
+# ============================================================
 def main():
-    page_header()
-
-    sheet_id, creds_path, env, audit_sheet = sidebar_system_config()
-    actor_user_id, actor_role = sidebar_actor_selector()
-
-    if not sheet_id:
-        fail("Sheet ID 不能空白。")
-
-    cp = "" if "gcp" in st.secrets else creds_path
-
-    if "gcp" not in st.secrets:
-        if not creds_path:
-            fail("本機測試：Service Account JSON Path 不能空白。")
-        if not Path(creds_path).exists():
-            fail(f"找不到 service_account.json：{creds_path}")
-
-    try:
-        repo = get_repo_cached(sheet_id, None if "gcp" in st.secrets else creds_path)
-    except Exception as e:
-        fail(f"Repo 初始化失敗：{e}")
-
-    with st.sidebar:
-        st.divider()
-        st.subheader("📚 Navigation")
-
-        is_admin = ROLE_RANK.get(actor_role, 0) >= ROLE_RANK["Admin"]
-        if is_admin:
-            pages = [
-                "Vendors / Create",
-                "Units / Create",
-                "Items / Create",
-                "Items / List",
-                "Items / Edit",
-                "Prices / Create",
-                "Purchase Orders / Create",
-            ]
-        else:
-            pages = ["(No Access)"]
-
-        if st.session_state.get("nav_target") in pages:
-            st.session_state["nav_page"] = st.session_state["nav_target"]
-            st.session_state["nav_target"] = None
-
-        st.session_state.setdefault("nav_page", pages[0])
-
-        page = st.radio("Page", options=pages, key="nav_page", index=pages.index(st.session_state["nav_page"]))
-
-    if page == "Vendors / Create":
-        page_vendors_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id)
-
-    elif page == "Units / Create":
-        page_units_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id)
-
-    elif page == "Items / Create":
-        page_items_create(repo, sheet_id=sheet_id, creds_path=cp, env=env, actor_user_id=actor_user_id)
-
-    elif page == "Items / List":
-        page_items_list(repo, sheet_id=sheet_id, creds_path=cp, actor_user_id=actor_user_id)
-
-    elif page == "Items / Edit":
-        page_items_edit(repo, sheet_id=sheet_id, creds_path=cp, actor_user_id=actor_user_id)
-
-    elif page == "Prices / Create":
-        page_prices_create(
-            repo,
-            sheet_id=sheet_id,
-            creds_path=cp,
-            env=env,
-            actor_user_id=actor_user_id,
-            audit_sheet=audit_sheet,
-        )
-
-    elif page == "Purchase Orders / Create":
-        page_purchase_orders_create(
-            repo,
-            sheet_id=sheet_id,
-            creds_path=cp,
-            env=env,
-            actor_user_id=actor_user_id,
-            audit_sheet=audit_sheet,
-        )
-
-    else:
-        st.info("目前此角色沒有可用頁面。")
+    apply_global_style()
+    init_session()
+    router()
 
 
 if __name__ == "__main__":
