@@ -11,10 +11,7 @@ st.set_page_config(page_title="OMS Compact Row Test (Base+Order Unit)", layout="
 st.markdown(
     """
 <style>
-div[data-testid="stTextInput"]{
-  max-width:60px;
-}
-/* 讓整體左右 padding 小一點（手機更省） */
+/* ---------- 手機左右 padding 變小，省寬度 ---------- */
 @media (max-width: 640px){
   .block-container{
     padding-left: 8px !important;
@@ -22,20 +19,18 @@ div[data-testid="stTextInput"]{
   }
 }
 
-/* 卡片更緊湊 */
+/* ---------- 卡片更緊湊 ---------- */
 .item-card{
   padding: 10px 10px;
   border-radius: 12px;
   border: 1px solid rgba(120,120,120,0.18);
   margin-bottom: 10px;
 }
-
 .item-name{
   font-size: 18px;
   font-weight: 800;
   line-height: 1.15;
 }
-
 .item-meta{
   font-size: 12px;
   opacity: 0.75;
@@ -43,14 +38,7 @@ div[data-testid="stTextInput"]{
   margin-bottom: 8px;
 }
 
-/* 輸入框高度縮一點（但不要小到難按） */
-div[data-testid="stTextInput"] input{
-  height: 34px !important;
-  padding: 0 8px !important;
-  font-size:15px !important;
-}
-
-/* columns 在手機不要換行（避免變四行） */
+/* ---------- 讓 columns 在手機也不要換行 ---------- */
 @media (max-width: 640px){
   div[data-testid="stHorizontalBlock"]{
     flex-wrap: nowrap !important;
@@ -58,25 +46,60 @@ div[data-testid="stTextInput"] input{
     align-items: center !important;
   }
   div[data-testid="column"]{
-    min-width: 0 !important;
+    min-width: 0 !important; /* 重要：允許縮到很小 */
   }
 }
 
-/* 把 radio 做成小顆 pill（包/箱） */
-div[role="radiogroup"]{
-  gap: 6px !important;
+/* ---------- 輸入框：高度 + 字體 + 取消多餘 padding ---------- */
+div[data-testid="stTextInput"]{
+  min-width: 0 !important;
 }
-div[role="radiogroup"] label{
+div[data-testid="stTextInput"] input{
+  height: 34px !important;
+  padding: 0 8px !important;
+  font-size: 15px !important;
+  width: 100% !important;
+}
+
+/* ---------- Radio pill：做小、不要撐高 ---------- */
+div[data-testid="stRadio"]{
+  min-width: 0 !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"]{
+  gap: 6px !important;
+  align-items: center !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] label{
   margin: 0 !important;
 }
-div[role="radiogroup"] label > div{
+div[data-testid="stRadio"] div[role="radiogroup"] label > div{
   padding: 6px 10px !important;
   border-radius: 10px !important;
 }
-
-/* radio 本體不要撐太高 */
-div[role="radiogroup"] label span{
+div[data-testid="stRadio"] div[role="radiogroup"] label span{
   font-size: 14px !important;
+}
+
+/* =========================================================
+   ✅ 核心：用 :has() 鎖定「庫存/叫貨」那兩個欄位，強制固定寬度
+   - 這樣手機才真的會縮，且不會被 Streamlit 的 min-width 撐開
+   ========================================================= */
+@media (max-width: 640px){
+  /* 庫存數字欄位 */
+  div[data-testid="column"]:has(input[placeholder="庫存"]){
+    flex: 0 0 72px !important;     /* 這個就是你要調的「寬度」 */
+    max-width: 72px !important;
+  }
+  /* 叫貨數字欄位 */
+  div[data-testid="column"]:has(input[placeholder="叫貨"]){
+    flex: 0 0 72px !important;     /* 這個就是你要調的「寬度」 */
+    max-width: 72px !important;
+  }
+  /* 包/箱 Radio 欄位吃剩下的 */
+  div[data-testid="column"]:has(div[data-testid="stRadio"]){
+    flex: 1 1 auto !important;
+    min-width: 120px !important;   /* 避免被擠到看不到字 */
+  }
 }
 </style>
 """,
@@ -87,14 +110,14 @@ div[role="radiogroup"] label span{
 # Header
 # =========================
 st.title("OMS Compact Row Test（庫存固定基準 / 叫貨包箱切換）")
-st.caption("目標：手機少滑、每品項保持緊湊；庫存=基準單位(固定)，叫貨=包/箱二選一。")
+st.caption("目標：手機少滑、每品項緊湊；庫存=基準單位(固定)，叫貨=包/箱二選一。")
 st.divider()
 
 # =========================
 # Fake data
 # =========================
-BASE_UNIT = "KG"          # 庫存基準單位固定
-ORDER_UNITS = ["包", "箱"] # 叫貨單位固定二選一
+BASE_UNIT = "KG"
+ORDER_UNITS = ["包", "箱"]
 
 items = [
     {"id": "I001", "name": "測試原料", "price": 10.0},
@@ -106,7 +129,7 @@ items = [
 def ensure_defaults(item_id: str):
     st.session_state.setdefault(f"{item_id}_stock_qty", "0")
     st.session_state.setdefault(f"{item_id}_order_qty", "0")
-    st.session_state.setdefault(f"{item_id}_order_unit", ORDER_UNITS[0])  # 預設「包」
+    st.session_state.setdefault(f"{item_id}_order_unit", ORDER_UNITS[0])
 
 # =========================
 # Render
@@ -122,9 +145,8 @@ for it in items:
         unsafe_allow_html=True,
     )
 
-    # 右側一排：庫存數字 / 叫貨數字 / 叫貨單位(包箱)
-    # 比例：讓數字欄位大一點、包箱切換小一點
-    c1, c2, c3 = st.columns([0.1, 0.1, 1.0], gap="small")
+    # 一排：庫存數字 / 叫貨數字 / 包箱切換
+    c1, c2, c3 = st.columns([1, 1, 2], gap="small")
 
     with c1:
         st.text_input(
@@ -155,10 +177,3 @@ for it in items:
 
 with st.expander("Debug"):
     st.write(st.session_state)
-
-
-
-
-
-
-
