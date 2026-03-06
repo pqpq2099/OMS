@@ -990,7 +990,7 @@ def page_order_entry():
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
-                st.caption(f"{order_unit}｜可修改")
+                st.caption(base_unit)
 
             submit_rows.append(
                 {
@@ -1182,6 +1182,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
