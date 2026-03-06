@@ -978,15 +978,19 @@ def page_order_entry():
                 st.caption(base_unit)   # ⭐ 庫存欄下方小字，固定顯示基準單位
             
             with c3:
-                order_input = st.number_input(
-                    "進",
-                    min_value=0.0,
-                    step=0.1,
-                    format="%.1f",
-                    value=0.0,
-                    key=f"order_{item_id}",
-                    label_visibility="collapsed",
-                )
+                order_input = st.number_input(...)
+                st.caption(order_unit)
+            
+                if st.button("單位", key=f"btn_unit_{item_id}"):
+                    st.session_state[f"show_unit_{item_id}"] = not st.session_state.get(f"show_unit_{item_id}", False)
+            
+                if st.session_state.get(f"show_unit_{item_id}", False):
+                    selected_unit = st.selectbox(
+                        "選單位",
+                        options=orderable_unit_options,
+                        key=f"select_unit_{item_id}",
+                        label_visibility="collapsed",
+                    )
                 st.caption(order_unit)  # ⭐ 進貨欄下方小字，顯示目前叫貨單位
     
             submit_rows.append(
@@ -1179,6 +1183,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
