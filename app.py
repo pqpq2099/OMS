@@ -1386,7 +1386,7 @@ def page_view_history():
                         {
                             "日期": r.get("stocktake_date_dt"),
                             "類型": "庫存",
-                            "廠商": _norm(r.get("vendor_name_disp", "")),
+                            "廠商": _norm(r.get("vendor_name_disp", "")) or "未指定",
                             "品項名稱": _norm(r.get("item_name_disp", "")),
                             "數量": round(_safe_float(r.get("display_stock_qty", 0)), 1),
                             "單位": _norm(r.get("display_stock_unit", "")),
@@ -1412,7 +1412,7 @@ def page_view_history():
                         {
                             "日期": r.get("order_date_dt"),
                             "類型": "叫貨",
-                            "廠商": _norm(r.get("vendor_name_disp", "")),
+                            "廠商": _norm(r.get("vendor_name_disp", "")) or "未指定",
                             "品項名稱": _norm(r.get("item_name_disp", "")),
                             "數量": round(_safe_float(r.get("order_qty_num", 0)), 1),
                             "單位": _norm(r.get("order_unit_disp", "")),
@@ -1429,10 +1429,8 @@ def page_view_history():
             col_v, col_i = st.columns(2)
 
             all_v = ["全部廠商"] + sorted(
-                [x for x in detail_df["廠商"].dropna().unique().tolist() if str(x).strip()]
+                [x for x in detail_df["廠商"].dropna().unique().tolist() if str(x).strip() and str(x).strip().lower() != "nan"]
             )
-            sel_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="hist_vendor")
-
             filt_df = detail_df.copy()
             if sel_v != "全部廠商":
                 filt_df = filt_df[filt_df["廠商"] == sel_v]
