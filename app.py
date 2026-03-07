@@ -1,6 +1,5 @@
 # ============================================================
-# ORIVIA OMS 1.0 外觀 + OMS 2.0 資料庫（穩定版）
-# Google Sheets DB version
+# ORIVIA OMS 1.0 外觀 + OMS 2.0 資料庫（穩定整合版）
 # ============================================================
 
 from __future__ import annotations
@@ -146,13 +145,16 @@ def _now_ts() -> str:
     return pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _get_secret_sheet_id() -> str:
-    try:
-        if hasattr(st.secrets, "get"):
-            return st.secrets.get("sheet_id", DEFAULT_SHEET_ID)
-    except Exception:
-        pass
-    return DEFAULT_SHEET_ID
+def _clean_option_list(values: list) -> list[str]:
+    out = []
+    for x in values:
+        text = str(x).strip()
+        if not text:
+            continue
+        if text.lower() == "nan":
+            continue
+        out.append(text)
+    return sorted(list(dict.fromkeys(out)))
 
 
 def _parse_vendor_id_from_note(note: str) -> str:
@@ -163,6 +165,28 @@ def _parse_vendor_id_from_note(note: str) -> str:
         return text.split("vendor=", 1)[1].strip()
     except Exception:
         return ""
+
+
+def _coalesce_columns(df: pd.DataFrame, candidates: list[str], default="") -> pd.Series:
+    if df is None or df.empty:
+        return pd.Series(dtype="object")
+
+    result = pd.Series([pd.NA] * len(df), index=df.index, dtype="object")
+
+    for col in candidates:
+        if col in df.columns:
+            s = df[col].copy()
+            s = s.where(~pd.isna(s), pd.NA)
+
+            if s.dtype == "object":
+                s = s.apply(lambda x: pd.NA if str(x).strip() == "" else x)
+
+            result = result.combine_first(s)
+
+    if default != "":
+        result = result.fillna(default)
+
+    return result
 
 
 # ============================================================
@@ -196,6 +220,15 @@ def get_gspread_client():
         return None
 
 
+def _get_secret_sheet_id() -> str:
+    try:
+        if hasattr(st.secrets, "get"):
+            return st.secrets.get("sheet_id", DEFAULT_SHEET_ID)
+    except Exception:
+        pass
+    return DEFAULT_SHEET_ID
+
+
 @st.cache_resource(show_spinner=False)
 def get_spreadsheet():
     client = get_gspread_client()
@@ -212,7 +245,7 @@ def get_spreadsheet():
 # ============================================================
 # [B3] Sheet Read / Write
 # ============================================================
-@st.cache_data(show_spinner=False, ttl=60)
+@st.cache_data(show_spinner=False, ttl=120)
 def read_table(sheet_name: str) -> pd.DataFrame:
     sh = get_spreadsheet()
     if sh is None:
@@ -242,14 +275,17 @@ def get_header(sheet_name: str) -> list[str]:
     return [_norm(h) for h in header]
 
 
-def append_row_by_header(sheet_name: str, header: list[str], row: dict):
+def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
+    if not rows:
+        return
+
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
 
     ws = sh.worksheet(sheet_name)
-    values = [row.get(col, "") for col in header]
-    ws.append_row(values, value_input_option="USER_ENTERED")
+    values = [[row.get(col, "") for col in header] for row in rows]
+    ws.append_rows(values, value_input_option="USER_ENTERED")
 
 
 def bust_cache():
@@ -291,13 +327,29 @@ def send_line_message(message: str) -> bool:
 
 
 # ============================================================
-# [B5] ID Sequence
+# [B5] ID Sequence - 批次版
 # ============================================================
 def _make_id(prefix: str, width: int, n: int) -> str:
     return f"{prefix}{str(n).zfill(int(width))}"
 
 
-def get_next_id(key: str, env: str = "prod") -> str:
+def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str, list[str]]:
+    """
+    一次讀取 id_sequences，一次回寫，減少 API 次數。
+    request_counts 範例：
+    {
+        "stocktakes": 1,
+        "stocktake_lines": 3,
+        "purchase_orders": 1,
+        "purchase_order_lines": 3,
+    }
+    """
+    request_counts = {k: int(v) for k, v in request_counts.items() if int(v) > 0}
+    result = {k: [] for k in request_counts.keys()}
+
+    if not request_counts:
+        return result
+
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
@@ -311,37 +363,42 @@ def get_next_id(key: str, env: str = "prod") -> str:
     rows = values[1:]
     df = pd.DataFrame(rows, columns=header)
 
-    for col in ["key", "env", "prefix", "width", "next_value"]:
+    required = ["key", "env", "prefix", "width", "next_value"]
+    for col in required:
         if col not in df.columns:
             raise ValueError(f"id_sequences 缺少欄位：{col}")
 
-    hit = df[
-        (df["key"].astype(str).str.strip() == str(key).strip())
-        & (df["env"].astype(str).str.strip() == str(env).strip())
-    ]
-    if hit.empty:
-        raise ValueError(f"id_sequences 找不到 key={key}, env={env}")
+    now = _now_ts()
 
-    rec = hit.iloc[0].to_dict()
-    prefix = _norm(rec.get("prefix", ""))
-    width = int(_safe_float(rec.get("width", 0), 0))
-    next_value = int(_safe_float(rec.get("next_value", 0), 0))
+    for key, cnt in request_counts.items():
+        hit = df[
+            (df["key"].astype(str).str.strip() == str(key).strip())
+            & (df["env"].astype(str).str.strip() == str(env).strip())
+        ]
 
-    if not prefix or width <= 0 or next_value <= 0:
-        raise ValueError(f"id_sequences 設定錯誤：key={key}")
+        if hit.empty:
+            raise ValueError(f"id_sequences 找不到 key={key}, env={env}")
 
-    new_id = _make_id(prefix, width, next_value)
+        idx = hit.index[0]
+        prefix = _norm(df.at[idx, "prefix"])
+        width = int(_safe_float(df.at[idx, "width"], 0))
+        next_value = int(_safe_float(df.at[idx, "next_value"], 0))
 
-    row_index = int(hit.index[0]) + 2
-    col_next_value = header.index("next_value") + 1
-    col_updated_at = header.index("updated_at") + 1 if "updated_at" in header else None
+        if not prefix or width <= 0 or next_value <= 0:
+            raise ValueError(f"id_sequences 設定錯誤：key={key}")
 
-    ws.update_cell(row_index, col_next_value, str(next_value + 1))
-    if col_updated_at:
-        ws.update_cell(row_index, col_updated_at, _now_ts())
+        ids = [_make_id(prefix, width, next_value + i) for i in range(cnt)]
+        result[key] = ids
+
+        df.at[idx, "next_value"] = str(next_value + cnt)
+        if "updated_at" in df.columns:
+            df.at[idx, "updated_at"] = now
+
+    out_values = [header] + df[header].fillna("").astype(str).values.tolist()
+    ws.update(out_values)
 
     bust_cache()
-    return new_id
+    return result
 
 
 # ============================================================
@@ -505,77 +562,6 @@ def _get_latest_stock_qty_in_display_unit(
         return round(base_qty, 1)
 
 
-def _coalesce_columns(df: pd.DataFrame, candidates: list[str], default="") -> pd.Series:
-    if df is None or df.empty:
-        return pd.Series(dtype="object")
-
-    result = pd.Series([pd.NA] * len(df), index=df.index, dtype="object")
-
-    for col in candidates:
-        if col in df.columns:
-            s = df[col].copy()
-            s = s.where(~pd.isna(s), pd.NA)
-
-            if s.dtype == "object":
-                s = s.apply(lambda x: pd.NA if str(x).strip() == "" else x)
-
-            result = result.combine_first(s)
-
-    if default != "":
-        result = result.fillna(default)
-
-    return result
-    
-    if stocktakes_df.empty or stocktake_lines_df.empty:
-        return 0.0
-
-    need_st = {"stocktake_id", "store_id", "stocktake_date"}
-    need_stl = {"stocktake_id", "item_id"}
-    if not need_st.issubset(set(stocktakes_df.columns)) or not need_stl.issubset(set(stocktake_lines_df.columns)):
-        return 0.0
-
-    stx = stocktakes_df.copy()
-    stl = stocktake_lines_df.copy()
-
-    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
-    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
-    stl["item_id"] = stl["item_id"].astype(str).str.strip()
-
-    stx = stx[stx["store_id"].astype(str).str.strip() == str(store_id).strip()].copy()
-    if stx.empty:
-        return 0.0
-
-    merged = stl.merge(stx[["stocktake_id", "stocktake_date"]], on="stocktake_id", how="inner")
-    merged = merged[merged["item_id"] == str(item_id).strip()].copy()
-    if merged.empty:
-        return 0.0
-
-    merged["__date"] = merged["stocktake_date"].apply(_parse_date)
-    merged = merged.sort_values("__date", ascending=True)
-    latest = merged.iloc[-1].to_dict()
-
-    base_qty = _safe_float(latest.get("base_qty", latest.get("stock_qty", latest.get("qty", 0))))
-    if base_qty <= 0:
-        return 0.0
-
-    try:
-        base_unit = get_base_unit(items_df, item_id)
-        if display_unit == base_unit:
-            return round(base_qty, 1)
-
-        qty = convert_unit(
-            item_id=item_id,
-            qty=base_qty,
-            from_unit=base_unit,
-            to_unit=display_unit,
-            conversions_df=conversions_df,
-            as_of_date=_parse_date(latest.get("stocktake_date")),
-        )
-        return round(qty, 1)
-    except Exception:
-        return round(base_qty, 1)
-
-
 def _build_purchase_detail_df() -> pd.DataFrame:
     po_df = read_table("purchase_orders")
     pol_df = read_table("purchase_order_lines")
@@ -655,6 +641,10 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     else:
         merged["store_name_disp"] = merged["store_id"]
 
+    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(lambda x: _norm(x) or "未指定")
+    merged["item_name_disp"] = merged["item_name_disp"].apply(lambda x: _norm(x) or "未指定")
+    merged["store_name_disp"] = merged["store_name_disp"].apply(lambda x: _norm(x) or "未指定")
+
     merged["order_date_dt"] = merged["order_date"].apply(_parse_date)
 
     merged["order_qty_num"] = pd.to_numeric(
@@ -677,6 +667,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     merged["order_unit_disp"] = _coalesce_columns(merged, ["order_unit", "unit_id"], default="").astype(str).str.strip()
 
     return merged.copy()
+
 
 def _build_stock_detail_df() -> pd.DataFrame:
     st_df = read_table("stocktakes")
@@ -767,6 +758,10 @@ def _build_stock_detail_df() -> pd.DataFrame:
     else:
         merged["store_name_disp"] = merged["store_id"]
 
+    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(lambda x: _norm(x) or "未指定")
+    merged["item_name_disp"] = merged["item_name_disp"].apply(lambda x: _norm(x) or "未指定")
+    merged["store_name_disp"] = merged["store_name_disp"].apply(lambda x: _norm(x) or "未指定")
+
     merged["stocktake_date_dt"] = merged["stocktake_date"].apply(_parse_date)
 
     merged["base_qty_num"] = pd.to_numeric(
@@ -837,13 +832,10 @@ def init_session():
 
 
 # ============================================================
-# [E1] select_store - 分店選擇頁
+# [E1] Select Store
 # ============================================================
 def page_select_store():
-    st.markdown(
-        "<style>.block-container { padding-top: 4rem !important; }</style>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title("🏠 選擇分店")
 
     stores_df = _get_active_df(read_table("stores"))
@@ -865,19 +857,13 @@ def page_select_store():
 
 
 # ============================================================
-# [E2] select_vendor - 廠商與功能中心
+# [E2] Select Vendor
 # ============================================================
 def page_select_vendor():
-    st.markdown(
-        "<style>.block-container { padding-top: 4rem !important; }</style>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
     st.title(f"🏢 {st.session_state.store_name}")
 
-    st.session_state.record_date = st.date_input(
-        "🗓️ 作業日期",
-        value=st.session_state.record_date,
-    )
+    st.session_state.record_date = st.date_input("🗓️ 作業日期", value=st.session_state.record_date)
 
     vendors_df = _get_active_df(read_table("vendors"))
     items_df = _get_active_df(read_table("items"))
@@ -901,11 +887,7 @@ def page_select_vendor():
 
         left = vendors.iloc[i]
         with cols[0]:
-            if st.button(
-                f"📦 {left['vendor_label']}",
-                key=f"vendor_{left.get('vendor_id','')}",
-                use_container_width=True,
-            ):
+            if st.button(f"📦 {left['vendor_label']}", key=f"vendor_{left.get('vendor_id','')}", use_container_width=True):
                 st.session_state.vendor_id = _norm(left.get("vendor_id", ""))
                 st.session_state.vendor_name = left["vendor_label"]
                 st.session_state.step = "order_entry"
@@ -914,11 +896,7 @@ def page_select_vendor():
         if i + 1 < len(vendors):
             right = vendors.iloc[i + 1]
             with cols[1]:
-                if st.button(
-                    f"📦 {right['vendor_label']}",
-                    key=f"vendor_{right.get('vendor_id','')}",
-                    use_container_width=True,
-                ):
+                if st.button(f"📦 {right['vendor_label']}", key=f"vendor_{right.get('vendor_id','')}", use_container_width=True):
                     st.session_state.vendor_id = _norm(right.get("vendor_id", ""))
                     st.session_state.vendor_name = right["vendor_label"]
                     st.session_state.step = "order_entry"
@@ -944,7 +922,7 @@ def page_select_vendor():
 
 
 # ============================================================
-# [E3] order_entry - 同頁庫存 / 叫貨
+# [E3] Order Entry
 # ============================================================
 def page_order_entry():
     st.markdown(
@@ -1013,8 +991,7 @@ def page_order_entry():
         return
 
     vendor_items = items_df[
-        items_df["default_vendor_id"].astype(str).str.strip()
-        == str(st.session_state.vendor_id).strip()
+        items_df["default_vendor_id"].astype(str).str.strip() == str(st.session_state.vendor_id).strip()
     ].copy()
 
     if vendor_items.empty:
@@ -1123,9 +1100,7 @@ def page_order_entry():
 
             with c1:
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
-                st.caption(
-                    f"{base_unit} (前結:{current_stock_qty:.1f} | 單價:{price:.1f} | 💡建議:{suggest_qty:.1f})"
-                )
+                st.caption(f"{base_unit} (前結:{current_stock_qty:.1f} | 單價:{price:.1f} | 💡建議:{suggest_qty:.1f})")
 
             with c2:
                 stock_input = st.number_input(
@@ -1139,8 +1114,6 @@ def page_order_entry():
                 )
                 st.caption(base_unit)
 
-            orderable_unit_options = meta["orderable_unit_options"]
-
             with c3:
                 order_input = st.number_input(
                     "進",
@@ -1153,8 +1126,8 @@ def page_order_entry():
                 )
                 selected_order_unit = st.selectbox(
                     "進貨單位",
-                    options=orderable_unit_options,
-                    index=orderable_unit_options.index(order_unit) if order_unit in orderable_unit_options else 0,
+                    options=meta["orderable_unit_options"],
+                    index=meta["orderable_unit_options"].index(order_unit) if order_unit in meta["orderable_unit_options"] else 0,
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
@@ -1175,14 +1148,27 @@ def page_order_entry():
 
     if submitted:
         try:
+            stocktake_rows = [r for r in submit_rows if abs(r["stock_qty"] - item_meta[r["item_id"]]["current_stock_qty"]) >= 0.0001]
+            order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+
+            id_need = {
+                "stocktakes": 1,
+                "stocktake_lines": len(stocktake_rows),
+                "purchase_orders": 1 if order_rows else 0,
+                "purchase_order_lines": len(order_rows),
+            }
+            id_map = allocate_ids(id_need)
+
             stocktake_header = get_header("stocktakes")
             stl_header = get_header("stocktake_lines")
+            po_header = get_header("purchase_orders") if order_rows else []
+            pol_header = get_header("purchase_order_lines") if order_rows else []
 
-            stocktake_id = get_next_id("stocktakes")
             now = _now_ts()
 
-            stocktake_row = {c: "" for c in stocktake_header}
-            defaults_stocktake = {
+            stocktake_id = id_map["stocktakes"][0]
+            stocktake_main_row = {c: "" for c in stocktake_header}
+            for k, v in {
                 "stocktake_id": stocktake_id,
                 "store_id": st.session_state.store_id,
                 "stocktake_date": str(st.session_state.record_date),
@@ -1192,18 +1178,15 @@ def page_order_entry():
                 "created_by": "SYSTEM",
                 "updated_at": "",
                 "updated_by": "",
-            }
-            for k, v in defaults_stocktake.items():
-                if k in stocktake_row:
-                    stocktake_row[k] = v
+            }.items():
+                if k in stocktake_main_row:
+                    stocktake_main_row[k] = v
 
-            append_row_by_header("stocktakes", stocktake_header, stocktake_row)
+            append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
 
-            for r in submit_rows:
-                if abs(r["stock_qty"] - item_meta[r["item_id"]]["current_stock_qty"]) < 0.0001:
-                    continue
-
-                stocktake_line_id = get_next_id("stocktake_lines")
+            stock_line_rows = []
+            for idx, r in enumerate(stocktake_rows):
+                stocktake_line_id = id_map["stocktake_lines"][idx]
 
                 try:
                     stock_base_qty, stock_base_unit = convert_to_base(
@@ -1218,7 +1201,7 @@ def page_order_entry():
                     stock_base_qty = r["stock_qty"]
                     stock_base_unit = r["stock_unit"]
 
-                line_row = {c: "" for c in stl_header}
+                row_dict = {c: "" for c in stl_header}
                 defaults_line = {
                     "stocktake_line_id": stocktake_line_id,
                     "stocktake_id": stocktake_id,
@@ -1235,21 +1218,17 @@ def page_order_entry():
                     "updated_by": "",
                 }
                 for k, v in defaults_line.items():
-                    if k in line_row:
-                        line_row[k] = v
+                    if k in row_dict:
+                        row_dict[k] = v
+                stock_line_rows.append(row_dict)
 
-                append_row_by_header("stocktake_lines", stl_header, line_row)
+            append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
 
-            order_rows = [r for r in submit_rows if r["order_qty"] > 0]
             po_id = ""
-
             if order_rows:
-                po_header = get_header("purchase_orders")
-                pol_header = get_header("purchase_order_lines")
+                po_id = id_map["purchase_orders"][0]
 
-                po_id = get_next_id("purchase_orders")
                 po_row = {c: "" for c in po_header}
-
                 defaults_po = {
                     "po_id": po_id,
                     "store_id": st.session_state.store_id,
@@ -1266,10 +1245,11 @@ def page_order_entry():
                     if k in po_row:
                         po_row[k] = v
 
-                append_row_by_header("purchase_orders", po_header, po_row)
+                append_rows_by_header("purchase_orders", po_header, [po_row])
 
-                for r in order_rows:
-                    po_line_id = get_next_id("purchase_order_lines")
+                po_line_rows = []
+                for idx, r in enumerate(order_rows):
+                    po_line_id = id_map["purchase_order_lines"][idx]
 
                     try:
                         order_base_qty, order_base_unit = convert_to_base(
@@ -1286,7 +1266,7 @@ def page_order_entry():
 
                     line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
 
-                    pol_row = {c: "" for c in pol_header}
+                    row_dict = {c: "" for c in pol_header}
                     defaults_pol = {
                         "po_line_id": po_line_id,
                         "po_id": po_id,
@@ -1306,23 +1286,23 @@ def page_order_entry():
                         "updated_by": "",
                     }
                     for k, v in defaults_pol.items():
-                        if k in pol_row:
-                            pol_row[k] = v
+                        if k in row_dict:
+                            row_dict[k] = v
+                    po_line_rows.append(row_dict)
 
-                    append_row_by_header("purchase_order_lines", pol_header, pol_row)
+                append_rows_by_header("purchase_order_lines", pol_header, po_line_rows)
 
-            bust_cache()
             bust_cache()
             st.success(f"✅ 已儲存庫存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
             st.session_state.step = "select_vendor"
             st.rerun()
+
         except Exception as e:
             st.error(f"❌ 儲存失敗：{e}")
-        
+
             if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
                 st.session_state.step = "select_vendor"
                 st.rerun()
-        
             return
 
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
@@ -1331,7 +1311,7 @@ def page_order_entry():
 
 
 # ============================================================
-# [E4] view_history - 歷史紀錄查詢
+# [E4] View History
 # ============================================================
 def page_view_history():
     st.markdown(
@@ -1361,8 +1341,8 @@ def page_view_history():
     po_df = _build_purchase_detail_df()
 
     c_h_date1, c_h_date2 = st.columns(2)
-    h_start = c_h_date1.date_input("起始日期", value=date.today() - timedelta(days=7), key="h_start")
-    h_end = c_h_date2.date_input("結束日期", value=date.today(), key="h_end")
+    h_start = c_h_date1.date_input("起始日期", value=date.today() - timedelta(days=7), key="hist_start_date")
+    h_end = c_h_date2.date_input("結束日期", value=date.today(), key="hist_end_date")
 
     t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
 
@@ -1370,9 +1350,7 @@ def page_view_history():
         detail_rows = []
 
         if not stock_df.empty and "store_id" in stock_df.columns:
-            stock_work = stock_df[
-                stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-            ].copy()
+            stock_work = stock_df[stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
 
             if "stocktake_date_dt" in stock_work.columns:
                 stock_work = stock_work[
@@ -1387,7 +1365,7 @@ def page_view_history():
                             "日期": r.get("stocktake_date_dt"),
                             "類型": "庫存",
                             "廠商": _norm(r.get("vendor_name_disp", "")) or "未指定",
-                            "品項名稱": _norm(r.get("item_name_disp", "")),
+                            "品項名稱": _norm(r.get("item_name_disp", "")) or "未指定",
                             "數量": round(_safe_float(r.get("display_stock_qty", 0)), 1),
                             "單位": _norm(r.get("display_stock_unit", "")),
                             "單價": "",
@@ -1396,9 +1374,7 @@ def page_view_history():
                     )
 
         if not po_df.empty and "store_id" in po_df.columns:
-            po_work = po_df[
-                po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-            ].copy()
+            po_work = po_df[po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
 
             if "order_date_dt" in po_work.columns:
                 po_work = po_work[
@@ -1413,7 +1389,7 @@ def page_view_history():
                             "日期": r.get("order_date_dt"),
                             "類型": "叫貨",
                             "廠商": _norm(r.get("vendor_name_disp", "")) or "未指定",
-                            "品項名稱": _norm(r.get("item_name_disp", "")),
+                            "品項名稱": _norm(r.get("item_name_disp", "")) or "未指定",
                             "數量": round(_safe_float(r.get("order_qty_num", 0)), 1),
                             "單位": _norm(r.get("order_unit_disp", "")),
                             "單價": round(_safe_float(r.get("unit_price_num", 0)), 1),
@@ -1427,74 +1403,41 @@ def page_view_history():
             st.info("💡 此區間內無紀錄。")
         else:
             col_v, col_i = st.columns(2)
-        
-            all_v = ["全部廠商"] + sorted(
-                [
-                    x for x in detail_df["廠商"].dropna().unique().tolist()
-                    if str(x).strip() and str(x).strip().lower() != "nan"
-                ]
-            )
-        
-            sel_v = col_v.selectbox(
-                "📦 1. 選擇廠商",
-                options=all_v,
-                index=0,
-                key="hist_vendor"
-            )
-        
+
+            all_v = ["全部廠商"] + _clean_option_list(detail_df["廠商"].dropna().unique().tolist())
+            sel_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
+
             filt_df = detail_df.copy()
             if sel_v != "全部廠商":
                 filt_df = filt_df[filt_df["廠商"] == sel_v]
-        
-            all_i = ["全部品項"] + sorted(
-                [
-                    x for x in filt_df["品項名稱"].dropna().unique().tolist()
-                    if str(x).strip() and str(x).strip().lower() != "nan"
-                ]
-            )
-        
-            sel_i = col_i.selectbox(
-                "🏷️ 2. 選擇品項",
-                options=all_i,
-                index=0,
-                key="hist_item"
-            )
-        
+
+            all_i = ["全部品項"] + _clean_option_list(filt_df["品項名稱"].dropna().unique().tolist())
+            sel_i = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="hist_item_filter")
+
             if sel_i != "全部品項":
                 filt_df = filt_df[filt_df["品項名稱"] == sel_i]
-        
-            # 這一段要和上面 if 對齊
+
             filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
             filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
-        
+
             show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
-        
+
             st.dataframe(
                 filt_df[show_cols],
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "顯示日期": st.column_config.TextColumn("日期", width="small"),
+                    "類型": st.column_config.TextColumn(width="small"),
+                    "廠商": st.column_config.TextColumn(width="small"),
+                    "品項名稱": st.column_config.TextColumn(width="medium"),
+                    "數量": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "單位": st.column_config.TextColumn(width="small"),
+                    "單價": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "金額": st.column_config.NumberColumn(format="%.1f", width="small"),
+                },
             )
-    sel_i = col_i.selectbox(
-        "🏷️ 2. 選擇品項",
-        options=all_i,
-        index=0,
-        key="hist_item"
-    )
 
-    if sel_i != "全部品項":
-        filt_df = filt_df[filt_df["品項名稱"] == sel_i]
-
-    # 這一段要和上面 if 對齊
-    filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
-    filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
-
-    show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
-
-    st.dataframe(
-        filt_df[show_cols],
-        use_container_width=True,
-        hide_index=True
-    )
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
@@ -1502,10 +1445,7 @@ def page_view_history():
             if po_df.empty or "store_id" not in po_df.columns or "order_date_dt" not in po_df.columns:
                 st.info("💡 此區間內無叫貨趨勢資料。")
             else:
-                po_work = po_df[
-                    po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-                ].copy()
-
+                po_work = po_df[po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
                 po_work = po_work[
                     po_work["order_date_dt"].notna()
                     & (po_work["order_date_dt"] >= h_start)
@@ -1516,24 +1456,20 @@ def page_view_history():
                     st.info("💡 此區間內無叫貨趨勢資料。")
                 else:
                     col_v2, col_i2 = st.columns(2)
-                    all_v2 = sorted(
-                        [x for x in po_work["vendor_name_disp"].dropna().unique().tolist() if str(x).strip()]
-                    )
+                    all_v2 = _clean_option_list(po_work["vendor_name_disp"].dropna().unique().tolist())
 
                     if not all_v2:
                         st.info("💡 此區間內無廠商資料。")
                     else:
-                        sel_v2 = col_v2.selectbox("📦 1. 選擇廠商", options=all_v2, key="hist_t_vendor")
+                        sel_v2 = col_v2.selectbox("📦 1. 選擇廠商", options=all_v2, key="hist_trend_vendor")
                         v_filtered = po_work[po_work["vendor_name_disp"] == sel_v2].copy()
 
-                        all_i2 = sorted(
-                            [x for x in v_filtered["item_name_disp"].dropna().unique().tolist() if str(x).strip()]
-                        )
+                        all_i2 = _clean_option_list(v_filtered["item_name_disp"].dropna().unique().tolist())
 
                         if not all_i2:
                             st.info("💡 此廠商目前無品項資料。")
                         else:
-                            sel_i2 = col_i2.selectbox("🏷️ 2. 選擇品項", options=all_i2, key="hist_t_item")
+                            sel_i2 = col_i2.selectbox("🏷️ 2. 選擇品項", options=all_i2, key="hist_trend_item")
                             p_df = v_filtered[v_filtered["item_name_disp"] == sel_i2].copy()
 
                             trend = (
@@ -1564,8 +1500,9 @@ def page_view_history():
         st.session_state.step = "select_vendor"
         st.rerun()
 
+
 # ============================================================
-# [E5] export - 今日進貨明細輸出
+# [E5] Export
 # ============================================================
 def page_export():
     st.title("📋 今日進貨明細")
@@ -1607,7 +1544,7 @@ def page_export():
 
     for _, v in vendor_order.iterrows():
         vendor_id = _norm(v.get("vendor_id", ""))
-        vendor_name = _norm(v.get("vendor_name_disp", ""))
+        vendor_name = _norm(v.get("vendor_name_disp", "")) or "未指定"
 
         output += f"\n{vendor_name}\n{store_name}\n"
 
@@ -1635,7 +1572,7 @@ def page_export():
 
 
 # ============================================================
-# [E6] analysis - 進銷存分析中心
+# [E6] Analysis
 # ============================================================
 def page_analysis():
     st.title("📊 進銷存分析")
@@ -1659,9 +1596,7 @@ def page_analysis():
     stock_store = pd.DataFrame()
 
     if not po_df.empty and "store_id" in po_df.columns and "order_date_dt" in po_df.columns:
-        po_store = po_df[
-            po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-        ].copy()
+        po_store = po_df[po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
         po_store = po_store[
             po_store["order_date_dt"].notna()
             & (po_store["order_date_dt"] >= start)
@@ -1669,9 +1604,7 @@ def page_analysis():
         ].copy()
 
     if not stock_df.empty and "store_id" in stock_df.columns and "stocktake_date_dt" in stock_df.columns:
-        stock_store = stock_df[
-            stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-        ].copy()
+        stock_store = stock_df[stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
         stock_store = stock_store[
             stock_store["stocktake_date_dt"].notna()
             & (stock_store["stocktake_date_dt"] >= start)
@@ -1689,14 +1622,14 @@ def page_analysis():
 
     col_v, col_i = st.columns(2)
 
-    all_vendors = sorted(
+    all_vendors = _clean_option_list(
         list(
-            set([x for x in po_store.get("vendor_name_disp", pd.Series(dtype=str)).dropna().tolist() if str(x).strip()])
-            | set([x for x in stock_store.get("vendor_name_disp", pd.Series(dtype=str)).dropna().tolist() if str(x).strip()])
+            set(po_store.get("vendor_name_disp", pd.Series(dtype=str)).dropna().tolist())
+            | set(stock_store.get("vendor_name_disp", pd.Series(dtype=str)).dropna().tolist())
         )
     )
     all_v = ["全部廠商"] + all_vendors
-    selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_v_box")
+    selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_vendor_filter")
 
     po_filt = po_store.copy()
     stock_filt = stock_store.copy()
@@ -1707,14 +1640,14 @@ def page_analysis():
         if not stock_filt.empty:
             stock_filt = stock_filt[stock_filt["vendor_name_disp"] == selected_v].copy()
 
-    all_items = sorted(
+    all_items = _clean_option_list(
         list(
-            set([x for x in po_filt.get("item_name_disp", pd.Series(dtype=str)).dropna().tolist() if str(x).strip()])
-            | set([x for x in stock_filt.get("item_name_disp", pd.Series(dtype=str)).dropna().tolist() if str(x).strip()])
+            set(po_filt.get("item_name_disp", pd.Series(dtype=str)).dropna().tolist())
+            | set(stock_filt.get("item_name_disp", pd.Series(dtype=str)).dropna().tolist())
         )
     )
     all_i = ["全部品項"] + all_items
-    selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_i_box")
+    selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_item_filter")
 
     if selected_item != "全部品項":
         if not po_filt.empty:
@@ -1839,6 +1772,7 @@ def page_analysis():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 # ============================================================
 # [F1] Router
