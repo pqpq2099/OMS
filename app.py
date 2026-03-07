@@ -455,6 +455,56 @@ def _get_latest_stock_qty_in_display_unit(
     item_id: str,
     display_unit: str,
 ):
+    if stocktakes_df.empty or stocktake_lines_df.empty:
+        return 0.0
+
+    need_st = {"stocktake_id", "store_id", "stocktake_date"}
+    need_stl = {"stocktake_id", "item_id"}
+    if not need_st.issubset(set(stocktakes_df.columns)) or not need_stl.issubset(set(stocktake_lines_df.columns)):
+        return 0.0
+
+    stx = stocktakes_df.copy()
+    stl = stocktake_lines_df.copy()
+
+    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+    stl["item_id"] = stl["item_id"].astype(str).str.strip()
+
+    stx = stx[stx["store_id"].astype(str).str.strip() == str(store_id).strip()].copy()
+    if stx.empty:
+        return 0.0
+
+    merged = stl.merge(stx[["stocktake_id", "stocktake_date"]], on="stocktake_id", how="inner")
+    merged = merged[merged["item_id"] == str(item_id).strip()].copy()
+    if merged.empty:
+        return 0.0
+
+    merged["__date"] = merged["stocktake_date"].apply(_parse_date)
+    merged = merged.sort_values("__date", ascending=True)
+    latest = merged.iloc[-1].to_dict()
+
+    base_qty = _safe_float(latest.get("base_qty", latest.get("stock_qty", latest.get("qty", 0))))
+    if base_qty <= 0:
+        return 0.0
+
+    try:
+        base_unit = get_base_unit(items_df, item_id)
+        if display_unit == base_unit:
+            return round(base_qty, 1)
+
+        qty = convert_unit(
+            item_id=item_id,
+            qty=base_qty,
+            from_unit=base_unit,
+            to_unit=display_unit,
+            conversions_df=conversions_df,
+            as_of_date=_parse_date(latest.get("stocktake_date")),
+        )
+        return round(qty, 1)
+    except Exception:
+        return round(base_qty, 1)
+
+
 def _coalesce_columns(df: pd.DataFrame, candidates: list[str], default="") -> pd.Series:
     if df is None or df.empty:
         return pd.Series(dtype="object")
