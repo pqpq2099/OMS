@@ -232,8 +232,9 @@ def get_worksheet(ws_name: str):
     sh = open_spreadsheet(DB_SHEET_ID)
     try:
         return sh.worksheet(ws_name)
-    except WorksheetNotFound:
-        return sh.add_worksheet(title=ws_name, rows=2000, cols=60)
+    except Exception as e:
+        st.error(f"get_worksheet error: {type(e).__name__} / {e}")
+        raise
 
 
 def read_ws(ws_name: str) -> pd.DataFrame:
