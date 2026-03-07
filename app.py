@@ -49,9 +49,10 @@ PLOTLY_CONFIG = {
 SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
 DB_SHEET_ID = SHEET_ID
 
-CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
-CSV_STORE = Path("品項總覽.xlsx - 分店.csv")
-CSV_PRICE = Path("品項總覽.xlsx - 價格歷史.csv")
+# CSV master files 已停用（改為全部由 Google Sheet DB 提供）
+CSV_ITEMS = None
+CSV_STORE = None
+CSV_PRICE = None
 
 WS_TRANSACTIONS = "transactions"
 WS_PURCHASE_ORDERS = "purchase_orders"
@@ -295,10 +296,27 @@ def bootstrap_if_needed():
 # [C0] Master Data Load
 # ============================================================
 @st.cache_data(show_spinner=False)
+# ============================================================
+# [C0] Master Data Load (from Google Sheets DB)
+# ============================================================
+WS_ITEMS = "items"
+WS_STORES = "stores"
+WS_PRICES = "prices"
+
+@st.cache_data(show_spinner=False)
 def load_csv_data():
-    items = pd.read_csv(CSV_ITEMS, dtype=str).fillna("") if CSV_ITEMS.exists() else pd.DataFrame()
-    stores = pd.read_csv(CSV_STORE, dtype=str).fillna("") if CSV_STORE.exists() else pd.DataFrame()
-    prices = pd.read_csv(CSV_PRICE, dtype=str).fillna("") if CSV_PRICE.exists() else pd.DataFrame()
+    # 改為從 Google Sheet DB 讀取主資料
+    items = read_ws(WS_ITEMS)
+    stores = read_ws(WS_STORES)
+    prices = read_ws(WS_PRICES)
+
+    if items.empty:
+        items = pd.DataFrame()
+    if stores.empty:
+        stores = pd.DataFrame()
+    if prices.empty:
+        prices = pd.DataFrame()
+
     return items, stores, prices
 
 
