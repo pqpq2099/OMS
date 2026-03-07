@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date, datetime
 import math
 
 # ============================================================
@@ -49,11 +48,9 @@ PLOTLY_CONFIG = {
 SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
 DB_SHEET_ID = SHEET_ID
 
-# CSV master files 已停用（改為全部由 Google Sheet DB 提供）
-CSV_ITEMS = None
-CSV_STORE = None
-CSV_PRICE = None
-
+WS_ITEMS = "items"
+WS_STORES = "stores"
+WS_PRICES = "prices"
 WS_TRANSACTIONS = "transactions"
 WS_PURCHASE_ORDERS = "purchase_orders"
 WS_PO_LINES = "purchase_order_lines"
@@ -120,10 +117,6 @@ div[data-baseweb="select"] span {
     font-size: 0.86rem;
     color: rgba(120,120,120,1);
     margin-bottom: 0.4rem;
-}
-
-.orivia-divider {
-    height: 8px;
 }
 
 @media (max-width: 768px) {
@@ -198,6 +191,7 @@ def ensure_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
             df[c] = ""
     return df
 
+
 # ============================================================
 # [B1] Google Sheets
 # ============================================================
@@ -253,11 +247,23 @@ def append_rows(ws_name: str, rows: list[list]):
     ws = get_worksheet(ws_name)
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
+
 # ============================================================
 # [B2] Initial Sheet Bootstrap
 # ============================================================
 def bootstrap_if_needed():
     required = {
+        WS_ITEMS: [
+            "item_id", "brand_id", "default_vendor_id", "item_name", "item_name_zh",
+            "item_type", "base_unit", "default_stock_unit", "default_order_unit",
+            "orderable_units", "is_active", "price"
+        ],
+        WS_STORES: [
+            "store_id", "store_name", "store_name_zh", "brand_id", "is_active"
+        ],
+        WS_PRICES: [
+            "item_id", "unit_price", "effective_date", "end_date"
+        ],
         WS_TRANSACTIONS: [
             "txn_id", "txn_date", "store_id", "vendor_id", "item_id", "item_name",
             "txn_type", "qty", "unit", "base_qty", "unit_price", "amount",
@@ -292,20 +298,12 @@ def bootstrap_if_needed():
             df = ensure_columns(df, cols)
             write_ws_df(ws_name, df[cols])
 
-# ============================================================
-# [C0] Master Data Load
-# ============================================================
-@st.cache_data(show_spinner=False)
+
 # ============================================================
 # [C0] Master Data Load (from Google Sheets DB)
 # ============================================================
-WS_ITEMS = "items"
-WS_STORES = "stores"
-WS_PRICES = "prices"
-
 @st.cache_data(show_spinner=False)
 def load_csv_data():
-    # 改為從 Google Sheet DB 讀取主資料
     items = read_ws(WS_ITEMS)
     stores = read_ws(WS_STORES)
     prices = read_ws(WS_PRICES)
@@ -393,6 +391,7 @@ def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, i
         if not hit.empty:
             return _safe_float(hit.iloc[0].get("price"), 0.0)
     return 0.0
+
 
 # ============================================================
 # [C1] Current Stock / History Logic
@@ -484,6 +483,7 @@ def get_usage_suggestion(store_id: str, item_id: str, days: int = 7) -> float:
     avg_daily = total_usage / max(days, 1)
     return round(max(avg_daily, 1.0), 1)
 
+
 # ============================================================
 # [C2] IDs / Audit
 # ============================================================
@@ -493,6 +493,7 @@ def make_id(prefix: str) -> str:
 
 def now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 # ============================================================
 # [D0] Settings
@@ -525,6 +526,7 @@ def save_settings_dict(settings: dict):
     df = pd.DataFrame(rows, columns=["setting_key", "setting_value", "updated_at", "updated_by"])
     write_ws_df(WS_SETTINGS, df)
 
+
 # ============================================================
 # [D1] Sidebar
 # ============================================================
@@ -539,8 +541,9 @@ def render_sidebar(stores_df: pd.DataFrame, settings: dict):
         for _, row in active.iterrows():
             sid = _norm(row.get("store_id"))
             sname = _norm(row.get("store_name_zh")) or _norm(row.get("store_name")) or sid
-            store_options.append(sid)
-            store_name_map[sid] = sname
+            if sid:
+                store_options.append(sid)
+                store_name_map[sid] = sname
 
     if not store_options:
         st.sidebar.warning("目前沒有可用分店資料")
@@ -562,6 +565,7 @@ def render_sidebar(stores_df: pd.DataFrame, settings: dict):
 
     page = st.sidebar.radio("頁面", pages)
     return selected_store, page, store_name_map
+
 
 # ============================================================
 # [E0] Order Entry Page
@@ -585,6 +589,10 @@ def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: p
         return
 
     vendor_options = sorted([x for x in items_df["default_vendor_id"].astype(str).unique().tolist() if x])
+    if not vendor_options:
+        st.warning("items 表沒有可用的 default_vendor_id")
+        return
+
     selected_vendor = st.selectbox("選擇廠商", options=vendor_options)
 
     vendor_items = items_df[items_df["default_vendor_id"].astype(str) == str(selected_vendor)].copy()
@@ -757,6 +765,7 @@ def save_order_entry(store_id: str, txn_date: str, note: str, rows: list[dict]):
     append_rows(WS_STOCKTAKE_LINES, stocktake_line_rows)
     append_rows(WS_TRANSACTIONS, txn_rows)
 
+
 # ============================================================
 # [E1] History Page
 # ============================================================
@@ -837,6 +846,7 @@ def render_history_page(selected_store: str, items_df: pd.DataFrame):
                 hide_index=True,
             )
 
+
 # ============================================================
 # [E2] Analysis Page
 # ============================================================
@@ -897,11 +907,10 @@ def render_analysis_page(selected_store: str):
             st.warning("目前環境沒有 Plotly，無法顯示圖表")
             return
 
-        trend = df.groupby(df["txn_date_parsed"].dt.date, dropna=False).agg(
+        trend = df.dropna(subset=["txn_date_parsed"]).groupby(df.dropna(subset=["txn_date_parsed"])["txn_date_parsed"].dt.date).agg(
             total_qty=("base_qty_num", "sum"),
             total_amount=("amount_num", "sum")
-        ).reset_index().rename(columns={"txn_date_parsed": "date"})
-        trend = trend.dropna(subset=["txn_date_parsed"]) if "txn_date_parsed" in trend.columns else trend
+        ).reset_index()
         trend.columns = ["date", "total_qty", "total_amount"]
 
         if not trend.empty:
@@ -919,6 +928,7 @@ def render_analysis_page(selected_store: str):
             fig2.update_layout(dragmode=False)
             st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 
+
 # ============================================================
 # [E3] Settings Page
 # ============================================================
@@ -928,10 +938,26 @@ def render_settings_page(settings: dict):
 
     with st.form("settings_form"):
         system_name = st.text_input("系統名稱", value=settings.get("system_name", "ORIVIA OMS"))
-        theme_mode = st.selectbox("外觀模式", ["system", "light", "dark"], index=["system", "light", "dark"].index(settings.get("theme_mode", "system")))
+        theme_mode = st.selectbox(
+            "外觀模式",
+            ["system", "light", "dark"],
+            index=["system", "light", "dark"].index(settings.get("theme_mode", "system")),
+        )
         currency = st.text_input("幣別", value=settings.get("currency", "NT$"))
-        suggestion_days = st.number_input("建議數量計算天數", min_value=1, max_value=90, value=_safe_int(settings.get("default_suggestion_days", "7"), 7), step=1)
-        history_days = st.number_input("歷史頁預設天數", min_value=1, max_value=365, value=_safe_int(settings.get("history_days", "30"), 30), step=1)
+        suggestion_days = st.number_input(
+            "建議數量計算天數",
+            min_value=1,
+            max_value=90,
+            value=_safe_int(settings.get("default_suggestion_days", "7"), 7),
+            step=1,
+        )
+        history_days = st.number_input(
+            "歷史頁預設天數",
+            min_value=1,
+            max_value=365,
+            value=_safe_int(settings.get("history_days", "30"), 30),
+            step=1,
+        )
 
         st.markdown("### 頁面開關")
         show_analysis = st.checkbox("開啟分析報表", value=settings.get("show_analysis", "1") == "1")
@@ -957,6 +983,7 @@ def render_settings_page(settings: dict):
 
     st.markdown("### 目前設定摘要")
     st.json(settings)
+
 
 # ============================================================
 # [Z0] Main
