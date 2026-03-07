@@ -1719,20 +1719,20 @@ def page_view_history():
                 "期間消耗",
             ]
 
-render_report_dataframe(
-    filt_df[show_cols],
-    column_config={
-        "日期顯示": st.column_config.TextColumn("日期", width="small"),
-        "廠商": st.column_config.TextColumn(width="small"),
-        "品項名稱": st.column_config.TextColumn(width="medium"),
-        "單位": st.column_config.TextColumn(width="small"),
-        "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
-        "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-        "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
-        "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-        "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-    }
-)
+    render_report_dataframe(
+        filt_df[show_cols],
+        column_config={
+            "日期顯示": st.column_config.TextColumn("日期", width="small"),
+            "廠商": st.column_config.TextColumn(width="small"),
+            "品項名稱": st.column_config.TextColumn(width="medium"),
+            "單位": st.column_config.TextColumn(width="small"),
+            "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+        }
+    )
 
     with t2:
         if not HAS_PLOTLY:
