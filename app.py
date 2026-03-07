@@ -411,6 +411,74 @@ def _get_active_df(df: pd.DataFrame) -> pd.DataFrame:
         return df[df["is_active"].apply(_to_bool)].copy()
     return df.copy()
 
+def get_base_unit_cost(item_id, target_date, items_df, prices_df, conversions_df):
+    """
+    取得某品項在指定日期的 base unit 成本
+    """
+
+    if items_df.empty or prices_df.empty:
+        return None
+
+    # 找 item
+    item_row = items_df[items_df["item_id"].astype(str).str.strip() == str(item_id).strip()]
+    if item_row.empty:
+        return None
+
+    base_unit = str(item_row.iloc[0].get("base_unit", "")).strip()
+    if not base_unit:
+        return None
+
+    # 找有效價格
+    price_rows = prices_df.copy()
+    price_rows = price_rows[
+        price_rows["item_id"].astype(str).str.strip() == str(item_id).strip()
+    ]
+
+    if "is_active" in price_rows.columns:
+        price_rows = price_rows[price_rows["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"])]
+
+    if price_rows.empty:
+        return None
+
+    price_rows["__eff"] = price_rows["effective_date"].apply(_parse_date)
+    price_rows["__end"] = price_rows["end_date"].apply(_parse_date)
+
+    price_rows = price_rows[
+        (price_rows["__eff"].isna() | (price_rows["__eff"] <= target_date))
+        & (price_rows["__end"].isna() | (price_rows["__end"] >= target_date))
+    ]
+
+    if price_rows.empty:
+        return None
+
+    price_rows = price_rows.sort_values("__eff", ascending=True)
+    price_row = price_rows.iloc[-1]
+
+    unit_price = _safe_float(price_row.get("unit_price", 0))
+    price_unit = str(price_row.get("price_unit", "")).strip()
+
+    if unit_price == 0:
+        return None
+
+    # 如果價格單位就是 base_unit
+    if price_unit == base_unit or price_unit == "":
+        return unit_price
+
+    # 找換算
+    conv = conversions_df[
+        (conversions_df["item_id"].astype(str).str.strip() == str(item_id).strip())
+        & (conversions_df["from_unit"].astype(str).str.strip() == price_unit)
+        & (conversions_df["to_unit"].astype(str).str.strip() == base_unit)
+    ]
+
+    if conv.empty:
+        return None
+
+    ratio = _safe_float(conv.iloc[0].get("ratio", 0))
+    if ratio == 0:
+        return None
+
+    return round(unit_price / ratio, 4)
 
 def _label_store(r) -> str:
     name = _norm(r.get("store_name_zh", "")) or _norm(r.get("store_name", ""))
