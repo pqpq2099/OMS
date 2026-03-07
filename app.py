@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
+from gspread.exceptions import WorksheetNotFound, APIError
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, datetime
 import math
@@ -43,28 +44,36 @@ PLOTLY_CONFIG = {
 }
 
 # ============================================================
-# [A2] Config - 常改的地方
+# [A2] Config
 # ============================================================
 SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
 DB_SHEET_ID = SHEET_ID
 
-WS_ITEMS = "items"
+WS_BRANDS = "brands"
 WS_STORES = "stores"
+WS_VENDORS = "vendors"
+WS_UNITS = "units"
+WS_ITEMS = "items"
+WS_UNIT_CONVERSIONS = "unit_conversions"
 WS_PRICES = "prices"
 WS_TRANSACTIONS = "transactions"
-WS_PURCHASE_ORDERS = "purchase_orders"
-WS_PO_LINES = "purchase_order_lines"
 WS_STOCKTAKES = "stocktakes"
 WS_STOCKTAKE_LINES = "stocktake_lines"
+WS_PURCHASE_ORDERS = "purchase_orders"
+WS_PO_LINES = "purchase_order_lines"
+WS_ROLES = "roles"
+WS_USERS = "users"
+WS_AUDIT_LOGS = "audit_logs"
 WS_SETTINGS = "settings"
+WS_ID_SEQUENCES = "id_sequences"
 
-DEFAULT_BRAND = "BRAND_000001"
-DEFAULT_USER = "ADMIN_01"
+DEFAULT_USER_ID = "U0001"
+DEFAULT_ACCOUNT_CODE = "ADMIN_01"
 DEFAULT_CURRENCY = "NT$"
-APP_VERSION = "OMS Full v1"
+APP_VERSION = "OMS Schema v1"
 
 # ============================================================
-# [A3] CSS - 手機版與輸入框壓縮
+# [A3] CSS
 # ============================================================
 CUSTOM_CSS = """
 <style>
@@ -72,33 +81,23 @@ CUSTOM_CSS = """
     padding-top: 1rem;
     padding-bottom: 2rem;
 }
-
 div[data-testid="stNumberInput"] input {
     text-align: right;
     padding-right: 0.45rem !important;
     padding-left: 0.45rem !important;
 }
-
-/* 移除 number_input 的 stepper */
 div[data-testid="stNumberInput"] button {
     display: none !important;
 }
-
-/* selectbox 壓縮 */
 div[data-baseweb="select"] > div {
     min-height: 36px !important;
 }
-
 div[data-baseweb="select"] span {
     font-size: 0.9rem !important;
 }
-
-/* caption 更乾淨 */
 [data-testid="stCaptionContainer"] {
     margin-top: -0.25rem !important;
 }
-
-/* 行卡片 */
 .orivia-card {
     border: 1px solid rgba(128,128,128,0.25);
     border-radius: 14px;
@@ -106,19 +105,16 @@ div[data-baseweb="select"] span {
     margin-bottom: 0.6rem;
     background: rgba(255,255,255,0.02);
 }
-
 .orivia-item-name {
     font-weight: 700;
     font-size: 1rem;
     margin-bottom: 0.15rem;
 }
-
 .orivia-sub {
     font-size: 0.86rem;
     color: rgba(120,120,120,1);
     margin-bottom: 0.4rem;
 }
-
 @media (max-width: 768px) {
   .block-container {
       padding-left: 0.7rem;
@@ -157,10 +153,6 @@ def _safe_int(x, default=0):
         return default
 
 
-def _today_str():
-    return date.today().isoformat()
-
-
 def _fmt_num(x, digits=1):
     try:
         v = float(x)
@@ -185,12 +177,33 @@ def _to_date(x):
         return None
 
 
+def _today_str():
+    return date.today().isoformat()
+
+
+def now_ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def ensure_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     for c in cols:
         if c not in df.columns:
             df[c] = ""
     return df
 
+
+def item_display_name(row) -> str:
+    return _norm(row.get("item_name_zh")) or _norm(row.get("item_name")) or _norm(row.get("item_id"))
+
+
+def parse_list_field(s: str, fallback: str = "") -> list[str]:
+    s = _norm(s)
+    if not s:
+        return [fallback] if fallback else []
+    arr = [x.strip() for x in s.replace("/", ",").replace("、", ",").split(",") if x.strip()]
+    if fallback and fallback not in arr:
+        arr.insert(0, fallback)
+    return arr or ([fallback] if fallback else [])
 
 # ============================================================
 # [B1] Google Sheets
@@ -219,23 +232,28 @@ def get_worksheet(ws_name: str):
     sh = open_spreadsheet(DB_SHEET_ID)
     try:
         return sh.worksheet(ws_name)
-    except Exception:
-        return sh.add_worksheet(title=ws_name, rows=1000, cols=50)
+    except WorksheetNotFound:
+        return sh.add_worksheet(title=ws_name, rows=2000, cols=60)
 
 
 def read_ws(ws_name: str) -> pd.DataFrame:
-    ws = get_worksheet(ws_name)
-    values = ws.get_all_records()
-    if not values:
+    try:
+        ws = get_worksheet(ws_name)
+        values = ws.get_all_records()
+        if not values:
+            return pd.DataFrame()
+        return pd.DataFrame(values)
+    except APIError:
         return pd.DataFrame()
-    return pd.DataFrame(values)
+    except Exception:
+        return pd.DataFrame()
 
 
 def write_ws_df(ws_name: str, df: pd.DataFrame):
     ws = get_worksheet(ws_name)
     ws.clear()
     if df.empty:
-        ws.update([[]])
+        ws.update("A1", [[""]])
         return
     rows = [df.columns.tolist()] + df.fillna("").astype(str).values.tolist()
     ws.update(rows)
@@ -248,119 +266,151 @@ def append_rows(ws_name: str, rows: list[list]):
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
 
+def ensure_ws_headers(ws_name: str, cols: list[str]):
+    ws = get_worksheet(ws_name)
+    try:
+        header = [str(x).strip() for x in ws.row_values(1)]
+    except Exception:
+        header = []
+
+    if not header:
+        ws.update("A1", [cols])
+        return
+
+    merged = header[:]
+    for c in cols:
+        if c not in merged:
+            merged.append(c)
+    if merged != header:
+        ws.update("A1", [merged])
+
 # ============================================================
-# [B2] Initial Sheet Bootstrap
+# [B2] Schema v1 Bootstrap
 # ============================================================
 def bootstrap_if_needed():
     required = {
-        WS_ITEMS: [
-            "item_id", "brand_id", "default_vendor_id", "item_name", "item_name_zh",
-            "item_type", "base_unit", "default_stock_unit", "default_order_unit",
-            "orderable_units", "is_active", "price"
+        WS_BRANDS: [
+            "brand_id", "brand_name", "brand_name_zh", "is_active", "created_at", "updated_at"
         ],
         WS_STORES: [
-            "store_id", "store_name", "store_name_zh", "brand_id", "is_active"
+            "store_id", "brand_id", "store_name", "store_name_zh", "store_code",
+            "is_active", "created_at", "updated_at"
+        ],
+        WS_VENDORS: [
+            "vendor_id", "brand_id", "vendor_name", "vendor_name_zh", "vendor_code",
+            "contact_name", "phone", "line_id", "notes", "is_active", "created_at", "updated_at"
+        ],
+        WS_UNITS: [
+            "unit_id", "unit_name", "unit_name_zh", "unit_symbol", "unit_type",
+            "is_active", "created_at", "updated_at"
+        ],
+        WS_ITEMS: [
+            "item_id", "brand_id", "default_vendor_id", "item_name", "item_name_zh", "item_type",
+            "category", "spec", "base_unit", "default_stock_unit", "default_order_unit",
+            "orderable_units", "price", "is_active", "created_at", "updated_at"
+        ],
+        WS_UNIT_CONVERSIONS: [
+            "conversion_id", "item_id", "from_unit", "to_unit", "multiplier",
+            "is_active", "created_at", "updated_at"
         ],
         WS_PRICES: [
-            "item_id", "unit_price", "effective_date", "end_date"
+            "price_id", "item_id", "unit_price", "price_unit", "effective_date",
+            "end_date", "is_active", "created_at", "updated_at"
         ],
         WS_TRANSACTIONS: [
             "txn_id", "txn_date", "store_id", "vendor_id", "item_id", "item_name",
             "txn_type", "qty", "unit", "base_qty", "unit_price", "amount",
             "ref_type", "ref_id", "note", "created_by", "created_at"
         ],
-        WS_PURCHASE_ORDERS: [
-            "po_id", "po_date", "store_id", "vendor_id", "status", "note",
-            "created_by", "created_at"
-        ],
-        WS_PO_LINES: [
-            "po_line_id", "po_id", "store_id", "vendor_id", "item_id", "item_name",
-            "order_qty", "order_unit", "base_qty", "unit_price", "amount", "created_at"
-        ],
         WS_STOCKTAKES: [
-            "stocktake_id", "stocktake_date", "store_id", "vendor_id", "note",
-            "created_by", "created_at"
+            "stocktake_id", "stocktake_date", "store_id", "vendor_id", "status",
+            "note", "created_by", "created_at", "updated_at"
         ],
         WS_STOCKTAKE_LINES: [
             "stocktake_line_id", "stocktake_id", "store_id", "vendor_id", "item_id", "item_name",
-            "stock_qty", "stock_unit", "base_qty", "created_at"
+            "stock_qty", "stock_unit", "stock_unit_id", "base_qty",
+            "suggested_order_qty", "order_qty", "order_unit_id", "note",
+            "created_at", "updated_at"
+        ],
+        WS_PURCHASE_ORDERS: [
+            "po_id", "po_date", "order_date", "expected_date", "store_id", "vendor_id",
+            "status", "note", "created_by", "created_at", "updated_at"
+        ],
+        WS_PO_LINES: [
+            "po_line_id", "po_id", "store_id", "vendor_id", "item_id", "item_name",
+            "order_qty", "order_unit", "unit_id", "qty", "base_qty",
+            "unit_price", "amount", "note", "created_at", "updated_at"
+        ],
+        WS_ROLES: [
+            "role_id", "role_name", "role_name_zh", "role_level", "is_active", "created_at", "updated_at"
+        ],
+        WS_USERS: [
+            "user_id", "account_code", "email", "display_name", "role_id",
+            "store_scope", "is_active", "last_login_at", "created_at", "updated_at"
+        ],
+        WS_AUDIT_LOGS: [
+            "audit_id", "ts", "user_id", "action", "table_name", "entity_id",
+            "before_json", "after_json", "note"
         ],
         WS_SETTINGS: [
             "setting_key", "setting_value", "updated_at", "updated_by"
         ],
+        WS_ID_SEQUENCES: [
+            "key", "env", "prefix", "width", "next_value", "updated_at", "updated_by"
+        ],
     }
 
     for ws_name, cols in required.items():
-        df = read_ws(ws_name)
-        if df.empty:
-            write_ws_df(ws_name, pd.DataFrame(columns=cols))
-        else:
-            df = ensure_columns(df, cols)
-            write_ws_df(ws_name, df[cols])
-
+        ensure_ws_headers(ws_name, cols)
 
 # ============================================================
-# [C0] Master Data Load (from Google Sheets DB)
+# [C0] Master Data Load
 # ============================================================
 @st.cache_data(show_spinner=False)
-def load_csv_data():
-    items = read_ws(WS_ITEMS)
-    stores = read_ws(WS_STORES)
-    prices = read_ws(WS_PRICES)
-
-    if items.empty:
-        items = pd.DataFrame()
-    if stores.empty:
-        stores = pd.DataFrame()
-    if prices.empty:
-        prices = pd.DataFrame()
-
+def load_master_data():
+    items = ensure_columns(read_ws(WS_ITEMS), [
+        "item_id", "brand_id", "default_vendor_id", "item_name", "item_name_zh", "item_type",
+        "category", "spec", "base_unit", "default_stock_unit", "default_order_unit",
+        "orderable_units", "price", "is_active", "created_at", "updated_at"
+    ])
+    stores = ensure_columns(read_ws(WS_STORES), [
+        "store_id", "brand_id", "store_name", "store_name_zh", "store_code",
+        "is_active", "created_at", "updated_at"
+    ])
+    prices = ensure_columns(read_ws(WS_PRICES), [
+        "price_id", "item_id", "unit_price", "price_unit", "effective_date",
+        "end_date", "is_active", "created_at", "updated_at"
+    ])
     return items, stores, prices
 
 
 def normalize_items_df(items: pd.DataFrame) -> pd.DataFrame:
-    if items.empty:
-        return items
-
-    need_cols = [
+    items = ensure_columns(items.copy(), [
         "item_id", "brand_id", "default_vendor_id", "item_name", "item_name_zh", "item_type",
-        "base_unit", "default_stock_unit", "default_order_unit", "orderable_units",
-        "is_active", "price"
-    ]
-    items = ensure_columns(items.copy(), need_cols)
+        "category", "spec", "base_unit", "default_stock_unit", "default_order_unit",
+        "orderable_units", "price", "is_active", "created_at", "updated_at"
+    ])
     items["item_type"] = items["item_type"].replace("", "ingredient")
     items["is_active"] = items["is_active"].replace("", "1")
     return items
 
 
 def normalize_store_df(stores: pd.DataFrame) -> pd.DataFrame:
-    if stores.empty:
-        return stores
-    need_cols = ["store_id", "store_name", "store_name_zh", "brand_id", "is_active"]
-    stores = ensure_columns(stores.copy(), need_cols)
+    stores = ensure_columns(stores.copy(), [
+        "store_id", "brand_id", "store_name", "store_name_zh", "store_code",
+        "is_active", "created_at", "updated_at"
+    ])
     stores["is_active"] = stores["is_active"].replace("", "1")
     return stores
 
 
 def normalize_price_df(prices: pd.DataFrame) -> pd.DataFrame:
-    if prices.empty:
-        return prices
-    need_cols = ["item_id", "unit_price", "effective_date", "end_date"]
-    return ensure_columns(prices.copy(), need_cols)
-
-
-def item_display_name(row) -> str:
-    return _norm(row.get("item_name_zh")) or _norm(row.get("item_name")) or _norm(row.get("item_id"))
-
-
-def parse_orderable_units(s: str, fallback: str) -> list[str]:
-    s = _norm(s)
-    if not s:
-        return [fallback] if fallback else []
-    arr = [x.strip() for x in s.replace("/", ",").replace("、", ",").split(",") if x.strip()]
-    if fallback and fallback not in arr:
-        arr.insert(0, fallback)
-    return arr or ([fallback] if fallback else [])
+    prices = ensure_columns(prices.copy(), [
+        "price_id", "item_id", "unit_price", "price_unit", "effective_date",
+        "end_date", "is_active", "created_at", "updated_at"
+    ])
+    prices["is_active"] = prices["is_active"].replace("", "1")
+    return prices
 
 
 def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, items_df: pd.DataFrame) -> float:
@@ -368,7 +418,11 @@ def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, i
     target = _to_date(target_date) or date.today()
 
     if not prices_df.empty:
-        sub = prices_df[prices_df["item_id"].astype(str) == item_id].copy()
+        sub = prices_df[
+            (prices_df["item_id"].astype(str) == item_id) &
+            (prices_df["is_active"].astype(str).replace("", "1") != "0")
+        ].copy()
+
         if not sub.empty:
             sub["effective_date_parsed"] = pd.to_datetime(sub["effective_date"], errors="coerce").dt.date
             sub["end_date_parsed"] = pd.to_datetime(sub["end_date"], errors="coerce").dt.date
@@ -376,32 +430,46 @@ def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, i
             sub = sub[
                 sub["effective_date_parsed"].notna() &
                 (sub["effective_date_parsed"] <= target) &
-                (
-                    sub["end_date_parsed"].isna() |
-                    (sub["end_date_parsed"] >= target)
-                )
+                (sub["end_date_parsed"].isna() | (sub["end_date_parsed"] >= target))
             ].copy()
 
             if not sub.empty:
                 sub = sub.sort_values("effective_date_parsed", ascending=False)
                 return _safe_float(sub.iloc[0].get("unit_price"), 0.0)
 
-    if not items_df.empty:
-        hit = items_df[items_df["item_id"].astype(str) == item_id]
-        if not hit.empty:
-            return _safe_float(hit.iloc[0].get("price"), 0.0)
+    hit = items_df[items_df["item_id"].astype(str) == item_id]
+    if not hit.empty:
+        return _safe_float(hit.iloc[0].get("price"), 0.0)
     return 0.0
 
-
 # ============================================================
-# [C1] Current Stock / History Logic
+# [C1] Transactions / History
 # ============================================================
 def load_txn_data():
-    tx = read_ws(WS_TRANSACTIONS)
-    po = read_ws(WS_PURCHASE_ORDERS)
-    po_lines = read_ws(WS_PO_LINES)
-    st_head = read_ws(WS_STOCKTAKES)
-    st_lines = read_ws(WS_STOCKTAKE_LINES)
+    tx = ensure_columns(read_ws(WS_TRANSACTIONS), [
+        "txn_id", "txn_date", "store_id", "vendor_id", "item_id", "item_name",
+        "txn_type", "qty", "unit", "base_qty", "unit_price", "amount",
+        "ref_type", "ref_id", "note", "created_by", "created_at"
+    ])
+    po = ensure_columns(read_ws(WS_PURCHASE_ORDERS), [
+        "po_id", "po_date", "order_date", "expected_date", "store_id", "vendor_id",
+        "status", "note", "created_by", "created_at", "updated_at"
+    ])
+    po_lines = ensure_columns(read_ws(WS_PO_LINES), [
+        "po_line_id", "po_id", "store_id", "vendor_id", "item_id", "item_name",
+        "order_qty", "order_unit", "unit_id", "qty", "base_qty",
+        "unit_price", "amount", "note", "created_at", "updated_at"
+    ])
+    st_head = ensure_columns(read_ws(WS_STOCKTAKES), [
+        "stocktake_id", "stocktake_date", "store_id", "vendor_id", "status",
+        "note", "created_by", "created_at", "updated_at"
+    ])
+    st_lines = ensure_columns(read_ws(WS_STOCKTAKE_LINES), [
+        "stocktake_line_id", "stocktake_id", "store_id", "vendor_id", "item_id", "item_name",
+        "stock_qty", "stock_unit", "stock_unit_id", "base_qty",
+        "suggested_order_qty", "order_qty", "order_unit_id", "note",
+        "created_at", "updated_at"
+    ])
     return tx, po, po_lines, st_head, st_lines
 
 
@@ -411,7 +479,6 @@ def current_stock_by_item(store_id: str) -> dict:
     if tx.empty:
         return result
 
-    tx = ensure_columns(tx, ["store_id", "item_id", "txn_type", "base_qty"])
     sub = tx[tx["store_id"].astype(str) == str(store_id)].copy()
     if sub.empty:
         return result
@@ -426,8 +493,10 @@ def current_stock_by_item(store_id: str) -> dict:
         adjust_in_qty = item_rows.loc[item_rows["txn_type"] == "adjust_in", "base_qty_num"].sum()
         adjust_out_qty = item_rows.loc[item_rows["txn_type"] == "adjust_out", "base_qty_num"].sum()
         usage_qty = item_rows.loc[item_rows["txn_type"] == "usage", "base_qty_num"].sum()
+        sale_usage_qty = item_rows.loc[item_rows["txn_type"] == "sale_usage", "base_qty_num"].sum()
 
-        result[item_id] = stocktake_qty + purchase_qty + adjust_in_qty - adjust_out_qty - usage_qty
+        result[item_id] = stocktake_qty + purchase_qty + adjust_in_qty - adjust_out_qty - usage_qty - sale_usage_qty
+
     return result
 
 
@@ -436,26 +505,20 @@ def latest_order_history(store_id: str, vendor_id: str, item_id: str) -> tuple[s
     if tx.empty:
         return "-", 0.0, ""
 
-    tx = ensure_columns(tx, [
-        "txn_date", "store_id", "vendor_id", "item_id", "txn_type",
-        "qty", "unit", "base_qty"
-    ])
     sub = tx[
         (tx["store_id"].astype(str) == str(store_id)) &
         (tx["vendor_id"].astype(str) == str(vendor_id)) &
         (tx["item_id"].astype(str) == str(item_id)) &
         (tx["txn_type"].astype(str) == "purchase")
     ].copy()
+
     if sub.empty:
         return "-", 0.0, ""
 
     sub["txn_date_parsed"] = pd.to_datetime(sub["txn_date"], errors="coerce")
     sub = sub.sort_values("txn_date_parsed", ascending=False)
     row = sub.iloc[0]
-    date_str = _norm(row.get("txn_date")) or "-"
-    qty = _safe_float(row.get("qty"), 0.0)
-    unit = _norm(row.get("unit"))
-    return date_str, qty, unit
+    return _norm(row.get("txn_date")) or "-", _safe_float(row.get("qty"), 0.0), _norm(row.get("unit"))
 
 
 def get_usage_suggestion(store_id: str, item_id: str, days: int = 7) -> float:
@@ -463,18 +526,19 @@ def get_usage_suggestion(store_id: str, item_id: str, days: int = 7) -> float:
     if tx.empty:
         return 1.0
 
-    tx = ensure_columns(tx, ["txn_date", "store_id", "item_id", "txn_type", "base_qty"])
     sub = tx[
         (tx["store_id"].astype(str) == str(store_id)) &
         (tx["item_id"].astype(str) == str(item_id)) &
-        (tx["txn_type"].astype(str) == "usage")
+        (tx["txn_type"].astype(str).isin(["usage", "sale_usage"]))
     ].copy()
+
     if sub.empty:
         return 1.0
 
     sub["txn_date_parsed"] = pd.to_datetime(sub["txn_date"], errors="coerce")
     cutoff = pd.Timestamp.today().normalize() - pd.Timedelta(days=days)
     sub = sub[sub["txn_date_parsed"] >= cutoff]
+
     if sub.empty:
         return 1.0
 
@@ -483,23 +547,61 @@ def get_usage_suggestion(store_id: str, item_id: str, days: int = 7) -> float:
     avg_daily = total_usage / max(days, 1)
     return round(max(avg_daily, 1.0), 1)
 
-
 # ============================================================
-# [C2] IDs / Audit
+# [C2] ID Sequences
 # ============================================================
-def make_id(prefix: str) -> str:
-    return f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+def next_sequence_value(key_name: str, env: str = "prod") -> str:
+    df = ensure_columns(read_ws(WS_ID_SEQUENCES), [
+        "key", "env", "prefix", "width", "next_value", "updated_at", "updated_by"
+    ])
 
+    mask = (df["key"].astype(str) == str(key_name)) & (df["env"].astype(str).replace("", "prod") == env)
+    ts = now_ts()
 
-def now_ts() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if df.empty or mask.sum() == 0:
+        default_prefix_map = {
+            "stocktake_id": "STK",
+            "stocktake_line_id": "STL",
+            "po_id": "PO",
+            "po_line_id": "POL",
+            "txn_id": "TXN",
+            "audit_id": "AUD",
+        }
+        prefix = default_prefix_map.get(key_name, key_name.upper())
+        width = 4
+        next_value = 2
 
+        new_row = pd.DataFrame([{
+            "key": key_name,
+            "env": env,
+            "prefix": prefix,
+            "width": width,
+            "next_value": next_value,
+            "updated_at": ts,
+            "updated_by": DEFAULT_ACCOUNT_CODE,
+        }])
+
+        out = pd.concat([df, new_row], ignore_index=True) if not df.empty else new_row
+        write_ws_df(WS_ID_SEQUENCES, out)
+        return f"{prefix}_{str(1).zfill(width)}"
+
+    idx = df[mask].index[0]
+    prefix = _norm(df.at[idx, "prefix"]) or key_name.upper()
+    width = _safe_int(df.at[idx, "width"], 4)
+    current_next = _safe_int(df.at[idx, "next_value"], 1)
+
+    generated = f"{prefix}_{str(current_next).zfill(width)}"
+    df.at[idx, "next_value"] = current_next + 1
+    df.at[idx, "updated_at"] = ts
+    df.at[idx, "updated_by"] = DEFAULT_ACCOUNT_CODE
+    write_ws_df(WS_ID_SEQUENCES, df)
+    return generated
 
 # ============================================================
 # [D0] Settings
 # ============================================================
 def load_settings_dict() -> dict:
-    df = read_ws(WS_SETTINGS)
+    df = ensure_columns(read_ws(WS_SETTINGS), ["setting_key", "setting_value", "updated_at", "updated_by"])
     if df.empty:
         return {
             "system_name": "ORIVIA OMS",
@@ -507,25 +609,41 @@ def load_settings_dict() -> dict:
             "currency": "NT$",
             "default_suggestion_days": "7",
             "history_days": "30",
-            "show_analysis": "1",
             "show_history": "1",
+            "show_analysis": "1",
             "show_settings": "1",
         }
-    df = ensure_columns(df, ["setting_key", "setting_value"])
+
     out = {}
     for _, row in df.iterrows():
-        out[_norm(row.get("setting_key"))] = _norm(row.get("setting_value"))
+        key = _norm(row.get("setting_key"))
+        value = _norm(row.get("setting_value"))
+        if key:
+            out[key] = value
+
+    defaults = {
+        "system_name": "ORIVIA OMS",
+        "theme_mode": "system",
+        "currency": "NT$",
+        "default_suggestion_days": "7",
+        "history_days": "30",
+        "show_history": "1",
+        "show_analysis": "1",
+        "show_settings": "1",
+    }
+    for k, v in defaults.items():
+        out.setdefault(k, v)
+
     return out
 
 
 def save_settings_dict(settings: dict):
-    rows = []
     ts = now_ts()
+    rows = []
     for k, v in settings.items():
-        rows.append([k, v, ts, DEFAULT_USER])
+        rows.append([k, v, ts, DEFAULT_ACCOUNT_CODE])
     df = pd.DataFrame(rows, columns=["setting_key", "setting_value", "updated_at", "updated_by"])
     write_ws_df(WS_SETTINGS, df)
-
 
 # ============================================================
 # [D1] Sidebar
@@ -536,6 +654,7 @@ def render_sidebar(stores_df: pd.DataFrame, settings: dict):
 
     store_options = []
     store_name_map = {}
+
     if not stores_df.empty:
         active = stores_df[stores_df["is_active"].astype(str) != "0"].copy()
         for _, row in active.iterrows():
@@ -566,17 +685,18 @@ def render_sidebar(stores_df: pd.DataFrame, settings: dict):
     page = st.sidebar.radio("頁面", pages)
     return selected_store, page, store_name_map
 
-
 # ============================================================
 # [E0] Order Entry Page
 # ============================================================
-def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: pd.DataFrame):
+def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: pd.DataFrame, settings: dict):
     st.title("叫貨 / 庫存")
     st.caption("同頁完成庫存盤點與叫貨輸入")
 
     if not selected_store:
         st.info("請先選擇分店")
         return
+
+    suggestion_days = _safe_int(settings.get("default_suggestion_days", "7"), 7)
 
     items_df = normalize_items_df(items_df)
     items_df = items_df[
@@ -594,13 +714,12 @@ def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: p
         return
 
     selected_vendor = st.selectbox("選擇廠商", options=vendor_options)
-
     vendor_items = items_df[items_df["default_vendor_id"].astype(str) == str(selected_vendor)].copy()
     vendor_items = vendor_items.sort_values(by=["item_name_zh", "item_name", "item_id"])
 
     stock_map = current_stock_by_item(selected_store)
-
     meta_map = {}
+
     for _, row in vendor_items.iterrows():
         item_id = _norm(row.get("item_id"))
         base_unit = _norm(row.get("base_unit")) or _norm(row.get("default_stock_unit")) or ""
@@ -609,14 +728,14 @@ def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: p
         item_name = item_display_name(row)
         unit_price = get_price_by_date(item_id, _today_str(), prices_df, items_df)
         hist_date, hist_qty, hist_unit = latest_order_history(selected_store, selected_vendor, item_id)
-        suggestion = get_usage_suggestion(selected_store, item_id, 7)
+        suggestion = get_usage_suggestion(selected_store, item_id, suggestion_days)
 
         meta_map[item_id] = {
             "item_name": item_name,
             "base_unit": base_unit,
             "stock_unit": stock_unit,
             "order_unit": order_unit,
-            "orderable_units": parse_orderable_units(row.get("orderable_units", ""), order_unit),
+            "orderable_units": parse_list_field(row.get("orderable_units", ""), order_unit),
             "current_stock_qty": round(stock_map.get(item_id, 0.0), 1),
             "unit_price": unit_price,
             "hist_date": hist_date,
@@ -680,6 +799,7 @@ def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: p
                 "base_unit": meta["base_unit"],
                 "order_qty": round(order_qty, 1),
                 "order_unit": order_unit,
+                "suggested_order_qty": meta["suggestion"],
                 "unit_price": meta["unit_price"],
                 "vendor_id": selected_vendor,
             })
@@ -702,26 +822,45 @@ def render_order_entry(selected_store: str, items_df: pd.DataFrame, prices_df: p
 
 
 def save_order_entry(store_id: str, txn_date: str, note: str, rows: list[dict]):
-    po_id = make_id("PO")
-    stocktake_id = make_id("STK")
     created_at = now_ts()
 
-    po_head_rows = []
-    po_line_rows = []
-    stocktake_head_rows = []
-    stocktake_line_rows = []
-    txn_rows = []
+    stocktake_id = next_sequence_value("stocktake_id")
+    po_id = next_sequence_value("po_id")
 
-    vendors_used = sorted(set([r["vendor_id"] for r in rows if _safe_float(r["order_qty"], 0.0) > 0]))
-    if vendors_used:
+    stocktake_head_rows = [[
+        stocktake_id,
+        txn_date,
+        store_id,
+        rows[0]["vendor_id"] if rows else "",
+        "submitted",
+        note,
+        DEFAULT_ACCOUNT_CODE,
+        created_at,
+        created_at,
+    ]]
+
+    po_needed = any(_safe_float(r["order_qty"], 0.0) > 0 for r in rows)
+    po_head_rows = []
+    if po_needed:
+        vendors_used = sorted(set([r["vendor_id"] for r in rows if _safe_float(r["order_qty"], 0.0) > 0]))
         for vendor_id in vendors_used:
             po_head_rows.append([
-                po_id, txn_date, store_id, vendor_id, "draft", note, DEFAULT_USER, created_at
+                po_id,
+                txn_date,
+                txn_date,
+                "",
+                store_id,
+                vendor_id,
+                "submitted",
+                note,
+                DEFAULT_ACCOUNT_CODE,
+                created_at,
+                created_at,
             ])
 
-    stocktake_head_rows.append([
-        stocktake_id, txn_date, store_id, rows[0]["vendor_id"] if rows else "", note, DEFAULT_USER, created_at
-    ])
+    stocktake_line_rows = []
+    po_line_rows = []
+    txn_rows = []
 
     for r in rows:
         item_id = r["item_id"]
@@ -732,44 +871,105 @@ def save_order_entry(store_id: str, txn_date: str, note: str, rows: list[dict]):
         stock_unit = _norm(r["stock_unit"])
         order_unit = _norm(r["order_unit"])
         unit_price = _safe_float(r["unit_price"], 0.0)
+        suggestion = _safe_float(r["suggested_order_qty"], 0.0)
 
-        stocktake_line_id = make_id("STKL")
+        # 暫時未接 unit_conversions，先 1:1
+        stock_base_qty = stock_qty
+        order_base_qty = order_qty
+
+        stocktake_line_id = next_sequence_value("stocktake_line_id")
         stocktake_line_rows.append([
-            stocktake_line_id, stocktake_id, store_id, vendor_id, item_id, item_name,
-            stock_qty, stock_unit, stock_qty, created_at
+            stocktake_line_id,
+            stocktake_id,
+            store_id,
+            vendor_id,
+            item_id,
+            item_name,
+            stock_qty,
+            stock_unit,
+            "",
+            stock_base_qty,
+            suggestion,
+            order_qty,
+            "",
+            note,
+            created_at,
+            created_at,
         ])
 
         txn_rows.append([
-            make_id("TXN"), txn_date, store_id, vendor_id, item_id, item_name,
-            "stocktake", stock_qty, stock_unit, stock_qty, unit_price, stock_qty * unit_price,
-            "stocktake", stocktake_id, note, DEFAULT_USER, created_at
+            next_sequence_value("txn_id"),
+            txn_date,
+            store_id,
+            vendor_id,
+            item_id,
+            item_name,
+            "stocktake",
+            stock_qty,
+            stock_unit,
+            stock_base_qty,
+            unit_price,
+            stock_qty * unit_price,
+            "stocktake",
+            stocktake_id,
+            note,
+            DEFAULT_ACCOUNT_CODE,
+            created_at,
         ])
 
         if order_qty > 0:
-            po_line_id = make_id("POL")
+            po_line_id = next_sequence_value("po_line_id")
             amount = order_qty * unit_price
+
             po_line_rows.append([
-                po_line_id, po_id, store_id, vendor_id, item_id, item_name,
-                order_qty, order_unit, order_qty, unit_price, amount, created_at
+                po_line_id,
+                po_id,
+                store_id,
+                vendor_id,
+                item_id,
+                item_name,
+                order_qty,
+                order_unit,
+                "",
+                order_qty,
+                order_base_qty,
+                unit_price,
+                amount,
+                note,
+                created_at,
+                created_at,
             ])
 
             txn_rows.append([
-                make_id("TXN"), txn_date, store_id, vendor_id, item_id, item_name,
-                "purchase", order_qty, order_unit, order_qty, unit_price, amount,
-                "purchase_order", po_id, note, DEFAULT_USER, created_at
+                next_sequence_value("txn_id"),
+                txn_date,
+                store_id,
+                vendor_id,
+                item_id,
+                item_name,
+                "purchase",
+                order_qty,
+                order_unit,
+                order_base_qty,
+                unit_price,
+                amount,
+                "purchase_order",
+                po_id,
+                note,
+                DEFAULT_ACCOUNT_CODE,
+                created_at,
             ])
 
-    append_rows(WS_PURCHASE_ORDERS, po_head_rows)
-    append_rows(WS_PO_LINES, po_line_rows)
     append_rows(WS_STOCKTAKES, stocktake_head_rows)
     append_rows(WS_STOCKTAKE_LINES, stocktake_line_rows)
+    append_rows(WS_PURCHASE_ORDERS, po_head_rows)
+    append_rows(WS_PO_LINES, po_line_rows)
     append_rows(WS_TRANSACTIONS, txn_rows)
-
 
 # ============================================================
 # [E1] History Page
 # ============================================================
-def render_history_page(selected_store: str, items_df: pd.DataFrame):
+def render_history_page(selected_store: str):
     st.title("歷史紀錄")
     st.caption("查看庫存盤點、叫貨與交易紀錄")
 
@@ -777,19 +977,14 @@ def render_history_page(selected_store: str, items_df: pd.DataFrame):
         st.info("請先選擇分店")
         return
 
-    tx, po, po_lines, st_head, st_lines = load_txn_data()
-
+    tx, _, po_lines, _, st_lines = load_txn_data()
     tab1, tab2, tab3 = st.tabs(["交易紀錄", "叫貨紀錄", "庫存紀錄"])
 
     with tab1:
-        if tx.empty:
+        sub = tx[tx["store_id"].astype(str) == str(selected_store)].copy()
+        if sub.empty:
             st.info("目前沒有交易資料")
         else:
-            tx = ensure_columns(tx, [
-                "txn_date", "store_id", "vendor_id", "item_id", "item_name",
-                "txn_type", "qty", "unit", "base_qty", "unit_price", "amount", "note"
-            ])
-            sub = tx[tx["store_id"].astype(str) == str(selected_store)].copy()
             item_options = ["全部"] + sorted(sub["item_name"].astype(str).replace("", pd.NA).dropna().unique().tolist())
             txn_types = ["全部"] + sorted(sub["txn_type"].astype(str).replace("", pd.NA).dropna().unique().tolist())
 
@@ -807,7 +1002,8 @@ def render_history_page(selected_store: str, items_df: pd.DataFrame):
                 sub = sub[sub.apply(lambda r: kw in str(r.to_dict()).lower(), axis=1)]
 
             sub["txn_date_parsed"] = pd.to_datetime(sub["txn_date"], errors="coerce")
-            sub = sub.sort_values(["txn_date_parsed"], ascending=False)
+            sub = sub.sort_values("txn_date_parsed", ascending=False)
+
             st.dataframe(
                 sub[["txn_date", "item_name", "txn_type", "qty", "unit", "unit_price", "amount", "note"]],
                 use_container_width=True,
@@ -815,13 +1011,10 @@ def render_history_page(selected_store: str, items_df: pd.DataFrame):
             )
 
     with tab2:
-        if po_lines.empty:
+        sub = po_lines[po_lines["store_id"].astype(str) == str(selected_store)].copy()
+        if sub.empty:
             st.info("目前沒有叫貨紀錄")
         else:
-            po_lines = ensure_columns(po_lines, [
-                "po_id", "store_id", "vendor_id", "item_name", "order_qty", "order_unit", "unit_price", "amount", "created_at"
-            ])
-            sub = po_lines[po_lines["store_id"].astype(str) == str(selected_store)].copy()
             sub["created_at_parsed"] = pd.to_datetime(sub["created_at"], errors="coerce")
             sub = sub.sort_values("created_at_parsed", ascending=False)
             st.dataframe(
@@ -831,13 +1024,10 @@ def render_history_page(selected_store: str, items_df: pd.DataFrame):
             )
 
     with tab3:
-        if st_lines.empty:
+        sub = st_lines[st_lines["store_id"].astype(str) == str(selected_store)].copy()
+        if sub.empty:
             st.info("目前沒有庫存紀錄")
         else:
-            st_lines = ensure_columns(st_lines, [
-                "stocktake_id", "store_id", "vendor_id", "item_name", "stock_qty", "stock_unit", "created_at"
-            ])
-            sub = st_lines[st_lines["store_id"].astype(str) == str(selected_store)].copy()
             sub["created_at_parsed"] = pd.to_datetime(sub["created_at"], errors="coerce")
             sub = sub.sort_values("created_at_parsed", ascending=False)
             st.dataframe(
@@ -845,7 +1035,6 @@ def render_history_page(selected_store: str, items_df: pd.DataFrame):
                 use_container_width=True,
                 hide_index=True,
             )
-
 
 # ============================================================
 # [E2] Analysis Page
@@ -863,10 +1052,6 @@ def render_analysis_page(selected_store: str):
         st.info("目前沒有可分析的交易資料")
         return
 
-    tx = ensure_columns(tx, [
-        "txn_date", "store_id", "vendor_id", "item_id", "item_name",
-        "txn_type", "qty", "unit", "base_qty", "unit_price", "amount"
-    ])
     df = tx[tx["store_id"].astype(str) == str(selected_store)].copy()
     if df.empty:
         st.info("這間分店目前沒有資料")
@@ -907,7 +1092,8 @@ def render_analysis_page(selected_store: str):
             st.warning("目前環境沒有 Plotly，無法顯示圖表")
             return
 
-        trend = df.dropna(subset=["txn_date_parsed"]).groupby(df.dropna(subset=["txn_date_parsed"])["txn_date_parsed"].dt.date).agg(
+        trend_src = df.dropna(subset=["txn_date_parsed"]).copy()
+        trend = trend_src.groupby(trend_src["txn_date_parsed"].dt.date).agg(
             total_qty=("base_qty_num", "sum"),
             total_amount=("amount_num", "sum")
         ).reset_index()
@@ -928,7 +1114,6 @@ def render_analysis_page(selected_store: str):
             fig2.update_layout(dragmode=False)
             st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 
-
 # ============================================================
 # [E3] Settings Page
 # ============================================================
@@ -936,13 +1121,14 @@ def render_settings_page(settings: dict):
     st.title("設定")
     st.caption("主系統集中設定，影響所有分店")
 
+    theme_options = ["system", "light", "dark"]
+    current_theme = settings.get("theme_mode", "system")
+    if current_theme not in theme_options:
+        current_theme = "system"
+
     with st.form("settings_form"):
         system_name = st.text_input("系統名稱", value=settings.get("system_name", "ORIVIA OMS"))
-        theme_mode = st.selectbox(
-            "外觀模式",
-            ["system", "light", "dark"],
-            index=["system", "light", "dark"].index(settings.get("theme_mode", "system")),
-        )
+        theme_mode = st.selectbox("外觀模式", theme_options, index=theme_options.index(current_theme))
         currency = st.text_input("幣別", value=settings.get("currency", "NT$"))
         suggestion_days = st.number_input(
             "建議數量計算天數",
@@ -984,7 +1170,6 @@ def render_settings_page(settings: dict):
     st.markdown("### 目前設定摘要")
     st.json(settings)
 
-
 # ============================================================
 # [Z0] Main
 # ============================================================
@@ -995,17 +1180,17 @@ def main():
     global DEFAULT_CURRENCY
     DEFAULT_CURRENCY = settings.get("currency", "NT$")
 
-    items_df, stores_df, prices_df = load_csv_data()
+    items_df, stores_df, prices_df = load_master_data()
     items_df = normalize_items_df(items_df)
     stores_df = normalize_store_df(stores_df)
     prices_df = normalize_price_df(prices_df)
 
-    selected_store, page, store_name_map = render_sidebar(stores_df, settings)
+    selected_store, page, _ = render_sidebar(stores_df, settings)
 
     if page == "叫貨 / 庫存":
-        render_order_entry(selected_store, items_df, prices_df)
+        render_order_entry(selected_store, items_df, prices_df, settings)
     elif page == "歷史紀錄":
-        render_history_page(selected_store, items_df)
+        render_history_page(selected_store)
     elif page == "分析報表":
         render_analysis_page(selected_store)
     elif page == "設定":
