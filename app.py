@@ -455,6 +455,27 @@ def _get_latest_stock_qty_in_display_unit(
     item_id: str,
     display_unit: str,
 ):
+def _coalesce_columns(df: pd.DataFrame, candidates: list[str], default="") -> pd.Series:
+    if df is None or df.empty:
+        return pd.Series(dtype="object")
+
+    result = pd.Series([pd.NA] * len(df), index=df.index, dtype="object")
+
+    for col in candidates:
+        if col in df.columns:
+            s = df[col].copy()
+            s = s.where(~pd.isna(s), pd.NA)
+
+            if s.dtype == "object":
+                s = s.apply(lambda x: pd.NA if str(x).strip() == "" else x)
+
+            result = result.combine_first(s)
+
+    if default != "":
+        result = result.fillna(default)
+
+    return result
+    
     if stocktakes_df.empty or stocktake_lines_df.empty:
         return 0.0
 
@@ -518,15 +539,41 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     po = po_df.copy()
     pol = pol_df.copy()
 
-    po["po_id"] = po.get("po_id", "").astype(str).str.strip()
-    pol["po_id"] = pol.get("po_id", "").astype(str).str.strip()
-    pol["item_id"] = pol.get("item_id", "").astype(str).str.strip()
+    if "po_id" not in po.columns or "po_id" not in pol.columns:
+        return pd.DataFrame()
 
-    merged = pol.merge(
-        po[["po_id", "store_id", "vendor_id", "order_date", "status"]],
-        on="po_id",
-        how="left",
-    )
+    po["po_id"] = po["po_id"].astype(str).str.strip()
+    pol["po_id"] = pol["po_id"].astype(str).str.strip()
+
+    if "item_id" in pol.columns:
+        pol["item_id"] = pol["item_id"].astype(str).str.strip()
+    else:
+        pol["item_id"] = ""
+
+    po_keep = po.copy()
+    rename_map = {}
+    if "store_id" in po_keep.columns:
+        rename_map["store_id"] = "po_store_id"
+    if "vendor_id" in po_keep.columns:
+        rename_map["vendor_id"] = "po_vendor_id"
+    if "order_date" in po_keep.columns:
+        rename_map["order_date"] = "po_order_date"
+    if "status" in po_keep.columns:
+        rename_map["status"] = "po_status"
+
+    po_keep = po_keep.rename(columns=rename_map)
+
+    keep_cols = ["po_id"]
+    for c in ["po_store_id", "po_vendor_id", "po_order_date", "po_status"]:
+        if c in po_keep.columns:
+            keep_cols.append(c)
+
+    merged = pol.merge(po_keep[keep_cols], on="po_id", how="left")
+
+    merged["store_id"] = _coalesce_columns(merged, ["po_store_id", "store_id"], default="")
+    merged["vendor_id"] = _coalesce_columns(merged, ["po_vendor_id", "vendor_id"], default="")
+    merged["order_date"] = _coalesce_columns(merged, ["po_order_date", "order_date"], default="")
+    merged["status"] = _coalesce_columns(merged, ["po_status", "status"], default="")
 
     if not vendors_df.empty and "vendor_id" in vendors_df.columns:
         v = vendors_df.copy()
@@ -534,19 +581,21 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         v["vendor_name_disp"] = v.apply(_label_vendor, axis=1)
         merged = merged.merge(v[["vendor_id", "vendor_name_disp"]], on="vendor_id", how="left")
     else:
-        merged["vendor_name_disp"] = merged.get("vendor_id", "")
+        merged["vendor_name_disp"] = merged["vendor_id"]
 
     if not items_df.empty and "item_id" in items_df.columns:
         i = items_df.copy()
         i["item_id"] = i["item_id"].astype(str).str.strip()
         i["item_name_disp"] = i.apply(_item_display_name, axis=1)
-        merged = merged.merge(
-            i[["item_id", "item_name_disp", "base_unit", "default_vendor_id"]],
-            on="item_id",
-            how="left",
-        )
+
+        keep_item_cols = ["item_id", "item_name_disp"]
+        for c in ["base_unit", "default_vendor_id", "default_stock_unit"]:
+            if c in i.columns:
+                keep_item_cols.append(c)
+
+        merged = merged.merge(i[keep_item_cols], on="item_id", how="left")
     else:
-        merged["item_name_disp"] = merged.get("item_id", "")
+        merged["item_name_disp"] = merged["item_id"]
 
     if not stores_df.empty and "store_id" in stores_df.columns:
         s = stores_df.copy()
@@ -554,13 +603,19 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         s["store_name_disp"] = s.apply(_label_store, axis=1)
         merged = merged.merge(s[["store_id", "store_name_disp"]], on="store_id", how="left")
     else:
-        merged["store_name_disp"] = merged.get("store_id", "")
+        merged["store_name_disp"] = merged["store_id"]
 
     merged["order_date_dt"] = merged["order_date"].apply(_parse_date)
+
     merged["order_qty_num"] = pd.to_numeric(
-        merged.get("order_qty", merged.get("qty", 0)), errors="coerce"
+        _coalesce_columns(merged, ["order_qty", "qty"], default=0),
+        errors="coerce"
     ).fillna(0)
-    merged["unit_price_num"] = pd.to_numeric(merged.get("unit_price", 0), errors="coerce").fillna(0)
+
+    merged["unit_price_num"] = pd.to_numeric(
+        _coalesce_columns(merged, ["unit_price"], default=0),
+        errors="coerce"
+    ).fillna(0)
 
     if "line_amount" in merged.columns:
         merged["amount_num"] = pd.to_numeric(merged["line_amount"], errors="coerce").fillna(0)
@@ -569,10 +624,9 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     else:
         merged["amount_num"] = merged["order_qty_num"] * merged["unit_price_num"]
 
-    merged["order_unit_disp"] = merged.get("order_unit", merged.get("unit_id", "")).astype(str).str.strip()
+    merged["order_unit_disp"] = _coalesce_columns(merged, ["order_unit", "unit_id"], default="").astype(str).str.strip()
 
     return merged.copy()
-
 
 def _build_stock_detail_df() -> pd.DataFrame:
     st_df = read_table("stocktakes")
@@ -588,39 +642,64 @@ def _build_stock_detail_df() -> pd.DataFrame:
     stx = st_df.copy()
     stl = stl_df.copy()
 
-    stx["stocktake_id"] = stx.get("stocktake_id", "").astype(str).str.strip()
-    stl["stocktake_id"] = stl.get("stocktake_id", "").astype(str).str.strip()
-    stl["item_id"] = stl.get("item_id", "").astype(str).str.strip()
+    if "stocktake_id" not in stx.columns or "stocktake_id" not in stl.columns:
+        return pd.DataFrame()
 
-    merged = stl.merge(
-        stx[["stocktake_id", "store_id", "stocktake_date", "note"]],
-        on="stocktake_id",
-        how="left",
+    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+
+    if "item_id" in stl.columns:
+        stl["item_id"] = stl["item_id"].astype(str).str.strip()
+    else:
+        stl["item_id"] = ""
+
+    st_keep = stx.copy()
+    rename_map = {}
+    if "store_id" in st_keep.columns:
+        rename_map["store_id"] = "st_store_id"
+    if "stocktake_date" in st_keep.columns:
+        rename_map["stocktake_date"] = "st_stocktake_date"
+    if "note" in st_keep.columns:
+        rename_map["note"] = "st_note"
+
+    st_keep = st_keep.rename(columns=rename_map)
+
+    keep_cols = ["stocktake_id"]
+    for c in ["st_store_id", "st_stocktake_date", "st_note"]:
+        if c in st_keep.columns:
+            keep_cols.append(c)
+
+    merged = stl.merge(st_keep[keep_cols], on="stocktake_id", how="left")
+
+    merged["store_id"] = _coalesce_columns(merged, ["st_store_id", "store_id"], default="")
+    merged["stocktake_date"] = _coalesce_columns(merged, ["st_stocktake_date", "stocktake_date"], default="")
+    merged["note_for_parse"] = _coalesce_columns(merged, ["st_note", "note"], default="")
+    merged["vendor_id"] = _coalesce_columns(merged, ["vendor_id"], default="")
+
+    merged["vendor_id"] = merged["vendor_id"].where(
+        merged["vendor_id"].astype(str).str.strip() != "",
+        merged["note_for_parse"].apply(_parse_vendor_id_from_note),
     )
-
-    merged["vendor_id"] = merged["note"].apply(_parse_vendor_id_from_note)
 
     if not items_df.empty and "item_id" in items_df.columns:
         i = items_df.copy()
         i["item_id"] = i["item_id"].astype(str).str.strip()
         i["item_name_disp"] = i.apply(_item_display_name, axis=1)
-        merged = merged.merge(
-            i[
-                [
-                    "item_id",
-                    "item_name_disp",
-                    "base_unit",
-                    "default_vendor_id",
-                    "default_stock_unit",
-                ]
-            ],
-            on="item_id",
-            how="left",
-        )
-        merged["vendor_id"] = merged["vendor_id"].where(
-            merged["vendor_id"].astype(str).str.strip() != "",
-            merged["default_vendor_id"],
-        )
+
+        keep_item_cols = ["item_id", "item_name_disp"]
+        for c in ["base_unit", "default_vendor_id", "default_stock_unit"]:
+            if c in i.columns:
+                keep_item_cols.append(c)
+
+        merged = merged.merge(i[keep_item_cols], on="item_id", how="left")
+
+        if "default_vendor_id" in merged.columns:
+            merged["vendor_id"] = merged["vendor_id"].where(
+                merged["vendor_id"].astype(str).str.strip() != "",
+                merged["default_vendor_id"],
+            )
+    else:
+        merged["item_name_disp"] = merged["item_id"]
 
     if not vendors_df.empty and "vendor_id" in vendors_df.columns:
         v = vendors_df.copy()
@@ -628,7 +707,7 @@ def _build_stock_detail_df() -> pd.DataFrame:
         v["vendor_name_disp"] = v.apply(_label_vendor, axis=1)
         merged = merged.merge(v[["vendor_id", "vendor_name_disp"]], on="vendor_id", how="left")
     else:
-        merged["vendor_name_disp"] = merged.get("vendor_id", "")
+        merged["vendor_name_disp"] = merged["vendor_id"]
 
     if not stores_df.empty and "store_id" in stores_df.columns:
         s = stores_df.copy()
@@ -636,12 +715,13 @@ def _build_stock_detail_df() -> pd.DataFrame:
         s["store_name_disp"] = s.apply(_label_store, axis=1)
         merged = merged.merge(s[["store_id", "store_name_disp"]], on="store_id", how="left")
     else:
-        merged["store_name_disp"] = merged.get("store_id", "")
+        merged["store_name_disp"] = merged["store_id"]
 
     merged["stocktake_date_dt"] = merged["stocktake_date"].apply(_parse_date)
+
     merged["base_qty_num"] = pd.to_numeric(
-        merged.get("base_qty", merged.get("stock_qty", merged.get("qty", 0))),
-        errors="coerce",
+        _coalesce_columns(merged, ["base_qty", "stock_qty", "qty"], default=0),
+        errors="coerce"
     ).fillna(0)
 
     def _display_stock_qty(row):
@@ -676,10 +756,14 @@ def _build_stock_detail_df() -> pd.DataFrame:
             return round(_safe_float(row.get("base_qty_num", 0)), 1)
 
     merged["display_stock_qty"] = merged.apply(_display_stock_qty, axis=1)
-    merged["display_stock_unit"] = merged["default_stock_unit"].where(
-        merged["default_stock_unit"].astype(str).str.strip() != "",
-        merged["base_unit"],
-    )
+
+    if "default_stock_unit" in merged.columns:
+        merged["display_stock_unit"] = merged["default_stock_unit"].where(
+            merged["default_stock_unit"].astype(str).str.strip() != "",
+            merged["base_unit"],
+        )
+    else:
+        merged["display_stock_unit"] = merged["base_unit"]
 
     return merged.copy()
 
