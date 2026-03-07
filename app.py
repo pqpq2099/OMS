@@ -231,11 +231,22 @@ def open_spreadsheet(sheet_id: str):
 def get_worksheet(ws_name: str):
     sh = open_spreadsheet(DB_SHEET_ID)
     try:
+        all_titles = [ws.title for ws in sh.worksheets()]
+        st.write("DEBUG DB_SHEET_ID =", DB_SHEET_ID)
+        st.write("DEBUG worksheet list =", all_titles)
         return sh.worksheet(ws_name)
-    except Exception as e:
-        st.error(f"get_worksheet error: {type(e).__name__} / {e}")
+
+    except WorksheetNotFound:
+        st.warning(f"Worksheet not found, creating: {ws_name}")
+        return sh.add_worksheet(title=ws_name, rows=2000, cols=60)
+
+    except APIError as e:
+        st.error(f"APIError in get_worksheet: {e}")
         raise
 
+    except Exception as e:
+        st.error(f"Unexpected error in get_worksheet: {type(e).__name__} / {e}")
+        raise
 
 def read_ws(ws_name: str) -> pd.DataFrame:
     try:
