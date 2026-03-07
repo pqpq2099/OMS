@@ -1474,6 +1474,27 @@ else:
         use_container_width=True,
         hide_index=True
     )
+    sel_i = col_i.selectbox(
+        "🏷️ 2. 選擇品項",
+        options=all_i,
+        index=0,
+        key="hist_item"
+    )
+
+    if sel_i != "全部品項":
+        filt_df = filt_df[filt_df["品項名稱"] == sel_i]
+
+    # 這一段要和上面 if 對齊
+    filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
+    filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
+
+    show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
+
+    st.dataframe(
+        filt_df[show_cols],
+        use_container_width=True,
+        hide_index=True
+    )
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
