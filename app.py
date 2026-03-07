@@ -702,8 +702,8 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         merged["store_name_disp"] = merged["store_id"]
 
     merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(
-        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
-    )
+    lambda x: "" if _norm(x).lower() in {"", "nan", "none", "nat", "-"} else _norm(x)
+    )    
     merged["item_name_disp"] = merged["item_name_disp"].apply(
         lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
     )
@@ -886,6 +886,155 @@ def _build_stock_detail_df() -> pd.DataFrame:
 
     return merged.copy()
 
+def _build_inventory_history_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
+    stock_df = _build_stock_detail_df()
+    po_df = _build_purchase_detail_df()
+
+    if stock_df.empty or "store_id" not in stock_df.columns:
+        return pd.DataFrame()
+
+    stock_work = stock_df[
+        stock_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+    ].copy()
+
+    if stock_work.empty or "stocktake_date_dt" not in stock_work.columns:
+        return pd.DataFrame()
+
+    stock_work = stock_work[stock_work["stocktake_date_dt"].notna()].copy()
+
+    target_stock = stock_work[
+        (stock_work["stocktake_date_dt"] >= start_date)
+        & (stock_work["stocktake_date_dt"] <= end_date)
+    ].copy()
+
+    if target_stock.empty:
+        return pd.DataFrame()
+
+    po_work = pd.DataFrame()
+    if not po_df.empty and "store_id" in po_df.columns and "order_date_dt" in po_df.columns:
+        po_work = po_df[
+            po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+        ].copy()
+        po_work = po_work[po_work["order_date_dt"].notna()].copy()
+
+    result_rows = []
+
+    target_stock = target_stock.sort_values(["stocktake_date_dt", "item_name_disp"]).copy()
+
+    for _, curr_row in target_stock.iterrows():
+        item_id = _norm(curr_row.get("item_id", ""))
+        curr_date = curr_row.get("stocktake_date_dt")
+        item_name = _norm(curr_row.get("item_name_disp", "")) or "未指定"
+        unit = _norm(curr_row.get("display_stock_unit", "")) or _norm(curr_row.get("base_unit", ""))
+        vendor_name = _norm(curr_row.get("vendor_name_disp", ""))
+
+        item_stock_all = stock_work[
+            stock_work["item_id"].astype(str).str.strip() == item_id
+        ].copy()
+
+        prev_stock = item_stock_all[item_stock_all["stocktake_date_dt"] < curr_date].sort_values("stocktake_date_dt")
+
+        if prev_stock.empty:
+            prev_qty = 0.0
+            prev_date = None
+        else:
+            prev_qty = _safe_float(prev_stock.iloc[-1].get("display_stock_qty", 0))
+            prev_date = prev_stock.iloc[-1].get("stocktake_date_dt")
+
+        curr_qty = _safe_float(curr_row.get("display_stock_qty", 0))
+
+        order_sum = 0.0
+        if not po_work.empty:
+            item_po = po_work[
+                po_work["item_id"].astype(str).str.strip() == item_id
+            ].copy()
+
+            if prev_date is None:
+                item_po = item_po[item_po["order_date_dt"] <= curr_date]
+            else:
+                item_po = item_po[
+                    (item_po["order_date_dt"] > prev_date)
+                    & (item_po["order_date_dt"] <= curr_date)
+                ]
+
+            order_sum = float(item_po.get("order_qty_num", pd.Series(dtype=float)).sum())
+
+            valid_vendor_series = item_po.get("vendor_name_disp", pd.Series(dtype=str)).astype(str).str.strip()
+            valid_vendor_series = valid_vendor_series[
+                ~valid_vendor_series.str.lower().isin(["", "nan", "none", "nat", "-"])
+            ]
+            if not valid_vendor_series.empty:
+                vendor_name = valid_vendor_series.iloc[-1]
+
+        if _norm(vendor_name).lower() in {"", "nan", "none", "nat", "-"}:
+            vendor_name = ""
+
+        usage = round(prev_qty + order_sum - curr_qty, 1)
+
+        result_rows.append(
+            {
+                "日期": curr_date,
+                "廠商": vendor_name,
+                "品項名稱": item_name,
+                "單位": unit,
+                "上次剩餘": round(prev_qty, 1),
+                "上次叫貨": round(order_sum, 1),
+                "本次剩餘": round(curr_qty, 1),
+                "本次叫貨": round(order_sum, 1),
+                "期間消耗": usage,
+                "item_id": item_id,
+            }
+        )
+
+    out = pd.DataFrame(result_rows)
+    if out.empty:
+        return out
+
+    out["日期_dt"] = pd.to_datetime(out["日期"], errors="coerce")
+    out["日期顯示"] = out["日期_dt"].dt.strftime("%m-%d")
+    out = out.sort_values(["日期_dt", "廠商", "品項名稱"], ascending=[False, True, True]).reset_index(drop=True)
+    return out
+
+
+def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
+    po_df = _build_purchase_detail_df()
+    if po_df.empty or "store_id" not in po_df.columns or "order_date_dt" not in po_df.columns:
+        return pd.DataFrame()
+
+    po_work = po_df[
+        po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+    ].copy()
+
+    po_work = po_work[
+        po_work["order_date_dt"].notna()
+        & (po_work["order_date_dt"] >= start_date)
+        & (po_work["order_date_dt"] <= end_date)
+    ].copy()
+
+    if po_work.empty:
+        return pd.DataFrame()
+
+    po_work["廠商"] = po_work["vendor_name_disp"].apply(
+        lambda x: "" if _norm(x).lower() in {"", "nan", "none", "nat", "-"} else _norm(x)
+    )
+    po_work["品項名稱"] = po_work["item_name_disp"].apply(
+        lambda x: _norm(x) or "未指定"
+    )
+    po_work["單位"] = po_work["order_unit_disp"].apply(lambda x: _norm(x))
+    po_work["單價"] = po_work["unit_price_num"].astype(float)
+    po_work["叫貨數量"] = po_work["order_qty_num"].astype(float)
+    po_work["採購金額"] = po_work["amount_num"].astype(float)
+
+    out = (
+        po_work.groupby(["廠商", "品項名稱", "單位", "單價"], as_index=False)
+        .agg(
+            叫貨數量=("叫貨數量", "sum"),
+            採購金額=("採購金額", "sum"),
+        )
+        .sort_values(["廠商", "品項名稱"], ascending=[True, True])
+        .reset_index(drop=True)
+    )
+    return out
 
 # ============================================================
 # [D1] Session State
@@ -1448,6 +1597,7 @@ def page_order_entry():
 # ============================================================
 # [E4] View History
 # ============================================================
+
 def page_view_history():
     st.markdown(
         """
@@ -1470,110 +1620,75 @@ def page_view_history():
         unsafe_allow_html=True,
     )
 
-    st.title(f"📜 {st.session_state.store_name} 歷史紀錄")
-
-    stock_df = _build_stock_detail_df()
-    po_df = _build_purchase_detail_df()
+    st.title(f"📜 {st.session_state.store_name} 歷史庫")
 
     c_h_date1, c_h_date2 = st.columns(2)
-    h_start = c_h_date1.date_input("起始日期", value=date.today() - timedelta(days=7), key="hist_start_date")
-    h_end = c_h_date2.date_input("結束日期", value=date.today(), key="hist_end_date")
+    h_start = c_h_date1.date_input(
+        "起始日期",
+        value=date.today() - timedelta(days=7),
+        key="hist_start_date"
+    )
+    h_end = c_h_date2.date_input(
+        "結束日期",
+        value=date.today(),
+        key="hist_end_date"
+    )
+
+    hist_df = _build_inventory_history_summary_df(
+        store_id=st.session_state.store_id,
+        start_date=h_start,
+        end_date=h_end,
+    )
 
     t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
 
     with t1:
-        detail_rows = []
-
-        if not stock_df.empty and "store_id" in stock_df.columns:
-            stock_work = stock_df[
-                stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-            ].copy()
-
-            if "stocktake_date_dt" in stock_work.columns:
-                stock_work = stock_work[
-                    stock_work["stocktake_date_dt"].notna()
-                    & (stock_work["stocktake_date_dt"] >= h_start)
-                    & (stock_work["stocktake_date_dt"] <= h_end)
-                ].copy()
-
-                for _, r in stock_work.iterrows():
-                    detail_rows.append(
-                        {
-                            "日期": r.get("stocktake_date_dt"),
-                            "類型": "庫存",
-                            "廠商": "-",
-                            "品項名稱": _norm(r.get("item_name_disp", "")) or "未指定",
-                            "數量": round(_safe_float(r.get("display_stock_qty", 0)), 1),
-                            "單位": _norm(r.get("display_stock_unit", "")),
-                            "單價": "",
-                            "金額": "",
-                        }
-                    )
-
-        if not po_df.empty and "store_id" in po_df.columns:
-            po_work = po_df[
-                po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-            ].copy()
-
-            if "order_date_dt" in po_work.columns:
-                po_work = po_work[
-                    po_work["order_date_dt"].notna()
-                    & (po_work["order_date_dt"] >= h_start)
-                    & (po_work["order_date_dt"] <= h_end)
-                ].copy()
-
-                for _, r in po_work.iterrows():
-                    detail_rows.append(
-                        {
-                            "日期": r.get("order_date_dt"),
-                            "類型": "叫貨",
-                            "廠商": _norm(r.get("vendor_name_disp", "")) or "未指定",
-                            "品項名稱": _norm(r.get("item_name_disp", "")) or "未指定",
-                            "數量": round(_safe_float(r.get("order_qty_num", 0)), 1),
-                            "單位": _norm(r.get("order_unit_disp", "")),
-                            "單價": round(_safe_float(r.get("unit_price_num", 0)), 1),
-                            "金額": round(_safe_float(r.get("amount_num", 0)), 1),
-                        }
-                    )
-
-        detail_df = pd.DataFrame(detail_rows)
-
-        if detail_df.empty:
+        if hist_df.empty:
             st.info("💡 此區間內無紀錄。")
         else:
             col_v, col_i = st.columns(2)
 
-            all_v = ["全部廠商"] + _clean_option_list(detail_df["廠商"].dropna().unique().tolist())
+            vendor_values = [x for x in hist_df["廠商"].dropna().tolist() if _norm(x)]
+            all_v = ["全部廠商"] + _clean_option_list(vendor_values)
             sel_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
 
-            filt_df = detail_df.copy()
+            filt_df = hist_df.copy()
             if sel_v != "全部廠商":
-                filt_df = filt_df[filt_df["廠商"] == sel_v]
+                filt_df = filt_df[filt_df["廠商"] == sel_v].copy()
 
-            all_i = ["全部品項"] + _clean_option_list(filt_df["品項名稱"].dropna().unique().tolist())
+            item_values = [x for x in filt_df["品項名稱"].dropna().tolist() if _norm(x)]
+            all_i = ["全部品項"] + _clean_option_list(item_values)
             sel_i = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="hist_item_filter")
 
             if sel_i != "全部品項":
-                filt_df = filt_df[filt_df["品項名稱"] == sel_i]
+                filt_df = filt_df[filt_df["品項名稱"] == sel_i].copy()
 
-            filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
-            filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
-
-            show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
+            show_cols = [
+                "日期顯示",
+                "廠商",
+                "品項名稱",
+                "單位",
+                "上次剩餘",
+                "上次叫貨",
+                "本次剩餘",
+                "本次叫貨",
+                "期間消耗",
+            ]
 
             st.dataframe(
                 filt_df[show_cols],
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "顯示日期": st.column_config.TextColumn("日期", width="small"),
-                    "類型": st.column_config.TextColumn(width="small"),
+                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
                     "廠商": st.column_config.TextColumn(width="small"),
                     "品項名稱": st.column_config.TextColumn(width="medium"),
-                    "數量": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "單位": st.column_config.TextColumn(width="small"),
-                    "單價": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "金額": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
             )
 
@@ -1581,67 +1696,57 @@ def page_view_history():
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
         else:
-            if po_df.empty or "store_id" not in po_df.columns or "order_date_dt" not in po_df.columns:
-                st.info("💡 此區間內無叫貨趨勢資料。")
+            if hist_df.empty:
+                st.info("💡 此區間內無趨勢資料。")
             else:
-                po_work = po_df[
-                    po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-                ].copy()
-                po_work = po_work[
-                    po_work["order_date_dt"].notna()
-                    & (po_work["order_date_dt"] >= h_start)
-                    & (po_work["order_date_dt"] <= h_end)
-                ].copy()
+                col_v2, col_i2 = st.columns(2)
 
-                if po_work.empty:
-                    st.info("💡 此區間內無叫貨趨勢資料。")
+                vendor_values2 = [x for x in hist_df["廠商"].dropna().tolist() if _norm(x)]
+                all_v2 = _clean_option_list(vendor_values2)
+
+                if not all_v2:
+                    st.info("💡 此區間內無廠商資料。")
                 else:
-                    col_v2, col_i2 = st.columns(2)
-                    all_v2 = _clean_option_list(po_work["vendor_name_disp"].dropna().unique().tolist())
+                    sel_v2 = col_v2.selectbox("📦 1. 選擇廠商", options=all_v2, key="hist_trend_vendor")
+                    v_filtered = hist_df[hist_df["廠商"] == sel_v2].copy()
 
-                    if not all_v2:
-                        st.info("💡 此區間內無廠商資料。")
+                    item_values2 = [x for x in v_filtered["品項名稱"].dropna().tolist() if _norm(x)]
+                    all_i2 = _clean_option_list(item_values2)
+
+                    if not all_i2:
+                        st.info("💡 此廠商目前無品項資料。")
                     else:
-                        sel_v2 = col_v2.selectbox("📦 1. 選擇廠商", options=all_v2, key="hist_trend_vendor")
-                        v_filtered = po_work[po_work["vendor_name_disp"] == sel_v2].copy()
+                        sel_i2 = col_i2.selectbox("🏷️ 2. 選擇品項", options=all_i2, key="hist_trend_item")
+                        p_df = v_filtered[v_filtered["品項名稱"] == sel_i2].copy()
 
-                        all_i2 = _clean_option_list(v_filtered["item_name_disp"].dropna().unique().tolist())
+                        trend = (
+                            p_df.groupby("日期_dt", as_index=False)["期間消耗"]
+                            .sum()
+                            .sort_values("日期_dt")
+                        )
+                        trend["日期標記"] = pd.to_datetime(trend["日期_dt"]).dt.strftime("%Y-%m-%d")
 
-                        if not all_i2:
-                            st.info("💡 此廠商目前無品項資料。")
-                        else:
-                            sel_i2 = col_i2.selectbox("🏷️ 2. 選擇品項", options=all_i2, key="hist_trend_item")
-                            p_df = v_filtered[v_filtered["item_name_disp"] == sel_i2].copy()
-
-                            trend = (
-                                p_df.groupby("order_date_dt", as_index=False)["order_qty_num"]
-                                .sum()
-                                .sort_values("order_date_dt")
+                        if not trend.empty:
+                            fig = px.line(
+                                trend,
+                                x="日期標記",
+                                y="期間消耗",
+                                markers=True,
+                                title=f"📈 【{sel_i2}】消耗趨勢",
                             )
-                            trend["日期標記"] = pd.to_datetime(trend["order_date_dt"]).dt.strftime("%Y-%m-%d")
-
-                            if not trend.empty:
-                                fig = px.line(
-                                    trend,
-                                    x="日期標記",
-                                    y="order_qty_num",
-                                    markers=True,
-                                    title=f"📈 【{sel_i2}】叫貨趨勢",
-                                )
-                                fig.update_layout(
-                                    xaxis_type="category",
-                                    hovermode="x unified",
-                                    xaxis_title="日期",
-                                    yaxis_title="數量",
-                                    dragmode=False,
-                                )
-                                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+                            fig.update_layout(
+                                xaxis_type="category",
+                                hovermode="x unified",
+                                xaxis_title="日期",
+                                yaxis_title="期間消耗",
+                                dragmode=False,
+                            )
+                            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
-
+        
 # ============================================================
 # [E5] Export
 # ============================================================
@@ -1715,44 +1820,31 @@ def page_export():
 # ============================================================
 # [E6] Analysis
 # ============================================================
+
 def page_analysis():
     st.title("📊 進銷存分析")
-
-    po_df = _build_purchase_detail_df()
-    stock_df = _build_stock_detail_df()
-    prices_df = read_table("prices")
 
     c_date1, c_date2 = st.columns(2)
     start = c_date1.date_input("起始日期", value=date.today() - timedelta(days=14), key="ana_start")
     end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
 
-    if (po_df.empty or "store_id" not in po_df.columns) and (stock_df.empty or "store_id" not in stock_df.columns):
-        st.error("❌ 無資料")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_empty"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
-        return
+    hist_df = _build_inventory_history_summary_df(
+        store_id=st.session_state.store_id,
+        start_date=start,
+        end_date=end,
+    )
+    purchase_summary_df = _build_purchase_summary_df(
+        store_id=st.session_state.store_id,
+        start_date=start,
+        end_date=end,
+    )
 
-    po_store = pd.DataFrame()
-    stock_store = pd.DataFrame()
+    stock_df = _build_stock_detail_df()
+    prices_df = read_table("prices")
+    items_df = read_table("items")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
 
-    if not po_df.empty and "store_id" in po_df.columns and "order_date_dt" in po_df.columns:
-        po_store = po_df[po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
-        po_store = po_store[
-            po_store["order_date_dt"].notna()
-            & (po_store["order_date_dt"] >= start)
-            & (po_store["order_date_dt"] <= end)
-        ].copy()
-
-    if not stock_df.empty and "store_id" in stock_df.columns and "stocktake_date_dt" in stock_df.columns:
-        stock_store = stock_df[stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
-        stock_store = stock_store[
-            stock_store["stocktake_date_dt"].notna()
-            & (stock_store["stocktake_date_dt"] >= start)
-            & (stock_store["stocktake_date_dt"] <= end)
-        ].copy()
-
-    if po_store.empty and stock_store.empty:
+    if hist_df.empty and purchase_summary_df.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
         if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_no_data"):
             st.session_state.step = "select_vendor"
@@ -1765,55 +1857,73 @@ def page_analysis():
 
     all_vendors = _clean_option_list(
         list(
-            set(po_store.get("vendor_name_disp", pd.Series(dtype=str)).dropna().tolist())
-            | set(stock_store.get("vendor_name_disp", pd.Series(dtype=str)).dropna().tolist())
+            set(hist_df.get("廠商", pd.Series(dtype=str)).dropna().tolist())
+            | set(purchase_summary_df.get("廠商", pd.Series(dtype=str)).dropna().tolist())
         )
     )
     all_v = ["全部廠商"] + all_vendors
     selected_v = col_v.selectbox("📦 1. 選擇廠商", options=all_v, index=0, key="ana_vendor_filter")
 
-    po_filt = po_store.copy()
-    stock_filt = stock_store.copy()
+    hist_filt = hist_df.copy()
+    purchase_filt = purchase_summary_df.copy()
 
     if selected_v != "全部廠商":
-        if not po_filt.empty:
-            po_filt = po_filt[po_filt["vendor_name_disp"] == selected_v].copy()
-        if not stock_filt.empty:
-            stock_filt = stock_filt[stock_filt["vendor_name_disp"] == selected_v].copy()
+        if not hist_filt.empty:
+            hist_filt = hist_filt[hist_filt["廠商"] == selected_v].copy()
+        if not purchase_filt.empty:
+            purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_v].copy()
 
     all_items = _clean_option_list(
         list(
-            set(po_filt.get("item_name_disp", pd.Series(dtype=str)).dropna().tolist())
-            | set(stock_filt.get("item_name_disp", pd.Series(dtype=str)).dropna().tolist())
+            set(hist_filt.get("品項名稱", pd.Series(dtype=str)).dropna().tolist())
+            | set(purchase_filt.get("品項名稱", pd.Series(dtype=str)).dropna().tolist())
         )
     )
     all_i = ["全部品項"] + all_items
     selected_item = col_i.selectbox("🏷️ 2. 選擇品項", options=all_i, index=0, key="ana_item_filter")
 
     if selected_item != "全部品項":
-        if not po_filt.empty:
-            po_filt = po_filt[po_filt["item_name_disp"] == selected_item].copy()
-        if not stock_filt.empty:
-            stock_filt = stock_filt[stock_filt["item_name_disp"] == selected_item].copy()
+        if not hist_filt.empty:
+            hist_filt = hist_filt[hist_filt["品項名稱"] == selected_item].copy()
+        if not purchase_filt.empty:
+            purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
 
-    total_buy = float(po_filt.get("amount_num", pd.Series(dtype=float)).sum()) if not po_filt.empty else 0.0
+    total_buy = float(purchase_filt.get("採購金額", pd.Series(dtype=float)).sum()) if not purchase_filt.empty else 0.0
 
-    if not stock_filt.empty:
-        latest_stock = stock_filt.sort_values("stocktake_date_dt").groupby("item_id", as_index=False).tail(1).copy()
-        latest_stock["base_unit_cost"] = latest_stock.apply(
-            lambda r: get_base_unit_cost(
-                item_id=_norm(r.get("item_id", "")),
-                target_date=end,
-                items_df=read_table("items"),
-                prices_df=prices_df,
-                conversions_df=_get_active_df(read_table("unit_conversions")),
-            ) or 0.0,
-            axis=1,
-        )
-        latest_stock["stock_value"] = latest_stock["base_qty_num"].astype(float) * latest_stock["base_unit_cost"].astype(float)
-        total_stock_value = float(latest_stock["stock_value"].sum())
-    else:
-        total_stock_value = 0.0
+    total_stock_value = 0.0
+    if not stock_df.empty and "store_id" in stock_df.columns and "stocktake_date_dt" in stock_df.columns:
+        stock_store = stock_df[
+            stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+        ].copy()
+
+        stock_store = stock_store[
+            stock_store["stocktake_date_dt"].notna()
+            & (stock_store["stocktake_date_dt"] >= start)
+            & (stock_store["stocktake_date_dt"] <= end)
+        ].copy()
+
+        if selected_v != "全部廠商" and not stock_store.empty:
+            stock_store = stock_store[stock_store["vendor_name_disp"] == selected_v].copy()
+
+        if selected_item != "全部品項" and not stock_store.empty:
+            stock_store = stock_store[stock_store["item_name_disp"] == selected_item].copy()
+
+        if not stock_store.empty:
+            latest_stock = stock_store.sort_values("stocktake_date_dt").groupby("item_id", as_index=False).tail(1).copy()
+            latest_stock["base_unit_cost"] = latest_stock.apply(
+                lambda r: get_base_unit_cost(
+                    item_id=_norm(r.get("item_id", "")),
+                    target_date=end,
+                    items_df=items_df,
+                    prices_df=prices_df,
+                    conversions_df=conversions_df,
+                ) or 0.0,
+                axis=1,
+            )
+            latest_stock["stock_value"] = (
+                latest_stock["base_qty_num"].astype(float) * latest_stock["base_unit_cost"].astype(float)
+            )
+            total_stock_value = float(latest_stock["stock_value"].sum())
 
     st.markdown(
         f"""
@@ -1836,90 +1946,93 @@ def page_analysis():
     with t_detail:
         st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
 
-        if po_filt.empty:
-            st.info("💡 尚未產生採購資料")
+        if hist_filt.empty:
+            st.info("💡 尚未產生進銷存資料")
         else:
-            summ_df = (
-                po_filt.groupby(
-                    ["vendor_name_disp", "item_name_disp", "order_unit_disp", "unit_price_num"],
-                    as_index=False,
-                )
-                .agg(
-                    叫貨數量=("order_qty_num", "sum"),
-                    採購金額=("amount_num", "sum"),
-                )
-                .rename(
-                    columns={
-                        "vendor_name_disp": "廠商",
-                        "item_name_disp": "品項名稱",
-                        "order_unit_disp": "單位",
-                        "unit_price_num": "單價",
-                    }
-                )
-            )
+            show_cols = [
+                "日期顯示",
+                "廠商",
+                "品項名稱",
+                "單位",
+                "上次剩餘",
+                "上次叫貨",
+                "本次剩餘",
+                "本次叫貨",
+                "期間消耗",
+            ]
 
             st.dataframe(
-                summ_df.sort_values("採購金額", ascending=False),
+                hist_filt[show_cols],
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                    "廠商": st.column_config.TextColumn(width="small"),
+                    "品項名稱": st.column_config.TextColumn(width="medium"),
+                    "單位": st.column_config.TextColumn(width="small"),
+                    "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                },
             )
 
     with t_trend:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
         else:
-            if not po_filt.empty:
+            if hist_filt.empty:
+                st.info("💡 此條件下尚無趨勢資料。")
+            else:
                 trend_daily = (
-                    po_filt.groupby("order_date_dt", as_index=False)["amount_num"]
+                    hist_filt.groupby("日期_dt", as_index=False)["期間消耗"]
                     .sum()
-                    .sort_values("order_date_dt")
+                    .sort_values("日期_dt")
                 )
-                trend_daily["日期標記"] = pd.to_datetime(trend_daily["order_date_dt"]).dt.strftime("%Y-%m-%d")
+                trend_daily["日期標記"] = pd.to_datetime(trend_daily["日期_dt"]).dt.strftime("%Y-%m-%d")
 
                 if not trend_daily.empty:
                     fig1 = px.line(
                         trend_daily,
                         x="日期標記",
-                        y="amount_num",
+                        y="期間消耗",
                         markers=True,
-                        title="📈 採購金額趨勢",
+                        title="📈 期間消耗趨勢",
                     )
                     fig1.update_layout(
                         xaxis_type="category",
                         hovermode="x unified",
                         xaxis_title="日期",
-                        yaxis_title="金額",
+                        yaxis_title="期間消耗",
                         dragmode=False,
                     )
                     st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
                 rank_df = (
-                    po_filt.groupby("item_name_disp", as_index=False)["amount_num"]
+                    hist_filt.groupby("品項名稱", as_index=False)["期間消耗"]
                     .sum()
-                    .sort_values("amount_num", ascending=False)
+                    .sort_values("期間消耗", ascending=False)
                     .head(20)
                 )
 
                 if not rank_df.empty:
                     fig2 = px.bar(
                         rank_df,
-                        x="item_name_disp",
-                        y="amount_num",
-                        title="📊 品項採購金額排行 (Top 20)",
+                        x="品項名稱",
+                        y="期間消耗",
+                        title="📊 品項期間消耗排行 (Top 20)",
                     )
                     fig2.update_layout(
                         xaxis_title="品項名稱",
-                        yaxis_title="金額",
+                        yaxis_title="期間消耗",
                         dragmode=False,
                     )
                     st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
-            else:
-                st.info("💡 此條件下尚無採購趨勢資料。")
 
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
 
 # ============================================================
 # [E7] Cost Debug
