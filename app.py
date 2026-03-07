@@ -415,7 +415,10 @@ def normalize_price_df(prices: pd.DataFrame) -> pd.DataFrame:
 
 def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, items_df: pd.DataFrame) -> float:
     item_id = _norm(item_id)
-    target = _to_date(target_date) or date.today()
+    target = pd.to_datetime(target_date, errors="coerce")
+
+    if pd.isna(target):
+        target = pd.Timestamp.today().normalize()
 
     if not prices_df.empty:
         sub = prices_df[
@@ -424,13 +427,16 @@ def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, i
         ].copy()
 
         if not sub.empty:
-            sub["effective_date_parsed"] = pd.to_datetime(sub["effective_date"], errors="coerce").dt.date
-            sub["end_date_parsed"] = pd.to_datetime(sub["end_date"], errors="coerce").dt.date
+            sub["effective_date_parsed"] = pd.to_datetime(sub["effective_date"], errors="coerce")
+            sub["end_date_parsed"] = pd.to_datetime(sub["end_date"], errors="coerce")
 
             sub = sub[
                 sub["effective_date_parsed"].notna() &
                 (sub["effective_date_parsed"] <= target) &
-                (sub["end_date_parsed"].isna() | (sub["end_date_parsed"] >= target))
+                (
+                    sub["end_date_parsed"].isna() |
+                    (sub["end_date_parsed"] >= target)
+                )
             ].copy()
 
             if not sub.empty:
@@ -440,6 +446,7 @@ def get_price_by_date(item_id: str, target_date: str, prices_df: pd.DataFrame, i
     hit = items_df[items_df["item_id"].astype(str) == item_id]
     if not hit.empty:
         return _safe_float(hit.iloc[0].get("price"), 0.0)
+
     return 0.0
 
 # ============================================================
