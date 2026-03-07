@@ -1466,8 +1466,8 @@ def page_view_history():
                 filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
                 filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
                 show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
-                        st.dataframe(
-                            filt_df[show_cols],
+                st.dataframe(
+                    filt_df[show_cols],
                             use_container_width=True,
                             hide_index=True,
                             column_config={
@@ -1480,7 +1480,7 @@ def page_view_history():
                                 "單價": st.column_config.NumberColumn(format="%.1f", width="small"),
                                 "金額": st.column_config.NumberColumn(format="%.1f", width="small"),
                             },
-                        ) 
+                        )         
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
