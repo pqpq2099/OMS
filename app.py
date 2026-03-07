@@ -1,5 +1,6 @@
 # ============================================================
 # ORIVIA OMS 1.0 外觀 + OMS 2.0 資料庫（穩定整合版）
+# 加入 sidebar + 成本檢查頁
 # ============================================================
 
 from __future__ import annotations
@@ -151,7 +152,7 @@ def _clean_option_list(values: list) -> list[str]:
         text = str(x).strip()
         if not text:
             continue
-        if text.lower() == "nan":
+        if text.lower() in {"nan", "none", "nat"}:
             continue
         out.append(text)
     return sorted(list(dict.fromkeys(out)))
@@ -334,16 +335,6 @@ def _make_id(prefix: str, width: int, n: int) -> str:
 
 
 def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str, list[str]]:
-    """
-    一次讀取 id_sequences，一次回寫，減少 API 次數。
-    request_counts 範例：
-    {
-        "stocktakes": 1,
-        "stocktake_lines": 3,
-        "purchase_orders": 1,
-        "purchase_order_lines": 3,
-    }
-    """
     request_counts = {k: int(v) for k, v in request_counts.items() if int(v) > 0}
     result = {k: [] for k in request_counts.keys()}
 
@@ -411,15 +402,14 @@ def _get_active_df(df: pd.DataFrame) -> pd.DataFrame:
         return df[df["is_active"].apply(_to_bool)].copy()
     return df.copy()
 
+
 def get_base_unit_cost(item_id, target_date, items_df, prices_df, conversions_df):
     """
     取得某品項在指定日期的 base unit 成本
     """
-
     if items_df.empty or prices_df.empty:
         return None
 
-    # 找 item
     item_row = items_df[items_df["item_id"].astype(str).str.strip() == str(item_id).strip()]
     if item_row.empty:
         return None
@@ -428,14 +418,17 @@ def get_base_unit_cost(item_id, target_date, items_df, prices_df, conversions_df
     if not base_unit:
         return None
 
-    # 找有效價格
     price_rows = prices_df.copy()
     price_rows = price_rows[
         price_rows["item_id"].astype(str).str.strip() == str(item_id).strip()
     ]
 
     if "is_active" in price_rows.columns:
-        price_rows = price_rows[price_rows["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"])]
+        price_rows = price_rows[
+            price_rows["is_active"].apply(
+                lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"]
+            )
+        ]
 
     if price_rows.empty:
         return None
@@ -460,11 +453,9 @@ def get_base_unit_cost(item_id, target_date, items_df, prices_df, conversions_df
     if unit_price == 0:
         return None
 
-    # 如果價格單位就是 base_unit
     if price_unit == base_unit or price_unit == "":
         return unit_price
 
-    # 找換算
     conv = conversions_df[
         (conversions_df["item_id"].astype(str).str.strip() == str(item_id).strip())
         & (conversions_df["from_unit"].astype(str).str.strip() == price_unit)
@@ -479,6 +470,7 @@ def get_base_unit_cost(item_id, target_date, items_df, prices_df, conversions_df
         return None
 
     return round(unit_price / ratio, 4)
+
 
 def _label_store(r) -> str:
     name = _norm(r.get("store_name_zh", "")) or _norm(r.get("store_name", ""))
@@ -709,9 +701,15 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     else:
         merged["store_name_disp"] = merged["store_id"]
 
-    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(lambda x: _norm(x) or "未指定")
-    merged["item_name_disp"] = merged["item_name_disp"].apply(lambda x: _norm(x) or "未指定")
-    merged["store_name_disp"] = merged["store_name_disp"].apply(lambda x: _norm(x) or "未指定")
+    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+    merged["item_name_disp"] = merged["item_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+    merged["store_name_disp"] = merged["store_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
 
     merged["order_date_dt"] = merged["order_date"].apply(_parse_date)
 
@@ -732,7 +730,9 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     else:
         merged["amount_num"] = merged["order_qty_num"] * merged["unit_price_num"]
 
-    merged["order_unit_disp"] = _coalesce_columns(merged, ["order_unit", "unit_id"], default="").astype(str).str.strip()
+    merged["order_unit_disp"] = _coalesce_columns(
+        merged, ["order_unit", "unit_id"], default=""
+    ).astype(str).str.strip()
 
     return merged.copy()
 
@@ -826,9 +826,15 @@ def _build_stock_detail_df() -> pd.DataFrame:
     else:
         merged["store_name_disp"] = merged["store_id"]
 
-    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(lambda x: _norm(x) or "未指定")
-    merged["item_name_disp"] = merged["item_name_disp"].apply(lambda x: _norm(x) or "未指定")
-    merged["store_name_disp"] = merged["store_name_disp"].apply(lambda x: _norm(x) or "未指定")
+    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(
+        lambda x: "-" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+    merged["item_name_disp"] = merged["item_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+    merged["store_name_disp"] = merged["store_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
 
     merged["stocktake_date_dt"] = merged["stocktake_date"].apply(_parse_date)
 
@@ -900,6 +906,53 @@ def init_session():
 
 
 # ============================================================
+# [D2] Sidebar
+# ============================================================
+def render_sidebar():
+    with st.sidebar:
+        st.markdown("## ORIVIA OMS")
+        st.caption("OMS Schema v1")
+
+        if st.session_state.store_name:
+            st.write(f"**分店：** {st.session_state.store_name}")
+        if st.session_state.vendor_name:
+            st.write(f"**廠商：** {st.session_state.vendor_name}")
+
+        st.markdown("---")
+
+        if st.button("🏠 選擇分店", use_container_width=True, key="sb_select_store"):
+            st.session_state.step = "select_store"
+            st.rerun()
+
+        if st.session_state.store_id:
+            if st.button("🏢 分店功能選單", use_container_width=True, key="sb_select_vendor"):
+                st.session_state.step = "select_vendor"
+                st.rerun()
+
+        if st.session_state.vendor_id:
+            if st.button("📝 叫貨 / 庫存", use_container_width=True, key="sb_order_entry"):
+                st.session_state.step = "order_entry"
+                st.rerun()
+
+        if st.session_state.store_id:
+            if st.button("📋 今日進貨明細", use_container_width=True, key="sb_export"):
+                st.session_state.step = "export"
+                st.rerun()
+
+            if st.button("📈 期間進銷存分析", use_container_width=True, key="sb_analysis"):
+                st.session_state.step = "analysis"
+                st.rerun()
+
+            if st.button("🧮 成本檢查", use_container_width=True, key="sb_cost_debug"):
+                st.session_state.step = "cost_debug"
+                st.rerun()
+
+            if st.button("📜 歷史紀錄", use_container_width=True, key="sb_view_history"):
+                st.session_state.step = "view_history"
+                st.rerun()
+
+
+# ============================================================
 # [E1] Select Store
 # ============================================================
 def page_select_store():
@@ -920,6 +973,8 @@ def page_select_store():
         if st.button(f"📍 {label}", key=f"store_{store_id}", use_container_width=True):
             st.session_state.store_id = store_id
             st.session_state.store_name = label
+            st.session_state.vendor_id = ""
+            st.session_state.vendor_name = ""
             st.session_state.step = "select_vendor"
             st.rerun()
 
@@ -978,6 +1033,10 @@ def page_select_vendor():
 
     if st.button("📈 期間進銷存分析", use_container_width=True):
         st.session_state.step = "analysis"
+        st.rerun()
+
+    if st.button("🧮 成本檢查", use_container_width=True):
+        st.session_state.step = "cost_debug"
         st.rerun()
 
     if st.button("📜 查看分店歷史紀錄", use_container_width=True):
@@ -1176,7 +1235,7 @@ def page_order_entry():
                     min_value=0.0,
                     step=0.1,
                     format="%.1f",
-                    value=float(current_stock_qty),
+                    value=0.0,
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
@@ -1200,6 +1259,9 @@ def page_order_entry():
                     label_visibility="collapsed",
                 )
 
+            if float(stock_input) == 0 and float(order_input) == 0:
+                continue
+
             submit_rows.append(
                 {
                     "item_id": item_id,
@@ -1216,84 +1278,90 @@ def page_order_entry():
 
     if submitted:
         try:
-            stocktake_rows = [r for r in submit_rows if abs(r["stock_qty"] - item_meta[r["item_id"]]["current_stock_qty"]) >= 0.0001]
+            stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
             order_rows = [r for r in submit_rows if r["order_qty"] > 0]
 
+            if not stocktake_rows and not order_rows:
+                st.warning("⚠️ 本次沒有可儲存資料")
+                return
+
             id_need = {
-                "stocktakes": 1,
+                "stocktakes": 1 if stocktake_rows else 0,
                 "stocktake_lines": len(stocktake_rows),
                 "purchase_orders": 1 if order_rows else 0,
                 "purchase_order_lines": len(order_rows),
             }
             id_map = allocate_ids(id_need)
 
-            stocktake_header = get_header("stocktakes")
-            stl_header = get_header("stocktake_lines")
-            po_header = get_header("purchase_orders") if order_rows else []
-            pol_header = get_header("purchase_order_lines") if order_rows else []
-
             now = _now_ts()
 
-            stocktake_id = id_map["stocktakes"][0]
-            stocktake_main_row = {c: "" for c in stocktake_header}
-            for k, v in {
-                "stocktake_id": stocktake_id,
-                "store_id": st.session_state.store_id,
-                "stocktake_date": str(st.session_state.record_date),
-                "status": "done",
-                "note": f"vendor={st.session_state.vendor_id}",
-                "created_at": now,
-                "created_by": "SYSTEM",
-                "updated_at": "",
-                "updated_by": "",
-            }.items():
-                if k in stocktake_main_row:
-                    stocktake_main_row[k] = v
+            if stocktake_rows:
+                stocktake_header = get_header("stocktakes")
+                stl_header = get_header("stocktake_lines")
 
-            append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
-
-            stock_line_rows = []
-            for idx, r in enumerate(stocktake_rows):
-                stocktake_line_id = id_map["stocktake_lines"][idx]
-
-                try:
-                    stock_base_qty, stock_base_unit = convert_to_base(
-                        item_id=r["item_id"],
-                        qty=r["stock_qty"],
-                        from_unit=r["stock_unit"],
-                        items_df=vendor_items,
-                        conversions_df=conversions_df,
-                        as_of_date=st.session_state.record_date,
-                    )
-                except Exception:
-                    stock_base_qty = r["stock_qty"]
-                    stock_base_unit = r["stock_unit"]
-
-                row_dict = {c: "" for c in stl_header}
-                defaults_line = {
-                    "stocktake_line_id": stocktake_line_id,
+                stocktake_id = id_map["stocktakes"][0]
+                stocktake_main_row = {c: "" for c in stocktake_header}
+                for k, v in {
                     "stocktake_id": stocktake_id,
-                    "item_id": r["item_id"],
-                    "qty": str(r["stock_qty"]),
-                    "stock_qty": str(r["stock_qty"]),
-                    "unit_id": r["stock_unit"],
-                    "stock_unit": r["stock_unit"],
-                    "base_qty": str(round(stock_base_qty, 3)),
-                    "base_unit": stock_base_unit,
+                    "store_id": st.session_state.store_id,
+                    "stocktake_date": str(st.session_state.record_date),
+                    "status": "done",
+                    "note": f"vendor={st.session_state.vendor_id}",
                     "created_at": now,
                     "created_by": "SYSTEM",
                     "updated_at": "",
                     "updated_by": "",
-                }
-                for k, v in defaults_line.items():
-                    if k in row_dict:
-                        row_dict[k] = v
-                stock_line_rows.append(row_dict)
+                }.items():
+                    if k in stocktake_main_row:
+                        stocktake_main_row[k] = v
 
-            append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
+                append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
+
+                stock_line_rows = []
+                for idx, r in enumerate(stocktake_rows):
+                    stocktake_line_id = id_map["stocktake_lines"][idx]
+
+                    try:
+                        stock_base_qty, stock_base_unit = convert_to_base(
+                            item_id=r["item_id"],
+                            qty=r["stock_qty"],
+                            from_unit=r["stock_unit"],
+                            items_df=vendor_items,
+                            conversions_df=conversions_df,
+                            as_of_date=st.session_state.record_date,
+                        )
+                    except Exception:
+                        stock_base_qty = r["stock_qty"]
+                        stock_base_unit = r["stock_unit"]
+
+                    row_dict = {c: "" for c in stl_header}
+                    defaults_line = {
+                        "stocktake_line_id": stocktake_line_id,
+                        "stocktake_id": stocktake_id,
+                        "item_id": r["item_id"],
+                        "qty": str(r["stock_qty"]),
+                        "stock_qty": str(r["stock_qty"]),
+                        "unit_id": r["stock_unit"],
+                        "stock_unit": r["stock_unit"],
+                        "base_qty": str(round(stock_base_qty, 3)),
+                        "base_unit": stock_base_unit,
+                        "created_at": now,
+                        "created_by": "SYSTEM",
+                        "updated_at": "",
+                        "updated_by": "",
+                    }
+                    for k, v in defaults_line.items():
+                        if k in row_dict:
+                            row_dict[k] = v
+                    stock_line_rows.append(row_dict)
+
+                append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
 
             po_id = ""
             if order_rows:
+                po_header = get_header("purchase_orders")
+                pol_header = get_header("purchase_order_lines")
+
                 po_id = id_map["purchase_orders"][0]
 
                 po_row = {c: "" for c in po_header}
@@ -1361,13 +1429,12 @@ def page_order_entry():
                 append_rows_by_header("purchase_order_lines", pol_header, po_line_rows)
 
             bust_cache()
-            st.success(f"✅ 已儲存庫存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
+            st.success(f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
             st.session_state.step = "select_vendor"
             st.rerun()
 
         except Exception as e:
             st.error(f"❌ 儲存失敗：{e}")
-
             if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
                 st.session_state.step = "select_vendor"
                 st.rerun()
@@ -1418,7 +1485,9 @@ def page_view_history():
         detail_rows = []
 
         if not stock_df.empty and "store_id" in stock_df.columns:
-            stock_work = stock_df[stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
+            stock_work = stock_df[
+                stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+            ].copy()
 
             if "stocktake_date_dt" in stock_work.columns:
                 stock_work = stock_work[
@@ -1432,7 +1501,7 @@ def page_view_history():
                         {
                             "日期": r.get("stocktake_date_dt"),
                             "類型": "庫存",
-                            "廠商": _norm(r.get("vendor_name_disp", "")) or "未指定",
+                            "廠商": "-",
                             "品項名稱": _norm(r.get("item_name_disp", "")) or "未指定",
                             "數量": round(_safe_float(r.get("display_stock_qty", 0)), 1),
                             "單位": _norm(r.get("display_stock_unit", "")),
@@ -1442,7 +1511,9 @@ def page_view_history():
                     )
 
         if not po_df.empty and "store_id" in po_df.columns:
-            po_work = po_df[po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
+            po_work = po_df[
+                po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+            ].copy()
 
             if "order_date_dt" in po_work.columns:
                 po_work = po_work[
@@ -1513,7 +1584,9 @@ def page_view_history():
             if po_df.empty or "store_id" not in po_df.columns or "order_date_dt" not in po_df.columns:
                 st.info("💡 此區間內無叫貨趨勢資料。")
             else:
-                po_work = po_df[po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()].copy()
+                po_work = po_df[
+                    po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+                ].copy()
                 po_work = po_work[
                     po_work["order_date_dt"].notna()
                     & (po_work["order_date_dt"] >= h_start)
@@ -1727,11 +1800,17 @@ def page_analysis():
 
     if not stock_filt.empty:
         latest_stock = stock_filt.sort_values("stocktake_date_dt").groupby("item_id", as_index=False).tail(1).copy()
-        latest_stock["est_unit_price"] = latest_stock.apply(
-            lambda r: _get_latest_price_for_item(prices_df, _norm(r.get("item_id", "")), end),
+        latest_stock["base_unit_cost"] = latest_stock.apply(
+            lambda r: get_base_unit_cost(
+                item_id=_norm(r.get("item_id", "")),
+                target_date=end,
+                items_df=read_table("items"),
+                prices_df=prices_df,
+                conversions_df=_get_active_df(read_table("unit_conversions")),
+            ) or 0.0,
             axis=1,
         )
-        latest_stock["stock_value"] = latest_stock["base_qty_num"].astype(float) * latest_stock["est_unit_price"].astype(float)
+        latest_stock["stock_value"] = latest_stock["base_qty_num"].astype(float) * latest_stock["base_unit_cost"].astype(float)
         total_stock_value = float(latest_stock["stock_value"].sum())
     else:
         total_stock_value = 0.0
@@ -1843,6 +1922,132 @@ def page_analysis():
 
 
 # ============================================================
+# [E7] Cost Debug
+# ============================================================
+def page_cost_debug():
+    st.title("🧮 成本檢查")
+
+    items_df = _get_active_df(read_table("items"))
+    prices_df = read_table("prices")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
+
+    if items_df.empty:
+        st.warning("⚠️ items 資料讀取失敗")
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug_empty"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
+
+    work = items_df.copy()
+    work["item_label"] = work.apply(
+        lambda r: f"{_item_display_name(r)} ({_norm(r.get('item_id', ''))})",
+        axis=1
+    )
+    work = work.sort_values("item_label")
+
+    item_options = work["item_id"].astype(str).tolist()
+
+    selected_item_id = st.selectbox(
+        "選擇品項",
+        options=item_options,
+        format_func=lambda x: work.loc[work["item_id"] == x, "item_label"].iloc[0],
+        key="cost_debug_item_id",
+    )
+
+    target_date = st.date_input(
+        "查詢日期",
+        value=st.session_state.record_date,
+        key="cost_debug_date",
+    )
+
+    item_row = work[work["item_id"].astype(str).str.strip() == str(selected_item_id).strip()].iloc[0]
+
+    base_unit = _norm(item_row.get("base_unit", ""))
+    default_stock_unit = _norm(item_row.get("default_stock_unit", ""))
+    default_order_unit = _norm(item_row.get("default_order_unit", ""))
+
+    price_rows = prices_df.copy()
+    if not price_rows.empty and "item_id" in price_rows.columns:
+        price_rows = price_rows[
+            price_rows["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
+        ].copy()
+
+        if "is_active" in price_rows.columns:
+            price_rows = price_rows[
+                price_rows["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"])
+            ].copy()
+
+        if "effective_date" in price_rows.columns:
+            price_rows["__eff"] = price_rows["effective_date"].apply(_parse_date)
+        else:
+            price_rows["__eff"] = None
+
+        if "end_date" in price_rows.columns:
+            price_rows["__end"] = price_rows["end_date"].apply(_parse_date)
+        else:
+            price_rows["__end"] = None
+
+        price_rows = price_rows[
+            (price_rows["__eff"].isna() | (price_rows["__eff"] <= target_date))
+            & (price_rows["__end"].isna() | (price_rows["__end"] >= target_date))
+        ].copy()
+
+        if not price_rows.empty:
+            price_rows = price_rows.sort_values("__eff", ascending=True)
+            latest_price = price_rows.iloc[-1]
+            unit_price = _safe_float(latest_price.get("unit_price", 0))
+            price_unit = _norm(latest_price.get("price_unit", ""))
+            effective_date = latest_price.get("effective_date", "")
+        else:
+            unit_price = 0.0
+            price_unit = ""
+            effective_date = ""
+    else:
+        unit_price = 0.0
+        price_unit = ""
+        effective_date = ""
+
+    base_unit_cost = get_base_unit_cost(
+        item_id=selected_item_id,
+        target_date=target_date,
+        items_df=items_df,
+        prices_df=prices_df,
+        conversions_df=conversions_df,
+    )
+
+    st.markdown("---")
+    st.subheader("檢查結果")
+    st.write(f"**品項名稱：** {_item_display_name(item_row)}")
+    st.write(f"**item_id：** {selected_item_id}")
+    st.write(f"**base_unit：** {base_unit or '未設定'}")
+    st.write(f"**default_stock_unit：** {default_stock_unit or '未設定'}")
+    st.write(f"**default_order_unit：** {default_order_unit or '未設定'}")
+    st.write(f"**價格：** {unit_price}")
+    st.write(f"**價格單位：** {price_unit or '未設定'}")
+    st.write(f"**價格生效日：** {effective_date or '未設定'}")
+    st.write(f"**base_unit_cost：** {base_unit_cost if base_unit_cost is not None else '無法計算'}")
+
+    st.markdown("---")
+    st.subheader("換算規則")
+
+    conv_show = conversions_df.copy()
+    if not conv_show.empty and "item_id" in conv_show.columns:
+        conv_show = conv_show[
+            conv_show["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
+        ].copy()
+
+    if conv_show.empty:
+        st.caption("此品項目前沒有換算規則")
+    else:
+        show_cols = [c for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"] if c in conv_show.columns]
+        st.dataframe(conv_show[show_cols], use_container_width=True, hide_index=True)
+
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+
+# ============================================================
 # [F1] Router
 # ============================================================
 def router():
@@ -1860,6 +2065,8 @@ def router():
         page_export()
     elif step == "analysis":
         page_analysis()
+    elif step == "cost_debug":
+        page_cost_debug()
 
 
 # ============================================================
@@ -1868,6 +2075,7 @@ def router():
 def main():
     apply_global_style()
     init_session()
+    render_sidebar()
     router()
 
 
