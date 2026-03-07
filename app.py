@@ -46,7 +46,7 @@ PLOTLY_CONFIG = {
 # ============================================================
 # [A2] Config - 常改的地方
 # ============================================================
-SHEET_ID = "1c9twPCyOumPKSau5xgUShJJAG-D9aaZBhK2FWBl2zwc"
+SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
 DB_SHEET_ID = SHEET_ID
 
 CSV_ITEMS = Path("品項總覽.xlsx - 品項.csv")
