@@ -1424,65 +1424,56 @@ def page_view_history():
         detail_df = pd.DataFrame(detail_rows)
 
         if detail_df.empty:
-            st.info("💡 此區間內無紀錄。")
-        else:
-            col_v, col_i = st.columns(2)
-        
-            all_v = ["全部廠商"] + sorted(
-                [
-                    x for x in detail_df["廠商"].dropna().unique().tolist()
-                    if str(x).strip() and str(x).strip().lower() != "nan"
-                ]
-            )
-        
-            sel_v = col_v.selectbox(
-                "📦 1. 選擇廠商",
-                options=all_v,
-                index=0,
-                key="hist_vendor"
-            )
-        
-            filt_df = detail_df.copy()
-            if sel_v != "全部廠商":
-                filt_df = filt_df[filt_df["廠商"] == sel_v]
-        
-            all_i = ["全部品項"] + sorted(
-                [
-                    x for x in filt_df["品項名稱"].dropna().unique().tolist()
-                    if str(x).strip() and str(x).strip().lower() != "nan"
-                ]
-            )
-        
-            sel_i = col_i.selectbox(
-                "🏷️ 2. 選擇品項",
-                options=all_i,
-                index=0,
-                key="hist_item"
-            )
-        
-            if sel_i != "全部品項":
-                filt_df = filt_df[filt_df["品項名稱"] == sel_i]
+    st.info("💡 此區間內無紀錄。")
+else:
+    col_v, col_i = st.columns(2)
 
-                    filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
-                    filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
-                
-                    show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
-                
-                    st.dataframe(
-                        filt_df[show_cols],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "顯示日期": st.column_config.TextColumn("日期", width="small"),
-                            "類型": st.column_config.TextColumn(width="small"),
-                            "廠商": st.column_config.TextColumn(width="small"),
-                            "品項名稱": st.column_config.TextColumn(width="medium"),
-                            "數量": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "單位": st.column_config.TextColumn(width="small"),
-                            "單價": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "金額": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        },
-                    )
+    all_v = ["全部廠商"] + sorted(
+        [
+            x for x in detail_df["廠商"].dropna().unique().tolist()
+            if str(x).strip() and str(x).strip().lower() != "nan"
+        ]
+    )
+
+    sel_v = col_v.selectbox(
+        "📦 1. 選擇廠商",
+        options=all_v,
+        index=0,
+        key="hist_vendor"
+    )
+
+    filt_df = detail_df.copy()
+    if sel_v != "全部廠商":
+        filt_df = filt_df[filt_df["廠商"] == sel_v]
+
+    all_i = ["全部品項"] + sorted(
+        [
+            x for x in filt_df["品項名稱"].dropna().unique().tolist()
+            if str(x).strip() and str(x).strip().lower() != "nan"
+        ]
+    )
+
+    sel_i = col_i.selectbox(
+        "🏷️ 2. 選擇品項",
+        options=all_i,
+        index=0,
+        key="hist_item"
+    )
+
+    if sel_i != "全部品項":
+        filt_df = filt_df[filt_df["品項名稱"] == sel_i]
+
+    # 這一段要和上面 if 對齊
+    filt_df["顯示日期"] = pd.to_datetime(filt_df["日期"]).dt.strftime("%m-%d")
+    filt_df = filt_df.sort_values(["日期", "類型"], ascending=[False, True])
+
+    show_cols = ["顯示日期", "類型", "廠商", "品項名稱", "數量", "單位", "單價", "金額"]
+
+    st.dataframe(
+        filt_df[show_cols],
+        use_container_width=True,
+        hide_index=True
+    )
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
