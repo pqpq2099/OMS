@@ -206,96 +206,92 @@ def parse_list_field(s: str, fallback: str = "") -> list[str]:
     return arr or ([fallback] if fallback else [])
 
 # ============================================================
-# [B1] Google Sheets
+# Google Sheets helpers
 # ============================================================
-@st.cache_resource(show_spinner=False)
-def get_gspread_client():
-    if "gcp" not in st.secrets:
-        raise RuntimeError("找不到 st.secrets['gcp']，請先設定 Streamlit secrets。")
+import streamlit as st
+import pandas as pd
+import gspread
+from gspread.exceptions import WorksheetNotFound, APIError
+from oauth2client.service_account import ServiceAccountCredentials
 
+DB_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
+
+# 你原本的工作表常數如果已經有，就保留原本的
+WS_ID_SEQUENCES = "id_sequences"
+
+
+@st.cache_resource
+def get_gspread_client():
     scope = [
         "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp"]), scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        dict(st.secrets["gcp"]),
+        scope,
+    )
     return gspread.authorize(creds)
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource
 def open_spreadsheet(sheet_id: str):
-    gc = get_gspread_client()
-    return gc.open_by_key(sheet_id)
+    client = get_gspread_client()
+    return client.open_by_key(sheet_id)
+
+
+@st.cache_resource
+def _get_worksheet_cached(sheet_id: str, ws_name: str):
+    sh = open_spreadsheet(sheet_id)
+    return sh.worksheet(ws_name)
+
+
+def clear_gsheet_cache():
+    open_spreadsheet.clear()
+    _get_worksheet_cached.clear()
 
 
 def get_worksheet(ws_name: str):
-    sh = open_spreadsheet(DB_SHEET_ID)
     try:
-        all_titles = [ws.title for ws in sh.worksheets()]
-        st.write("DEBUG DB_SHEET_ID =", DB_SHEET_ID)
-        st.write("DEBUG worksheet list =", all_titles)
-        return sh.worksheet(ws_name)
+        return _get_worksheet_cached(DB_SHEET_ID, ws_name)
 
     except WorksheetNotFound:
-        st.warning(f"Worksheet not found, creating: {ws_name}")
-        return sh.add_worksheet(title=ws_name, rows=2000, cols=60)
+        sh = open_spreadsheet(DB_SHEET_ID)
+        ws = sh.add_worksheet(title=ws_name, rows=2000, cols=60)
+        _get_worksheet_cached.clear()
+        return ws
 
     except APIError as e:
-        st.error(f"APIError in get_worksheet: {e}")
+        msg = str(e)
+        if "429" in msg or "Quota exceeded" in msg:
+            st.error("Google Sheets 讀取次數過多，請等 1 分鐘後再重整頁面。")
+        else:
+            st.error(f"Google Sheets API 錯誤：{e}")
         raise
 
-    except Exception as e:
-        st.error(f"Unexpected error in get_worksheet: {type(e).__name__} / {e}")
-        raise
 
-def read_ws(ws_name: str) -> pd.DataFrame:
-    try:
-        ws = get_worksheet(ws_name)
-        values = ws.get_all_records()
-        if not values:
-            return pd.DataFrame()
-        return pd.DataFrame(values)
-    except APIError:
+def read_ws_df(ws_name: str) -> pd.DataFrame:
+    ws = get_worksheet(ws_name)
+    values = ws.get_all_values()
+
+    if not values:
         return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
+
+    header = values[0]
+    rows = values[1:] if len(values) > 1 else []
+    return pd.DataFrame(rows, columns=header)
 
 
 def write_ws_df(ws_name: str, df: pd.DataFrame):
     ws = get_worksheet(ws_name)
+
+    out = df.fillna("").astype(str)
+    values = [out.columns.tolist()] + out.values.tolist()
+
     ws.clear()
-    if df.empty:
-        ws.update("A1", [[""]])
-        return
-    rows = [df.columns.tolist()] + df.fillna("").astype(str).values.tolist()
-    ws.update(rows)
+    ws.update(values)
 
-
-def append_rows(ws_name: str, rows: list[list]):
-    if not rows:
-        return
-    ws = get_worksheet(ws_name)
-    ws.append_rows(rows, value_input_option="USER_ENTERED")
-
-
-def ensure_ws_headers(ws_name: str, cols: list[str]):
-    ws = get_worksheet(ws_name)
-    try:
-        header = [str(x).strip() for x in ws.row_values(1)]
-    except Exception:
-        header = []
-
-    if not header:
-        ws.update("A1", [cols])
-        return
-
-    merged = header[:]
-    for c in cols:
-        if c not in merged:
-            merged.append(c)
-    if merged != header:
-        ws.update("A1", [merged])
-
+    # 寫入後清除 cache，避免後面拿到舊 worksheet 狀態
+    clear_gsheet_cache()
 # ============================================================
 # [B2] Schema v1 Bootstrap
 # ============================================================
