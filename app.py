@@ -1181,7 +1181,7 @@ def render_settings_page(settings: dict):
 # [Z0] Main
 # ============================================================
 def main():
-    bootstrap_if_needed()
+    # bootstrap_if_needed()
     settings = load_settings_dict()
 
     global DEFAULT_CURRENCY
@@ -1202,7 +1202,6 @@ def main():
         render_analysis_page(selected_store)
     elif page == "設定":
         render_settings_page(settings)
-
 
 if __name__ == "__main__":
     main()
