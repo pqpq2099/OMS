@@ -242,6 +242,50 @@ def get_spreadsheet():
         st.error(f"開啟 Sheet 失敗：{e}")
         return None
 
+def apply_table_report_style():
+    st.markdown(
+        """
+        <style>
+        /* 隱藏 dataframe 工具列（搜尋 / 全螢幕 / 下載等） */
+        [data-testid="stDataFrameToolbar"] {
+            display: none !important;
+        }
+
+        /* 關掉表格欄位表頭可點擊感 */
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            pointer-events: none !important;
+        }
+
+        /* 關掉表格格子互動，避免跳出右鍵/欄位功能 */
+        [data-testid="stDataFrame"] [role="gridcell"] {
+            pointer-events: none !important;
+        }
+
+        /* 捲動條保留 */
+        [data-testid="stDataFrame"] div[role="grid"] {
+            pointer-events: auto !important;
+        }
+
+        /* 表格更像報表 */
+        [data-testid="stDataFrame"] [role="columnheader"],
+        [data-testid="stDataFrame"] [role="gridcell"] {
+            font-size: 11px !important;
+            line-height: 1.1 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_report_dataframe(df: pd.DataFrame, column_config: dict | None = None):
+    apply_table_report_style()
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config=column_config or {},
+    )
 
 # ============================================================
 # [B3] Sheet Read / Write
@@ -1675,22 +1719,20 @@ def page_view_history():
                 "期間消耗",
             ]
 
-            st.dataframe(
-                filt_df[show_cols],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                    "廠商": st.column_config.TextColumn(width="small"),
-                    "品項名稱": st.column_config.TextColumn(width="medium"),
-                    "單位": st.column_config.TextColumn(width="small"),
-                    "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                },
-            )
+render_report_dataframe(
+    filt_df[show_cols],
+    column_config={
+        "日期顯示": st.column_config.TextColumn("日期", width="small"),
+        "廠商": st.column_config.TextColumn(width="small"),
+        "品項名稱": st.column_config.TextColumn(width="medium"),
+        "單位": st.column_config.TextColumn(width="small"),
+        "上次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+        "上次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+        "本次剩餘": st.column_config.NumberColumn(format="%.1f", width="small"),
+        "本次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+        "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+    }
+)
 
     with t2:
         if not HAS_PLOTLY:
