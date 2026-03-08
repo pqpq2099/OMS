@@ -1644,20 +1644,6 @@ def page_view_history():
                 }
             )
 
-            render_report_dataframe(
-                filt_df[show_cols],
-                column_config={
-                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                    "品項": st.column_config.TextColumn(width="medium"),
-                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                }
-            )
-
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
