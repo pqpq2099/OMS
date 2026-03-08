@@ -1081,16 +1081,17 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 curr_date=curr_date,
             )
 
-        total_stock = round(prev_qty + order_sum, 1)
-        usage = round(total_stock - curr_qty, 1)
-
-        if prev_date is None:
-            days = 0
-            daily_avg = 0.0
-        else:
-            days = max((curr_date - prev_date).days, 1)
-            daily_avg = round(usage / days, 1)
-
+                if prev_date is None:
+                    total_stock = 0.0
+                    usage = 0.0
+                    days = 0
+                    daily_avg = 0.0
+                else:
+                    total_stock = round(prev_qty + order_sum, 1)
+                    usage = round(total_stock - curr_qty, 1)
+                    days = max((curr_date - prev_date).days, 1)
+                    daily_avg = round(usage / days, 1)
+            
         result_rows.append(
             {
                 "日期": curr_date,
@@ -1173,4 +1174,5 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
 
