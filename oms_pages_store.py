@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 記憶對齊穩定版
+# 記憶對齊穩定版（手機欄寬修正版）
 # ============================================================
 
 from __future__ import annotations
@@ -71,17 +71,15 @@ def _inject_fill_items_style() -> None:
         <style>
         .block-container {
             padding-top: 1rem !important;
-            padding-left: 0.6rem !important;
-            padding-right: 0.6rem !important;
+            padding-left: 0.55rem !important;
+            padding-right: 0.55rem !important;
             max-width: 920px !important;
         }
 
-        /* columns 維持橫向 */
+        /* 主區 columns 維持橫向 */
         [data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-flow: row nowrap !important;
             align-items: flex-start !important;
-            gap: 0.35rem !important;
+            gap: 0.28rem !important;
         }
 
         /* 舊版/新版 number_input +/- 全移除 */
@@ -117,7 +115,14 @@ def _inject_fill_items_style() -> None:
         div[data-testid="stNumberInput"] input {
             width: 100% !important;
             text-align: center !important;
-            padding: 0.42rem 0.18rem !important;
+            padding: 0.34rem 0.12rem !important;
+            font-size: 0.95rem !important;
+        }
+
+        /* number_input 外框縮窄 */
+        div[data-testid="stNumberInput"] > div {
+            max-width: 4.4rem !important;
+            min-width: 4.4rem !important;
         }
 
         /* Selectbox 壓縮 */
@@ -125,47 +130,52 @@ def _inject_fill_items_style() -> None:
             width: 100% !important;
         }
 
+        div[data-testid="stSelectbox"] > div {
+            max-width: 4.2rem !important;
+            min-width: 4.2rem !important;
+        }
+
         div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-            min-height: 2.45rem !important;
+            min-height: 2.2rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-            min-height: 2.45rem !important;
+            min-height: 2.2rem !important;
             padding-top: 0 !important;
             padding-bottom: 0 !important;
-            padding-left: 0.35rem !important;
-            padding-right: 1.35rem !important;
-            font-size: 0.95rem !important;
+            padding-left: 0.28rem !important;
+            padding-right: 1.05rem !important;
+            font-size: 0.92rem !important;
         }
 
         div[data-testid="stSelectbox"] svg {
-            transform: scale(0.88) !important;
+            transform: scale(0.82) !important;
         }
 
         .vendor-title {
-            font-size: 2.35rem;
+            font-size: 2.2rem;
             font-weight: 800;
             line-height: 1.1;
-            margin-bottom: 0.35rem;
+            margin-bottom: 0.3rem;
         }
 
         .order-meta-line {
-            font-size: 0.9rem;
+            font-size: 0.88rem;
             color: rgba(49,51,63,0.62);
-            margin-top: 0.08rem;
-            margin-bottom: 0.12rem;
+            margin-top: 0.05rem;
+            margin-bottom: 0.08rem;
         }
 
         .unit-inline {
-            font-size: 0.98rem;
+            font-size: 0.95rem;
             font-weight: 600;
-            padding-top: 0.38rem;
+            padding-top: 0.32rem;
             white-space: nowrap;
             text-align: left;
         }
 
         .mobile-header-fix {
-            font-size: 1rem;
+            font-size: 0.98rem;
             font-weight: 700;
             white-space: nowrap;
         }
@@ -173,45 +183,64 @@ def _inject_fill_items_style() -> None:
         /* 手機版 */
         @media (max-width: 768px) {
             .block-container {
-                padding-top: 0.7rem !important;
-                padding-left: 0.42rem !important;
-                padding-right: 0.42rem !important;
+                padding-top: 0.65rem !important;
+                padding-left: 0.36rem !important;
+                padding-right: 0.36rem !important;
             }
 
             .vendor-title {
-                font-size: 2rem !important;
+                font-size: 1.9rem !important;
+                margin-bottom: 0.2rem !important;
             }
 
             .order-meta-line {
-                font-size: 0.8rem !important;
+                font-size: 0.78rem !important;
+                margin-bottom: 0.05rem !important;
             }
 
             .unit-inline {
-                font-size: 0.88rem !important;
-                padding-top: 0.46rem !important;
+                font-size: 0.84rem !important;
+                padding-top: 0.38rem !important;
             }
 
             .mobile-header-fix {
-                font-size: 0.92rem !important;
+                font-size: 0.88rem !important;
             }
 
             div[data-testid="stNumberInput"] input {
-                font-size: 0.92rem !important;
-                padding-top: 0.35rem !important;
-                padding-bottom: 0.35rem !important;
-                padding-left: 0.1rem !important;
-                padding-right: 0.1rem !important;
+                font-size: 0.88rem !important;
+                padding-top: 0.28rem !important;
+                padding-bottom: 0.28rem !important;
+                padding-left: 0.08rem !important;
+                padding-right: 0.08rem !important;
+            }
+
+            /* 手機上只留夠 9.9 / 99 的寬度 */
+            div[data-testid="stNumberInput"] > div {
+                max-width: 3.6rem !important;
+                min-width: 3.6rem !important;
+            }
+
+            /* 手機上單位更窄 */
+            div[data-testid="stSelectbox"] > div {
+                max-width: 3.25rem !important;
+                min-width: 3.25rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-                min-height: 2.25rem !important;
+                min-height: 2.05rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-                min-height: 2.25rem !important;
-                font-size: 0.88rem !important;
-                padding-left: 0.15rem !important;
-                padding-right: 1.15rem !important;
+                min-height: 2.05rem !important;
+                font-size: 0.84rem !important;
+                padding-left: 0.12rem !important;
+                padding-right: 0.92rem !important;
+            }
+
+            /* 降低欄間距，避免超出 */
+            [data-testid="stHorizontalBlock"] {
+                gap: 0.14rem !important;
             }
         }
         </style>
@@ -292,7 +321,7 @@ def page_order_entry() -> None:
 
     st.write("---")
 
-    h1, h2, h3 = st.columns([5.4, 1.8, 1.8])
+    h1, h2, h3 = st.columns([5.9, 1.35, 1.35])
     with h1:
         st.markdown('<div class="mobile-header-fix">品項名稱（建議量 = 日均 × 1.5）</div>', unsafe_allow_html=True)
     with h2:
@@ -330,7 +359,7 @@ def page_order_entry() -> None:
                 if not matched.empty:
                     price = float(matched.iloc[-1]["unit_price"])
 
-            c1, c2, c3 = st.columns([5.4, 1.8, 1.8])
+            c1, c2, c3 = st.columns([5.9, 1.35, 1.35])
 
             with c1:
                 if display_name == last_item_display_name:
@@ -348,7 +377,7 @@ def page_order_entry() -> None:
                 last_item_display_name = display_name
 
             with c2:
-                stock_inline_cols = st.columns([2.1, 0.9])
+                stock_inline_cols = st.columns([1.55, 0.55])
                 with stock_inline_cols[0]:
                     stock_qty = st.number_input(
                         "庫",
