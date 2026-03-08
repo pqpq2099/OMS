@@ -666,6 +666,38 @@ def _get_latest_stock_qty_in_display_unit(
         return round(base_qty, 1)
 
 
+def _sort_items_for_operation(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    work = df.copy()
+    work["_display_name"] = work.apply(_item_display_name, axis=1)
+
+    if "display_order" in work.columns:
+        work["_display_order_num"] = pd.to_numeric(work["display_order"], errors="coerce").fillna(999999)
+        work = work.sort_values(["_display_order_num", "_display_name"], ascending=[True, True])
+    else:
+        work = work.sort_values(["_display_name"], ascending=[True])
+
+    return work
+
+
+def _status_hint(total_stock: float, daily_avg: float, suggest_qty: float) -> str:
+    total_stock = _safe_float(total_stock)
+    daily_avg = _safe_float(daily_avg)
+    suggest_qty = _safe_float(suggest_qty)
+
+    if daily_avg > 0 and total_stock < daily_avg:
+        return "🔴"
+    if suggest_qty > 0 and total_stock < suggest_qty:
+        return "🟡"
+    return "⚪"
+
+
+def _round_qty(v: float) -> float:
+    return round(_safe_float(v), 1)
+
+
 def _build_purchase_detail_df() -> pd.DataFrame:
     po_df = read_table("purchase_orders")
     pol_df = read_table("purchase_order_lines")
@@ -729,7 +761,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         i["item_name_disp"] = i.apply(_item_display_name, axis=1)
 
         keep_item_cols = ["item_id", "item_name_disp"]
-        for c in ["base_unit", "default_vendor_id", "default_stock_unit"]:
+        for c in ["base_unit", "default_vendor_id", "default_stock_unit", "display_order"]:
             if c in i.columns:
                 keep_item_cols.append(c)
 
@@ -746,8 +778,8 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         merged["store_name_disp"] = merged["store_id"]
 
     merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(
-    lambda x: "" if _norm(x).lower() in {"", "nan", "none", "nat", "-"} else _norm(x)
-    )    
+        lambda x: "" if _norm(x).lower() in {"", "nan", "none", "nat", "-"} else _norm(x)
+    )
     merged["item_name_disp"] = merged["item_name_disp"].apply(
         lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
     )
@@ -761,6 +793,15 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         _coalesce_columns(merged, ["order_qty", "qty"], default=0),
         errors="coerce"
     ).fillna(0)
+
+    merged["order_base_qty_num"] = pd.to_numeric(
+        _coalesce_columns(merged, ["base_qty"], default=0),
+        errors="coerce"
+    ).fillna(0)
+
+    merged["order_base_unit_disp"] = _coalesce_columns(
+        merged, ["base_unit"], default=""
+    ).astype(str).str.strip()
 
     merged["unit_price_num"] = pd.to_numeric(
         _coalesce_columns(merged, ["unit_price"], default=0),
@@ -778,161 +819,72 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         merged, ["order_unit", "unit_id"], default=""
     ).astype(str).str.strip()
 
+    if "display_order" in merged.columns:
+        merged["display_order_num"] = pd.to_numeric(merged["display_order"], errors="coerce").fillna(999999)
+    else:
+        merged["display_order_num"] = 999999
+
     return merged.copy()
 
 
-def _build_stock_detail_df() -> pd.DataFrame:
-    st_df = read_table("stocktakes")
-    stl_df = read_table("stocktake_lines")
-    items_df = read_table("items")
-    vendors_df = read_table("vendors")
-    stores_df = read_table("stores")
-    conversions_df = _get_active_df(read_table("unit_conversions"))
+def _sum_purchase_qty_in_display_unit(
+    item_po: pd.DataFrame,
+    item_id: str,
+    display_unit: str,
+    conversions_df: pd.DataFrame,
+    curr_date: date,
+) -> float:
+    total = 0.0
+    if item_po.empty:
+        return 0.0
 
-    if st_df.empty or stl_df.empty:
-        return pd.DataFrame()
+    for _, po_row in item_po.iterrows():
+        base_qty = _safe_float(po_row.get("order_base_qty_num", 0))
+        base_unit = _norm(po_row.get("order_base_unit_disp", ""))
 
-    stx = st_df.copy()
-    stl = stl_df.copy()
-
-    if "stocktake_id" not in stx.columns or "stocktake_id" not in stl.columns:
-        return pd.DataFrame()
-
-    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
-    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
-
-    if "item_id" in stl.columns:
-        stl["item_id"] = stl["item_id"].astype(str).str.strip()
-    else:
-        stl["item_id"] = ""
-
-    st_keep = stx.copy()
-    rename_map = {}
-    if "store_id" in st_keep.columns:
-        rename_map["store_id"] = "st_store_id"
-    if "stocktake_date" in st_keep.columns:
-        rename_map["stocktake_date"] = "st_stocktake_date"
-    if "note" in st_keep.columns:
-        rename_map["note"] = "st_note"
-
-    st_keep = st_keep.rename(columns=rename_map)
-
-    keep_cols = ["stocktake_id"]
-    for c in ["st_store_id", "st_stocktake_date", "st_note"]:
-        if c in st_keep.columns:
-            keep_cols.append(c)
-
-    merged = stl.merge(st_keep[keep_cols], on="stocktake_id", how="left")
-
-    merged["store_id"] = _coalesce_columns(merged, ["st_store_id", "store_id"], default="")
-    merged["stocktake_date"] = _coalesce_columns(merged, ["st_stocktake_date", "stocktake_date"], default="")
-    merged["note_for_parse"] = _coalesce_columns(merged, ["st_note", "note"], default="")
-    merged["vendor_id"] = _coalesce_columns(merged, ["vendor_id"], default="")
-
-    merged["vendor_id"] = merged["vendor_id"].where(
-        merged["vendor_id"].astype(str).str.strip() != "",
-        merged["note_for_parse"].apply(_parse_vendor_id_from_note),
-    )
-
-    if not items_df.empty and "item_id" in items_df.columns:
-        i = items_df.copy()
-        i["item_id"] = i["item_id"].astype(str).str.strip()
-        i["item_name_disp"] = i.apply(_item_display_name, axis=1)
-
-        keep_item_cols = ["item_id", "item_name_disp"]
-        for c in ["base_unit", "default_vendor_id", "default_stock_unit"]:
-            if c in i.columns:
-                keep_item_cols.append(c)
-
-        merged = merged.merge(i[keep_item_cols], on="item_id", how="left")
-
-        if "default_vendor_id" in merged.columns:
-            merged["vendor_id"] = merged["vendor_id"].where(
-                merged["vendor_id"].astype(str).str.strip() != "",
-                merged["default_vendor_id"],
-            )
-    else:
-        merged["item_name_disp"] = merged["item_id"]
-
-    if not vendors_df.empty and "vendor_id" in vendors_df.columns:
-        v = vendors_df.copy()
-        v["vendor_id"] = v["vendor_id"].astype(str).str.strip()
-        v["vendor_name_disp"] = v.apply(_label_vendor, axis=1)
-        merged = merged.merge(v[["vendor_id", "vendor_name_disp"]], on="vendor_id", how="left")
-    else:
-        merged["vendor_name_disp"] = merged["vendor_id"]
-
-    if not stores_df.empty and "store_id" in stores_df.columns:
-        s = stores_df.copy()
-        s["store_id"] = s["store_id"].astype(str).str.strip()
-        s["store_name_disp"] = s.apply(_label_store, axis=1)
-        merged = merged.merge(s[["store_id", "store_name_disp"]], on="store_id", how="left")
-    else:
-        merged["store_name_disp"] = merged["store_id"]
-
-    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(
-        lambda x: "-" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
-    )
-    merged["item_name_disp"] = merged["item_name_disp"].apply(
-        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
-    )
-    merged["store_name_disp"] = merged["store_name_disp"].apply(
-        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
-    )
-
-    merged["stocktake_date_dt"] = merged["stocktake_date"].apply(_parse_date)
-
-    merged["base_qty_num"] = pd.to_numeric(
-        _coalesce_columns(merged, ["base_qty", "stock_qty", "qty"], default=0),
-        errors="coerce"
-    ).fillna(0)
-
-    def _display_stock_qty(row):
-        item_id = _norm(row.get("item_id", ""))
-        if not item_id:
-            return round(_safe_float(row.get("base_qty_num", 0)), 1)
-
-        display_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
-        if not display_unit:
-            return round(_safe_float(row.get("base_qty_num", 0)), 1)
+        if base_qty == 0:
+            continue
 
         try:
-            base_unit = _norm(row.get("base_unit", ""))
-            base_qty = _safe_float(row.get("base_qty_num", 0))
-            if not base_unit or base_qty == 0:
-                return round(base_qty, 1)
-            if display_unit == base_unit:
-                return round(base_qty, 1)
-
-            return round(
-                convert_unit(
+            if base_unit and display_unit and base_unit != display_unit:
+                qty_in_display = convert_unit(
                     item_id=item_id,
                     qty=base_qty,
                     from_unit=base_unit,
                     to_unit=display_unit,
                     conversions_df=conversions_df,
-                    as_of_date=row.get("stocktake_date_dt"),
-                ),
-                1,
-            )
+                    as_of_date=curr_date,
+                )
+            else:
+                qty_in_display = base_qty
+            total += float(qty_in_display)
         except Exception:
-            return round(_safe_float(row.get("base_qty_num", 0)), 1)
+            total += float(base_qty)
 
-    merged["display_stock_qty"] = merged.apply(_display_stock_qty, axis=1)
+    return round(total, 1)
 
-    if "default_stock_unit" in merged.columns:
-        merged["display_stock_unit"] = merged["default_stock_unit"].where(
-            merged["default_stock_unit"].astype(str).str.strip() != "",
-            merged["base_unit"],
-        )
-    else:
-        merged["display_stock_unit"] = merged["base_unit"]
 
-    return merged.copy()
+def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFrame:
+    hist_df = _build_inventory_history_summary_df(
+        store_id=store_id,
+        start_date=date(2000, 1, 1),
+        end_date=as_of_date,
+    )
+
+    if hist_df.empty:
+        return pd.DataFrame()
+
+    work = hist_df.copy()
+    work = work.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True])
+    latest = work.groupby("item_id", as_index=False).head(1).copy()
+    latest = latest.sort_values(["display_order_num", "品項"], ascending=[True, True]).reset_index(drop=True)
+    return latest
+
 
 def _build_inventory_history_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
     stock_df = _build_stock_detail_df()
     po_df = _build_purchase_detail_df()
+    conversions_df = _get_active_df(read_table("unit_conversions"))
 
     if stock_df.empty or "store_id" not in stock_df.columns:
         return pd.DataFrame()
@@ -945,6 +897,12 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         return pd.DataFrame()
 
     stock_work = stock_work[stock_work["stocktake_date_dt"].notna()].copy()
+
+    if "display_order_num" not in stock_work.columns:
+        if "display_order" in stock_work.columns:
+            stock_work["display_order_num"] = pd.to_numeric(stock_work["display_order"], errors="coerce").fillna(999999)
+        else:
+            stock_work["display_order_num"] = 999999
 
     target_stock = stock_work[
         (stock_work["stocktake_date_dt"] >= start_date)
@@ -963,14 +921,17 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
     result_rows = []
 
-    target_stock = target_stock.sort_values(["stocktake_date_dt", "item_name_disp"]).copy()
+    target_stock = target_stock.sort_values(
+        ["stocktake_date_dt", "display_order_num", "item_name_disp"],
+        ascending=[True, True, True]
+    ).copy()
 
     for _, curr_row in target_stock.iterrows():
         item_id = _norm(curr_row.get("item_id", ""))
         curr_date = curr_row.get("stocktake_date_dt")
         item_name = _norm(curr_row.get("item_name_disp", "")) or "未指定"
+        display_order_num = _safe_float(curr_row.get("display_order_num", 999999))
         unit = _norm(curr_row.get("display_stock_unit", "")) or _norm(curr_row.get("base_unit", ""))
-        vendor_name = _norm(curr_row.get("vendor_name_disp", ""))
 
         item_stock_all = stock_work[
             stock_work["item_id"].astype(str).str.strip() == item_id
@@ -1001,32 +962,37 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                     & (item_po["order_date_dt"] <= curr_date)
                 ]
 
-            order_sum = float(item_po.get("order_qty_num", pd.Series(dtype=float)).sum())
+            order_sum = _sum_purchase_qty_in_display_unit(
+                item_po=item_po,
+                item_id=item_id,
+                display_unit=unit,
+                conversions_df=conversions_df,
+                curr_date=curr_date,
+            )
 
-            valid_vendor_series = item_po.get("vendor_name_disp", pd.Series(dtype=str)).astype(str).str.strip()
-            valid_vendor_series = valid_vendor_series[
-                ~valid_vendor_series.str.lower().isin(["", "nan", "none", "nat", "-"])
-            ]
-            if not valid_vendor_series.empty:
-                vendor_name = valid_vendor_series.iloc[-1]
+        total_stock = round(prev_qty + order_sum, 1)
+        usage = round(total_stock - curr_qty, 1)
 
-        if _norm(vendor_name).lower() in {"", "nan", "none", "nat", "-"}:
-            vendor_name = ""
-
-        usage = round(prev_qty + order_sum - curr_qty, 1)
+        if prev_date is None:
+            days = 0
+            daily_avg = 0.0
+        else:
+            days = max((curr_date - prev_date).days, 1)
+            daily_avg = round(usage / days, 1)
 
         result_rows.append(
             {
                 "日期": curr_date,
-                "廠商": vendor_name,
-                "品項名稱": item_name,
-                "單位": unit,
-                "上次剩餘": round(prev_qty, 1),
-                "上次叫貨": round(order_sum, 1),
-                "本次剩餘": round(curr_qty, 1),
-                "本次叫貨": round(order_sum, 1),
+                "品項": item_name,
+                "上次庫存": round(prev_qty, 1),
+                "期間進貨": round(order_sum, 1),
+                "庫存合計": total_stock,
+                "這次庫存": round(curr_qty, 1),
                 "期間消耗": usage,
+                "日平均": daily_avg,
+                "天數": days,
                 "item_id": item_id,
+                "display_order_num": display_order_num,
             }
         )
 
@@ -1036,9 +1002,721 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
     out["日期_dt"] = pd.to_datetime(out["日期"], errors="coerce")
     out["日期顯示"] = out["日期_dt"].dt.strftime("%m-%d")
-    out = out.sort_values(["日期_dt", "廠商", "品項名稱"], ascending=[False, True, True]).reset_index(drop=True)
+    out = out.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True]).reset_index(drop=True)
     return out
 
+
+def page_order_entry():
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 2rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }
+
+        [data-testid='stHorizontalBlock'] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            gap: 0.35rem !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0px !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(2),
+        div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
+            flex: 0 0 84px !important;
+            min-width: 84px !important;
+            max-width: 84px !important;
+        }
+
+        div[data-testid='stNumberInput'] label {
+            display: none !important;
+        }
+
+        div[data-testid="stNumberInput"] input {
+            text-align: center !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
+
+        .order-divider {
+            margin: 10px 0 14px 0;
+            border-top: 1px solid rgba(128,128,128,0.25);
+        }
+
+        .order-meta {
+            font-size: 0.78rem;
+            color: rgba(49, 51, 63, 0.85);
+            margin-top: -0.25rem;
+            margin-bottom: 0.15rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title(f"📝 {st.session_state.vendor_name}")
+
+    items_df = _get_active_df(read_table("items"))
+    conversions_df = _get_active_df(read_table("unit_conversions"))
+    stocktakes_df = read_table("stocktakes")
+    stocktake_lines_df = read_table("stocktake_lines")
+
+    if items_df.empty:
+        st.warning("⚠️ 品項資料讀取失敗")
+        return
+
+    if "default_vendor_id" not in items_df.columns:
+        st.warning("⚠️ items 缺少 default_vendor_id")
+        return
+
+    vendor_items = items_df[
+        items_df["default_vendor_id"].astype(str).str.strip() == str(st.session_state.vendor_id).strip()
+    ].copy()
+
+    if vendor_items.empty:
+        st.info("💡 此廠商目前沒有對應品項")
+        if st.button("⬅️ 返回功能選單", use_container_width=True):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
+
+    vendor_items = _sort_items_for_operation(vendor_items)
+
+    latest_metrics_df = _build_latest_item_metrics_df(
+        store_id=st.session_state.store_id,
+        as_of_date=st.session_state.record_date,
+    )
+
+    latest_metrics_map = {}
+    if not latest_metrics_df.empty:
+        for _, m in latest_metrics_df.iterrows():
+            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
+
+    ref_rows = []
+    item_meta = {}
+
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        item_name = _item_display_name(row)
+
+        base_unit = _norm(row.get("base_unit", ""))
+        stock_unit = _norm(row.get("default_stock_unit", "")) or base_unit
+        order_unit = _norm(row.get("default_order_unit", "")) or base_unit
+
+        current_stock_qty = _get_latest_stock_qty_in_display_unit(
+            stocktakes_df=stocktakes_df,
+            stocktake_lines_df=stocktake_lines_df,
+            items_df=vendor_items,
+            conversions_df=conversions_df,
+            store_id=st.session_state.store_id,
+            item_id=item_id,
+            display_unit=stock_unit,
+        )
+
+        metric = latest_metrics_map.get(item_id, {})
+        period_purchase = _safe_float(metric.get("期間進貨", 0))
+        period_usage = _safe_float(metric.get("期間消耗", 0))
+        daily_avg = _safe_float(metric.get("日平均", 0))
+        total_stock_ref = _safe_float(metric.get("庫存合計", 0))
+        suggest_qty = round(daily_avg * 1.5, 1)
+        status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
+
+        if period_purchase > 0 or period_usage > 0:
+            ref_rows.append(
+                {
+                    "品項名稱": item_name,
+                    "上次叫貨": round(period_purchase, 1),
+                    "期間消耗": round(period_usage, 1),
+                }
+            )
+
+        orderable_units_raw = _norm(row.get("orderable_units", ""))
+        orderable_unit_options = [u.strip() for u in orderable_units_raw.split(",") if u.strip()]
+
+        if order_unit and order_unit not in orderable_unit_options:
+            orderable_unit_options.insert(0, order_unit)
+
+        if not orderable_unit_options:
+            orderable_unit_options = [order_unit] if order_unit else [base_unit]
+
+        item_meta[item_id] = {
+            "item_name": item_name,
+            "base_unit": base_unit,
+            "stock_unit": stock_unit,
+            "order_unit": order_unit,
+            "orderable_unit_options": orderable_unit_options,
+            "current_stock_qty": round(current_stock_qty, 1),
+            "total_stock_ref": round(total_stock_ref, 1),
+            "daily_avg": round(daily_avg, 1),
+            "suggest_qty": suggest_qty,
+            "status_hint": status_hint,
+        }
+
+    ref_df = pd.DataFrame(ref_rows)
+    if not ref_df.empty:
+        ref_df = ref_df.sort_values(["品項名稱"]).reset_index(drop=True)
+
+    with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
+        if ref_df.empty:
+            st.caption("目前沒有可參考的資料")
+        else:
+            for col in ["上次叫貨", "期間消耗"]:
+                ref_df[col] = ref_df[col].map(lambda x: f"{x:.1f}")
+            st.table(ref_df)
+
+    st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
+
+    h1, h2, h3 = st.columns([6, 1, 1])
+    h1.write("**品項名稱（建議量=日均×1.5）**")
+    h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+    h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
+
+    with st.form("order_entry_form"):
+        submit_rows = []
+
+        for _, row in vendor_items.iterrows():
+            item_id = _norm(row.get("item_id", ""))
+            meta = item_meta[item_id]
+
+            item_name = meta["item_name"]
+            base_unit = meta["base_unit"]
+            stock_unit = base_unit
+            order_unit = meta["order_unit"]
+            current_stock_qty = _safe_float(meta["current_stock_qty"])
+            total_stock_ref = _safe_float(meta["total_stock_ref"])
+            suggest_qty = _safe_float(meta["suggest_qty"])
+            status_hint = _norm(meta["status_hint"])
+
+            c1, c2, c3 = st.columns([6, 1, 1])
+
+            with c1:
+                st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='order-meta'>總庫存：{total_stock_ref:.1f}　建議量：{suggest_qty:.1f} {status_hint}</div>",
+                    unsafe_allow_html=True,
+                )
+
+            with c2:
+                stock_input = st.number_input(
+                    "庫",
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    value=float(current_stock_qty),
+                    key=f"stock_{item_id}",
+                    label_visibility="collapsed",
+                )
+                st.caption(base_unit)
+
+            with c3:
+                order_input = st.number_input(
+                    "進",
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    value=0.0,
+                    key=f"order_{item_id}",
+                    label_visibility="collapsed",
+                )
+                selected_order_unit = st.selectbox(
+                    "進貨單位",
+                    options=meta["orderable_unit_options"],
+                    index=meta["orderable_unit_options"].index(order_unit) if order_unit in meta["orderable_unit_options"] else 0,
+                    key=f"order_unit_{item_id}",
+                    label_visibility="collapsed",
+                )
+
+            submit_rows.append(
+                {
+                    "item_id": item_id,
+                    "item_name": item_name,
+                    "stock_qty": float(stock_input),
+                    "stock_unit": stock_unit,
+                    "order_qty": float(order_input),
+                    "order_unit": selected_order_unit,
+                }
+            )
+
+        submitted = st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True)
+
+    if submitted:
+        try:
+            stocktake_rows = [r for r in submit_rows]
+            order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+
+            id_need = {
+                "stocktake_id": 1 if stocktake_rows else 0,
+                "stocktake_line_id": len(stocktake_rows),
+                "po_id": 1 if order_rows else 0,
+                "po_line_id": len(order_rows),
+            }
+            id_map = allocate_ids(id_need)
+
+            now = _now_ts()
+
+            if stocktake_rows:
+                stocktake_header = get_header("stocktakes")
+                stl_header = get_header("stocktake_lines")
+
+                stocktake_id = id_map["stocktake_id"][0]
+                stocktake_main_row = {c: "" for c in stocktake_header}
+                for k, v in {
+                    "stocktake_id": stocktake_id,
+                    "store_id": st.session_state.store_id,
+                    "stocktake_date": str(st.session_state.record_date),
+                    "status": "done",
+                    "note": f"vendor={st.session_state.vendor_id}",
+                    "created_at": now,
+                    "created_by": "SYSTEM",
+                    "updated_at": "",
+                    "updated_by": "",
+                }.items():
+                    if k in stocktake_main_row:
+                        stocktake_main_row[k] = v
+
+                append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
+
+                stock_line_rows = []
+                for idx, r in enumerate(stocktake_rows):
+                    stocktake_line_id = id_map["stocktake_line_id"][idx]
+
+                    try:
+                        stock_base_qty, stock_base_unit = convert_to_base(
+                            item_id=r["item_id"],
+                            qty=r["stock_qty"],
+                            from_unit=r["stock_unit"],
+                            items_df=vendor_items,
+                            conversions_df=conversions_df,
+                            as_of_date=st.session_state.record_date,
+                        )
+                    except Exception:
+                        stock_base_qty = r["stock_qty"]
+                        stock_base_unit = r["stock_unit"]
+
+                    row_dict = {c: "" for c in stl_header}
+                    defaults_line = {
+                        "stocktake_line_id": stocktake_line_id,
+                        "stocktake_id": stocktake_id,
+                        "item_id": r["item_id"],
+                        "qty": str(r["stock_qty"]),
+                        "stock_qty": str(r["stock_qty"]),
+                        "unit_id": r["stock_unit"],
+                        "stock_unit": r["stock_unit"],
+                        "base_qty": str(round(stock_base_qty, 3)),
+                        "base_unit": stock_base_unit,
+                        "created_at": now,
+                        "created_by": "SYSTEM",
+                        "updated_at": "",
+                        "updated_by": "",
+                    }
+                    for k, v in defaults_line.items():
+                        if k in row_dict:
+                            row_dict[k] = v
+                    stock_line_rows.append(row_dict)
+
+                append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
+
+            po_id = ""
+            if order_rows:
+                po_header = get_header("purchase_orders")
+                pol_header = get_header("purchase_order_lines")
+
+                po_id = id_map["po_id"][0]
+
+                po_row = {c: "" for c in po_header}
+                defaults_po = {
+                    "po_id": po_id,
+                    "store_id": st.session_state.store_id,
+                    "vendor_id": st.session_state.vendor_id,
+                    "order_date": str(st.session_state.record_date),
+                    "status": "draft",
+                    "note": "",
+                    "created_at": now,
+                    "created_by": "SYSTEM",
+                    "updated_at": "",
+                    "updated_by": "",
+                }
+                for k, v in defaults_po.items():
+                    if k in po_row:
+                        po_row[k] = v
+
+                append_rows_by_header("purchase_orders", po_header, [po_row])
+
+                po_line_rows = []
+                for idx, r in enumerate(order_rows):
+                    po_line_id = id_map["po_line_id"][idx]
+
+                    try:
+                        order_base_qty, order_base_unit = convert_to_base(
+                            item_id=r["item_id"],
+                            qty=r["order_qty"],
+                            from_unit=r["order_unit"],
+                            items_df=vendor_items,
+                            conversions_df=conversions_df,
+                            as_of_date=st.session_state.record_date,
+                        )
+                    except Exception:
+                        order_base_qty = r["order_qty"]
+                        order_base_unit = r["order_unit"]
+
+                    row_dict = {c: "" for c in pol_header}
+                    defaults_pol = {
+                        "po_line_id": po_line_id,
+                        "po_id": po_id,
+                        "item_id": r["item_id"],
+                        "qty": str(r["order_qty"]),
+                        "order_qty": str(r["order_qty"]),
+                        "unit_id": r["order_unit"],
+                        "order_unit": r["order_unit"],
+                        "base_qty": str(round(order_base_qty, 3)),
+                        "base_unit": order_base_unit,
+                        "unit_price": "",
+                        "amount": "",
+                        "line_amount": "",
+                        "created_at": now,
+                        "created_by": "SYSTEM",
+                        "updated_at": "",
+                        "updated_by": "",
+                    }
+                    for k, v in defaults_pol.items():
+                        if k in row_dict:
+                            row_dict[k] = v
+                    po_line_rows.append(row_dict)
+
+                append_rows_by_header("purchase_order_lines", pol_header, po_line_rows)
+
+            bust_cache()
+            st.success(f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
+            st.session_state.step = "select_vendor"
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ 儲存失敗：{e}")
+            if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
+                st.session_state.step = "select_vendor"
+                st.rerun()
+            return
+
+    st.caption("備註：Enter 自動跳下一格未放入這版，先以穩定計算與畫面對齊為主。")
+
+    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+
+def page_view_history():
+    st.markdown(
+        """
+        <style>
+        [data-testid='stMainBlockContainer'] {
+            max-width: 95% !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        [data-testid='stDataFrame'] [role='gridcell'] {
+            padding: 1px 2px !important;
+            line-height: 1.0 !important;
+        }
+        [data-testid='stDataFrame'] [role='columnheader'] {
+            padding: 2px 2px !important;
+            font-size: 10px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title(f"📜 {st.session_state.store_name} 歷史紀錄")
+
+    c_h_date1, c_h_date2 = st.columns(2)
+    h_start = c_h_date1.date_input(
+        "起始日期",
+        value=date.today() - timedelta(days=30),
+        key="hist_start_date"
+    )
+    h_end = c_h_date2.date_input(
+        "結束日期",
+        value=date.today(),
+        key="hist_end_date"
+    )
+
+    hist_df = _build_inventory_history_summary_df(
+        store_id=st.session_state.store_id,
+        start_date=h_start,
+        end_date=h_end,
+    )
+
+    t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
+
+    with t1:
+        if hist_df.empty:
+            st.info("💡 此區間內無紀錄。")
+        else:
+            item_values = _clean_option_list(hist_df["品項"].dropna().tolist())
+            all_i = ["全部品項"] + item_values
+            sel_i = st.selectbox("🏷️ 選擇品項", options=all_i, index=0, key="hist_item_filter")
+
+            filt_df = hist_df.copy()
+            if sel_i != "全部品項":
+                filt_df = filt_df[filt_df["品項"] == sel_i].copy()
+
+            show_cols = [
+                "日期顯示",
+                "品項",
+                "上次庫存",
+                "期間進貨",
+                "庫存合計",
+                "這次庫存",
+                "期間消耗",
+                "日平均",
+            ]
+
+            render_report_dataframe(
+                filt_df[show_cols],
+                column_config={
+                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                    "品項": st.column_config.TextColumn(width="medium"),
+                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                }
+            )
+
+    with t2:
+        if not HAS_PLOTLY:
+            st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
+        else:
+            if hist_df.empty:
+                st.info("💡 此區間內無趨勢資料。")
+            else:
+                item_values2 = _clean_option_list(hist_df["品項"].dropna().tolist())
+                if not item_values2:
+                    st.info("💡 此區間內無品項資料。")
+                else:
+                    sel_i2 = st.selectbox("🏷️ 選擇品項", options=item_values2, key="hist_trend_item")
+                    p_df = hist_df[hist_df["品項"] == sel_i2].copy()
+
+                    trend = (
+                        p_df.groupby("日期_dt", as_index=False)["期間消耗"]
+                        .sum()
+                        .sort_values("日期_dt")
+                    )
+                    trend["日期標記"] = pd.to_datetime(trend["日期_dt"]).dt.strftime("%Y-%m-%d")
+
+                    if not trend.empty:
+                        fig = px.line(
+                            trend,
+                            x="日期標記",
+                            y="期間消耗",
+                            markers=True,
+                            title=f"📈 【{sel_i2}】消耗趨勢",
+                        )
+                        fig.update_layout(
+                            xaxis_type="category",
+                            hovermode="x unified",
+                            xaxis_title="日期",
+                            yaxis_title="期間消耗",
+                            dragmode=False,
+                        )
+                        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+
+    if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+
+def page_analysis():
+    st.title("📊 進銷存分析")
+
+    c_date1, c_date2 = st.columns(2)
+    start = c_date1.date_input("起始日期", value=date.today() - timedelta(days=14), key="ana_start")
+    end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
+
+    hist_df = _build_inventory_history_summary_df(
+        store_id=st.session_state.store_id,
+        start_date=start,
+        end_date=end,
+    )
+    purchase_summary_df = _build_purchase_summary_df(
+        store_id=st.session_state.store_id,
+        start_date=start,
+        end_date=end,
+    )
+
+    stock_df = _build_stock_detail_df()
+    prices_df = read_table("prices")
+    items_df = read_table("items")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
+
+    if hist_df.empty and purchase_summary_df.empty:
+        st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_no_data"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
+
+    st.markdown("---")
+
+    all_items = ["全部品項"] + _clean_option_list(hist_df.get("品項", pd.Series(dtype=str)).dropna().tolist())
+    selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
+
+    hist_filt = hist_df.copy()
+    purchase_filt = purchase_summary_df.copy()
+
+    if selected_item != "全部品項":
+        if not hist_filt.empty:
+            hist_filt = hist_filt[hist_filt["品項"] == selected_item].copy()
+        if not purchase_filt.empty:
+            purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
+
+    total_buy = float(purchase_filt.get("採購金額", pd.Series(dtype=float)).sum()) if not purchase_filt.empty else 0.0
+
+    total_stock_value = 0.0
+    if not stock_df.empty and "store_id" in stock_df.columns and "stocktake_date_dt" in stock_df.columns:
+        stock_store = stock_df[
+            stock_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+        ].copy()
+
+        stock_store = stock_store[
+            stock_store["stocktake_date_dt"].notna()
+            & (stock_store["stocktake_date_dt"] >= start)
+            & (stock_store["stocktake_date_dt"] <= end)
+        ].copy()
+
+        if selected_item != "全部品項" and not stock_store.empty:
+            stock_store = stock_store[stock_store["item_name_disp"] == selected_item].copy()
+
+        if not stock_store.empty:
+            latest_stock = stock_store.sort_values("stocktake_date_dt").groupby("item_id", as_index=False).tail(1).copy()
+            latest_stock["base_unit_cost"] = latest_stock.apply(
+                lambda r: get_base_unit_cost(
+                    item_id=_norm(r.get("item_id", "")),
+                    target_date=end,
+                    items_df=items_df,
+                    prices_df=prices_df,
+                    conversions_df=conversions_df,
+                ) or 0.0,
+                axis=1,
+            )
+            latest_stock["stock_value"] = (
+                latest_stock["base_qty_num"].astype(float) * latest_stock["base_unit_cost"].astype(float)
+            )
+            total_stock_value = float(latest_stock["stock_value"].sum())
+
+    st.markdown(
+        f"""
+        <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
+            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
+                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總額</div>
+                <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${total_buy:,.1f}</div>
+            </div>
+            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
+                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
+                <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
+
+    with t_detail:
+        st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
+
+        if hist_filt.empty:
+            st.info("💡 尚未產生進銷存資料")
+        else:
+            show_cols = [
+                "品項",
+                "上次庫存",
+                "期間進貨",
+                "庫存合計",
+                "這次庫存",
+                "期間消耗",
+                "日平均",
+            ]
+
+            st.dataframe(
+                hist_filt[show_cols],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "品項": st.column_config.TextColumn(width="medium"),
+                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                },
+            )
+
+    with t_trend:
+        if not HAS_PLOTLY:
+            st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
+        else:
+            if hist_filt.empty:
+                st.info("💡 此條件下尚無趨勢資料。")
+            else:
+                trend_daily = (
+                    hist_filt.groupby("日期_dt", as_index=False)["期間消耗"]
+                    .sum()
+                    .sort_values("日期_dt")
+                )
+                trend_daily["日期標記"] = pd.to_datetime(trend_daily["日期_dt"]).dt.strftime("%Y-%m-%d")
+
+                if not trend_daily.empty:
+                    fig1 = px.line(
+                        trend_daily,
+                        x="日期標記",
+                        y="期間消耗",
+                        markers=True,
+                        title="📈 期間消耗趨勢",
+                    )
+                    fig1.update_layout(
+                        xaxis_type="category",
+                        hovermode="x unified",
+                        xaxis_title="日期",
+                        yaxis_title="期間消耗",
+                        dragmode=False,
+                    )
+                    st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
+
+                rank_df = (
+                    hist_filt.groupby("品項", as_index=False)["期間消耗"]
+                    .sum()
+                    .sort_values("期間消耗", ascending=False)
+                    .head(20)
+                )
+
+                if not rank_df.empty:
+                    fig2 = px.bar(
+                        rank_df,
+                        x="品項",
+                        y="期間消耗",
+                        title="📊 品項期間消耗排行 (Top 20)",
+                    )
+                    fig2.update_layout(
+                        xaxis_title="品項名稱",
+                        yaxis_title="期間消耗",
+                        dragmode=False,
+                    )
+                    st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
+
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
 
 def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
     po_df = _build_purchase_detail_df()
