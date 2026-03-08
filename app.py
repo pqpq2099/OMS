@@ -879,7 +879,159 @@ def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFra
     latest = work.groupby("item_id", as_index=False).head(1).copy()
     latest = latest.sort_values(["display_order_num", "品項"], ascending=[True, True]).reset_index(drop=True)
     return latest
+def _build_stock_detail_df() -> pd.DataFrame:
+    st_df = read_table("stocktakes")
+    stl_df = read_table("stocktake_lines")
+    items_df = read_table("items")
+    vendors_df = read_table("vendors")
+    stores_df = read_table("stores")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
 
+    if st_df.empty or stl_df.empty:
+        return pd.DataFrame()
+
+    stx = st_df.copy()
+    stl = stl_df.copy()
+
+    if "stocktake_id" not in stx.columns or "stocktake_id" not in stl.columns:
+        return pd.DataFrame()
+
+    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+
+    if "item_id" in stl.columns:
+        stl["item_id"] = stl["item_id"].astype(str).str.strip()
+    else:
+        stl["item_id"] = ""
+
+    st_keep = stx.copy()
+    rename_map = {}
+    if "store_id" in st_keep.columns:
+        rename_map["store_id"] = "st_store_id"
+    if "stocktake_date" in st_keep.columns:
+        rename_map["stocktake_date"] = "st_stocktake_date"
+    if "note" in st_keep.columns:
+        rename_map["note"] = "st_note"
+
+    st_keep = st_keep.rename(columns=rename_map)
+
+    keep_cols = ["stocktake_id"]
+    for c in ["st_store_id", "st_stocktake_date", "st_note"]:
+        if c in st_keep.columns:
+            keep_cols.append(c)
+
+    merged = stl.merge(st_keep[keep_cols], on="stocktake_id", how="left")
+
+    merged["store_id"] = _coalesce_columns(merged, ["st_store_id", "store_id"], default="")
+    merged["stocktake_date"] = _coalesce_columns(merged, ["st_stocktake_date", "stocktake_date"], default="")
+    merged["note_for_parse"] = _coalesce_columns(merged, ["st_note", "note"], default="")
+    merged["vendor_id"] = _coalesce_columns(merged, ["vendor_id"], default="")
+
+    merged["vendor_id"] = merged["vendor_id"].where(
+        merged["vendor_id"].astype(str).str.strip() != "",
+        merged["note_for_parse"].apply(_parse_vendor_id_from_note),
+    )
+
+    if not items_df.empty and "item_id" in items_df.columns:
+        i = items_df.copy()
+        i["item_id"] = i["item_id"].astype(str).str.strip()
+        i["item_name_disp"] = i.apply(_item_display_name, axis=1)
+
+        keep_item_cols = ["item_id", "item_name_disp"]
+        for c in ["base_unit", "default_vendor_id", "default_stock_unit", "display_order"]:
+            if c in i.columns:
+                keep_item_cols.append(c)
+
+        merged = merged.merge(i[keep_item_cols], on="item_id", how="left")
+
+        if "default_vendor_id" in merged.columns:
+            merged["vendor_id"] = merged["vendor_id"].where(
+                merged["vendor_id"].astype(str).str.strip() != "",
+                merged["default_vendor_id"],
+            )
+    else:
+        merged["item_name_disp"] = merged["item_id"]
+
+    if not vendors_df.empty and "vendor_id" in vendors_df.columns:
+        v = vendors_df.copy()
+        v["vendor_id"] = v["vendor_id"].astype(str).str.strip()
+        v["vendor_name_disp"] = v.apply(_label_vendor, axis=1)
+        merged = merged.merge(v[["vendor_id", "vendor_name_disp"]], on="vendor_id", how="left")
+    else:
+        merged["vendor_name_disp"] = merged["vendor_id"]
+
+    if not stores_df.empty and "store_id" in stores_df.columns:
+        s = stores_df.copy()
+        s["store_id"] = s["store_id"].astype(str).str.strip()
+        s["store_name_disp"] = s.apply(_label_store, axis=1)
+        merged = merged.merge(s[["store_id", "store_name_disp"]], on="store_id", how="left")
+    else:
+        merged["store_name_disp"] = merged["store_id"]
+
+    merged["vendor_name_disp"] = merged["vendor_name_disp"].apply(
+        lambda x: "-" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+    merged["item_name_disp"] = merged["item_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+    merged["store_name_disp"] = merged["store_name_disp"].apply(
+        lambda x: "未指定" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+
+    merged["stocktake_date_dt"] = merged["stocktake_date"].apply(_parse_date)
+
+    merged["base_qty_num"] = pd.to_numeric(
+        _coalesce_columns(merged, ["base_qty", "stock_qty", "qty"], default=0),
+        errors="coerce"
+    ).fillna(0)
+
+    def _display_stock_qty(row):
+        item_id = _norm(row.get("item_id", ""))
+        if not item_id:
+            return round(_safe_float(row.get("base_qty_num", 0)), 1)
+
+        display_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
+        if not display_unit:
+            return round(_safe_float(row.get("base_qty_num", 0)), 1)
+
+        try:
+            base_unit = _norm(row.get("base_unit", ""))
+            base_qty = _safe_float(row.get("base_qty_num", 0))
+            if not base_unit or base_qty == 0:
+                return round(base_qty, 1)
+            if display_unit == base_unit:
+                return round(base_qty, 1)
+
+            return round(
+                convert_unit(
+                    item_id=item_id,
+                    qty=base_qty,
+                    from_unit=base_unit,
+                    to_unit=display_unit,
+                    conversions_df=conversions_df,
+                    as_of_date=row.get("stocktake_date_dt"),
+                ),
+                1,
+            )
+        except Exception:
+            return round(_safe_float(row.get("base_qty_num", 0)), 1)
+
+    merged["display_stock_qty"] = merged.apply(_display_stock_qty, axis=1)
+
+    if "default_stock_unit" in merged.columns:
+        merged["display_stock_unit"] = merged["default_stock_unit"].where(
+            merged["default_stock_unit"].astype(str).str.strip() != "",
+            merged["base_unit"],
+        )
+    else:
+        merged["display_stock_unit"] = merged["base_unit"]
+
+    if "display_order" in merged.columns:
+        merged["display_order_num"] = pd.to_numeric(merged["display_order"], errors="coerce").fillna(999999)
+    else:
+        merged["display_order_num"] = 999999
+
+    return merged.copy()
 
 def _build_inventory_history_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
     stock_df = _build_stock_detail_df()
