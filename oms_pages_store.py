@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 回接 1.0 版型修正版（無廠商下拉）
+# 回接 1.0 版型最終 UI 微調版（無廠商下拉）
 # ============================================================
 
 from __future__ import annotations
@@ -99,14 +99,26 @@ def _inject_fill_items_style() -> None:
             font-size: 2.6rem;
             font-weight: 800;
             line-height: 1.1;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.4rem;
         }
 
-        .item-caption {
-            font-size: 0.95rem;
-            color: rgba(49,51,63,0.65);
+        .order-meta-line {
+            font-size: 0.93rem;
+            color: rgba(49,51,63,0.62);
             margin-top: 0.1rem;
-            margin-bottom: 0.2rem;
+            margin-bottom: 0.15rem;
+        }
+
+        .unit-inline {
+            font-size: 1rem;
+            font-weight: 600;
+            padding-top: 0.4rem;
+            white-space: nowrap;
+        }
+
+        .section-header {
+            font-weight: 700;
+            font-size: 1.05rem;
         }
         </style>
         """,
@@ -146,7 +158,6 @@ def page_order_entry() -> None:
     items["orderable_units"] = _safe_col(items, "orderable_units", "")
     items["default_vendor_id"] = items["default_vendor_id"].astype(str).str.strip()
 
-    # 直接用 session 的廠商；沒有才退回第一個廠商
     selected_vendor_name = str(st.session_state.get("vendor", "")).strip()
 
     if not selected_vendor_name and vendors is not None and not vendors.empty and "vendor_name" in vendors.columns:
@@ -169,7 +180,6 @@ def page_order_entry() -> None:
     if selected_vendor_id:
         vendor_items = items[items["default_vendor_id"] == selected_vendor_id].copy()
     else:
-        # 若 vendors 對不上，退回用名稱比對常見欄位
         items["vendor_name"] = _safe_col(items, "vendor_name", "")
         items["vendor_name"] = items["vendor_name"].astype(str).str.strip()
         vendor_items = items[items["vendor_name"] == selected_vendor_name].copy()
@@ -188,9 +198,9 @@ def page_order_entry() -> None:
 
     st.write("---")
 
-    h1, h2, h3 = st.columns([6, 1, 1])
+    h1, h2, h3 = st.columns([6, 1.2, 1.2])
     with h1:
-        st.markdown("**品項名稱（建議量=日均×1.5）**")
+        st.markdown("**品項名稱（建議量 = 日均 × 1.5）**")
     with h2:
         st.markdown("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
     with h3:
@@ -226,7 +236,7 @@ def page_order_entry() -> None:
                 if not matched.empty:
                     price = float(matched.iloc[-1]["unit_price"])
 
-            c1, c2, c3 = st.columns([6, 1, 1])
+            c1, c2, c3 = st.columns([6, 1.2, 1.2])
 
             with c1:
                 if display_name == last_item_display_name:
@@ -237,20 +247,29 @@ def page_order_entry() -> None:
                 else:
                     st.markdown(f"**{display_name}**")
 
-                st.caption(f"總庫存：{current_stock_qty:.1f} | 建議量：{suggest_qty:.1f}")
+                st.markdown(
+                    f'<div class="order-meta-line">總庫存：{current_stock_qty:.1f}　建議量：{suggest_qty:.1f}</div>',
+                    unsafe_allow_html=True,
+                )
                 last_item_display_name = display_name
 
             with c2:
-                stock_qty = st.number_input(
-                    "庫",
-                    min_value=0.0,
-                    step=0.1,
-                    key=f"s_{item_id}",
-                    format="%.1f",
-                    value=0.0,
-                    label_visibility="collapsed",
-                )
-                st.caption(stock_unit or "-")
+                stock_inline_cols = st.columns([2.2, 0.8])
+                with stock_inline_cols[0]:
+                    stock_qty = st.number_input(
+                        "庫",
+                        min_value=0.0,
+                        step=0.1,
+                        key=f"s_{item_id}",
+                        format="%.1f",
+                        value=0.0,
+                        label_visibility="collapsed",
+                    )
+                with stock_inline_cols[1]:
+                    st.markdown(
+                        f'<div class="unit-inline">{stock_unit or "-"}</div>',
+                        unsafe_allow_html=True,
+                    )
 
             with c3:
                 order_qty = st.number_input(
@@ -322,13 +341,6 @@ def page_order_entry() -> None:
                 use_container_width=True,
                 hide_index=True,
             )
-
-    st.button(
-        "⬅️ 返回功能選單",
-        use_container_width=True,
-        disabled=True,
-        help="之後再接回選單邏輯",
-    )
 
 
 def page_order_history() -> None:
