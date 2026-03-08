@@ -136,8 +136,8 @@ def _inject_fill_items_style() -> None:
         }
         
         div[data-testid="stSelectbox"] > div {
-            max-width: 5.5rem !important;
-            min-width: 5.5rem !important;
+            max-width: 5.2rem !important;
+            min-width: 5.2rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] {
@@ -460,6 +460,7 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
+
 
 
 
