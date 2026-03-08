@@ -1,7 +1,8 @@
 # ============================================================
-# ORIVIA OMS - app.py（瘦身版骨架）
+# ORIVIA OMS - app.py
+# 最小可跑骨架版
 # 只保留：
-# 1. 基本設定
+# 1. Streamlit 基本設定
 # 2. Sidebar
 # 3. Router
 # 4. Main
@@ -11,27 +12,16 @@ from __future__ import annotations
 
 import streamlit as st
 
-# ============================================================
-# Pages - Store
-# ============================================================
 from oms_pages_store import (
     page_order_entry,
     page_order_history,
     page_stocktake_history,
 )
-
-# ============================================================
-# Pages - Analysis
-# ============================================================
 from oms_pages_analysis import (
     page_inventory_analysis,
     page_cost_analysis,
     page_purchase_report,
 )
-
-# ============================================================
-# Pages - Admin
-# ============================================================
 from oms_pages_admin import (
     page_vendors,
     page_items,
@@ -39,35 +29,18 @@ from oms_pages_admin import (
     page_brands,
     page_users,
 )
-
-# ============================================================
-# Pages - Settings
-# ============================================================
 from oms_pages_settings import (
     page_appearance,
     page_operation_rules,
     page_inventory_rules,
 )
-
-# ============================================================
-# Pages - System
-# ============================================================
-from oms_pages_system import (
-    page_system_info,
-)
+from oms_pages_system import page_system_info
 
 
-# ============================================================
-# [A1] Config
-# ============================================================
 APP_TITLE = "ORIVIA OMS"
 APP_ICON = "📦"
 
-
-# ============================================================
-# [A2] Sidebar Menu Map
-# ============================================================
-MENU_TREE = {
+MENU_TREE: dict[str, list[str]] = {
     "門市營運": [
         "叫貨 / 庫存",
         "叫貨紀錄",
@@ -96,78 +69,66 @@ MENU_TREE = {
 }
 
 
-# ============================================================
-# [A3] Sidebar
-# ============================================================
 def build_sidebar() -> tuple[str, str]:
-    st.sidebar.title(APP_TITLE)
+    """建立左側主選單與子選單。"""
+    with st.sidebar:
+        st.title(APP_TITLE)
+        st.caption("系統骨架版")
 
-    menu_main = st.sidebar.selectbox(
-        "功能分類",
-        list(MENU_TREE.keys()),
-        index=0,
-    )
+        menu_main = st.selectbox(
+            "功能分類",
+            options=list(MENU_TREE.keys()),
+            index=0,
+        )
 
-    menu_sub = st.sidebar.radio(
-        "選擇功能",
-        MENU_TREE[menu_main],
-        index=0,
-    )
+        menu_sub = st.radio(
+            "選擇功能",
+            options=MENU_TREE[menu_main],
+            index=0,
+        )
 
     return menu_main, menu_sub
 
 
-# ============================================================
-# [A4] Router
-# ============================================================
 def route_page(menu_sub: str) -> None:
-    # Store
+    """依子選單導向對應頁面。"""
+    # 門市營運
     if menu_sub == "叫貨 / 庫存":
         page_order_entry()
-
     elif menu_sub == "叫貨紀錄":
         page_order_history()
-
     elif menu_sub == "盤點歷史":
         page_stocktake_history()
 
-    # Analysis
+    # 數據分析
     elif menu_sub == "進銷存分析":
         page_inventory_analysis()
-
     elif menu_sub == "成本分析":
         page_cost_analysis()
-
     elif menu_sub == "進貨報表":
         page_purchase_report()
 
-    # Admin
+    # 系統管理
     elif menu_sub == "廠商管理":
         page_vendors()
-
     elif menu_sub == "品項管理":
         page_items()
-
     elif menu_sub == "分店管理":
         page_stores()
-
     elif menu_sub == "品牌管理":
         page_brands()
-
     elif menu_sub == "帳號權限":
         page_users()
 
-    # Settings
+    # 系統設定
     elif menu_sub == "外觀設定":
         page_appearance()
-
     elif menu_sub == "營運規則":
         page_operation_rules()
-
     elif menu_sub == "庫存規則":
         page_inventory_rules()
 
-    # System
+    # 系統資訊
     elif menu_sub == "系統資訊":
         page_system_info()
 
@@ -175,9 +136,6 @@ def route_page(menu_sub: str) -> None:
         st.warning("找不到對應頁面。")
 
 
-# ============================================================
-# [A5] Main
-# ============================================================
 def main() -> None:
     st.set_page_config(
         page_title=APP_TITLE,
@@ -189,8 +147,5 @@ def main() -> None:
     route_page(menu_sub)
 
 
-# ============================================================
-# [A6] Run
-# ============================================================
 if __name__ == "__main__":
     main()
