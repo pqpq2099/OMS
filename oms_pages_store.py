@@ -182,11 +182,19 @@ def _inject_fill_items_style() -> None:
                 font-size: 0.92rem !important;
             }
 
-            /* 箭頭區縮小 */
-            div[data-testid="stSelectbox"] svg {
-                transform: scale(0.9) !important;
+            /* 強制移除 number_input +/- 按鈕 (新版 Streamlit) */
+            button[aria-label="Increase value"],
+            button[aria-label="Decrease value"] {
+                display: none !important;
             }
-        }
+            
+            div[data-testid="stNumberInput"] button {
+                display: none !important;
+            }
+            
+            div[data-testid="stNumberInput"] input {
+                width: 100% !important;
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -419,4 +427,5 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
+
 
