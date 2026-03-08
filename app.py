@@ -17,6 +17,10 @@ from pages_reports import (
     page_view_history,
 )
 
+from pages_admin import (
+    page_admin_home,
+    page_admin_vendors,
+)
 st.set_page_config(page_title="OMS 系統", layout="centered")
 
 
@@ -119,9 +123,22 @@ def router():
     elif step == "cost_debug":
         page_cost_debug()
 
+    elif step == "admin_home":
+    page_admin_home()
+
+    elif step == "admin_vendors":
+    page_admin_vendors()
+    
     else:
         page_select_store()
-
+        
+    st.markdown("---")
+    
+    st.markdown("### ⚙ 系統管理")
+    
+    if st.button("系統管理", use_container_width=True):
+        st.session_state.step = "admin_home"
+        st.rerun()
 
 # ============================================================
 # Main
@@ -139,3 +156,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
