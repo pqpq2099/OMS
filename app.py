@@ -101,7 +101,38 @@ def router():
     else:
         page_select_store()
 
+def render_sidebar():
 
+    with st.sidebar:
+
+        st.title("ORIVIA OMS")
+
+        st.markdown("---")
+
+        # 分店
+        st.markdown("### 📍 分店")
+
+        if st.button("選擇分店", use_container_width=True):
+            st.session_state.step = "select_store"
+            st.rerun()
+
+        st.markdown("---")
+
+        # 分析
+        st.markdown("### 📊 分析")
+
+        if st.button("進銷存分析", use_container_width=True):
+            st.session_state.step = "analysis"
+            st.rerun()
+
+        if st.button("成本檢查", use_container_width=True):
+            st.session_state.step = "cost_debug"
+            st.rerun()
+
+        if st.button("歷史紀錄", use_container_width=True):
+            st.session_state.step = "view_history"
+            st.rerun()
+            
 # ============================================================
 # Main
 # ============================================================
@@ -114,5 +145,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
