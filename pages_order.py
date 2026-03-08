@@ -103,7 +103,7 @@ def page_select_vendor():
 
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
-    if st.button("📋 產生今日進貨明細", type="primary", use_container_width=True):
+    if st.button("📋 今日叫貨明細", type="primary", use_container_width=True):
         st.session_state.step = "export"
         st.rerun()
 
@@ -380,7 +380,7 @@ def page_order_entry():
                 }
             )
 
-        submitted = st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True)
+        submitted = st.form_submit_button("💾 儲存並同步數據", use_container_width=True)
 
     if submitted:
         try:
@@ -545,4 +545,5 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
