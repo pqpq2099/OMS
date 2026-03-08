@@ -68,7 +68,7 @@ def render_sidebar():
                 st.rerun()
 
         if st.session_state.store_id:
-            if st.button("📋 今日進貨明細", use_container_width=True, key="sb_export"):
+            if st.button("📋 今日叫貨明細", use_container_width=True, key="sb_export"):
                 st.session_state.step = "export"
                 st.rerun()
 
@@ -121,3 +121,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
