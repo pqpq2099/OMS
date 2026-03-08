@@ -70,12 +70,13 @@ def _inject_fill_items_style() -> None:
         """
         <style>
         .block-container {
-            padding-top: 2rem !important;
-            padding-left: 0.8rem !important;
-            padding-right: 0.8rem !important;
-            max-width: 900px !important;
+            padding-top: 1.2rem !important;
+            padding-left: 0.6rem !important;
+            padding-right: 0.6rem !important;
+            max-width: 920px !important;
         }
 
+        /* 移除 number_input +/- */
         div[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputStepDown"] {
             display: none !important;
@@ -87,23 +88,21 @@ def _inject_fill_items_style() -> None:
             margin: 0 !important;
         }
 
-        [data-testid="stHorizontalBlock"] {
-            align-items: start !important;
-        }
-
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
+            padding-right: 0.2rem !important;
+            padding-left: 0.2rem !important;
         }
 
         .vendor-title {
-            font-size: 2.6rem;
+            font-size: 2.4rem;
             font-weight: 800;
             line-height: 1.1;
             margin-bottom: 0.4rem;
         }
 
         .order-meta-line {
-            font-size: 0.93rem;
+            font-size: 0.92rem;
             color: rgba(49,51,63,0.62);
             margin-top: 0.1rem;
             margin-bottom: 0.15rem;
@@ -112,13 +111,81 @@ def _inject_fill_items_style() -> None:
         .unit-inline {
             font-size: 1rem;
             font-weight: 600;
-            padding-top: 0.4rem;
+            padding-top: 0.42rem;
             white-space: nowrap;
+            text-align: left;
         }
 
-        .section-header {
-            font-weight: 700;
-            font-size: 1.05rem;
+        /* 壓縮 selectbox 高度 */
+        div[data-testid="stSelectbox"] > div {
+            min-height: 0 !important;
+        }
+
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+            min-height: 2.5rem !important;
+        }
+
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            min-height: 2.5rem !important;
+        }
+
+        /* 手機版專用 */
+        @media (max-width: 768px) {
+            .block-container {
+                padding-top: 0.8rem !important;
+                padding-left: 0.45rem !important;
+                padding-right: 0.45rem !important;
+            }
+
+            .vendor-title {
+                font-size: 2rem !important;
+                margin-bottom: 0.35rem !important;
+            }
+
+            .order-meta-line {
+                font-size: 0.82rem !important;
+                margin-bottom: 0.1rem !important;
+            }
+
+            .unit-inline {
+                font-size: 0.9rem !important;
+                padding-top: 0.52rem !important;
+            }
+
+            /* 表頭縮小，避免直排感太重 */
+            .mobile-header-fix {
+                font-size: 0.95rem !important;
+                font-weight: 700 !important;
+                white-space: nowrap !important;
+            }
+
+            /* number input 更窄 */
+            div[data-testid="stNumberInput"] input {
+                font-size: 0.95rem !important;
+                padding-top: 0.45rem !important;
+                padding-bottom: 0.45rem !important;
+                padding-left: 0.15rem !important;
+                padding-right: 0.15rem !important;
+            }
+
+            /* selectbox 更窄更緊 */
+            div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+                min-height: 2.35rem !important;
+            }
+
+            div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+                min-height: 2.35rem !important;
+                padding-left: 0.25rem !important;
+                padding-right: 1.4rem !important;
+                font-size: 0.92rem !important;
+            }
+
+            /* 箭頭區縮小 */
+            div[data-testid="stSelectbox"] svg {
+                transform: scale(0.9) !important;
+            }
         }
         </style>
         """,
@@ -198,13 +265,13 @@ def page_order_entry() -> None:
 
     st.write("---")
 
-    h1, h2, h3 = st.columns([6, 1.2, 1.2])
+    h1, h2, h3 = st.columns([5.6, 1.5, 1.5])
     with h1:
-        st.markdown("**品項名稱（建議量 = 日均 × 1.5）**")
+        st.markdown('<div class="mobile-header-fix">品項名稱（建議量 = 日均 × 1.5）</div>', unsafe_allow_html=True)
     with h2:
-        st.markdown("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+        st.markdown('<div class="mobile-header-fix" style="text-align:center;">庫</div>', unsafe_allow_html=True)
     with h3:
-        st.markdown("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
+        st.markdown('<div class="mobile-header-fix" style="text-align:center;">進</div>', unsafe_allow_html=True)
 
     with st.form("inventory_form"):
         submit_rows = []
@@ -236,7 +303,7 @@ def page_order_entry() -> None:
                 if not matched.empty:
                     price = float(matched.iloc[-1]["unit_price"])
 
-            c1, c2, c3 = st.columns([6, 1.2, 1.2])
+            c1, c2, c3 = st.columns([5.6, 1.5, 1.5])
 
             with c1:
                 if display_name == last_item_display_name:
@@ -352,3 +419,4 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
+
