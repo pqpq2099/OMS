@@ -361,13 +361,20 @@ def page_order_entry():
                     label_visibility="collapsed",
                 )
 
+            stock_val = float(stock_input)
+            order_val = float(order_input)
+            
+            # 如果庫存與叫貨都沒有輸入 → 不存
+            if stock_val == 0 and order_val == 0:
+                continue
+            
             submit_rows.append(
                 {
                     "item_id": item_id,
                     "item_name": item_name,
-                    "stock_qty": float(stock_input),
+                    "stock_qty": stock_val,
                     "stock_unit": stock_unit,
-                    "order_qty": float(order_input),
+                    "order_qty": order_val,
                     "order_unit": selected_order_unit,
                     "unit_price": float(meta["price"]),
                 }
@@ -377,7 +384,7 @@ def page_order_entry():
 
     if submitted:
         try:
-            stocktake_rows = [r for r in submit_rows]
+            stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
             order_rows = [r for r in submit_rows if r["order_qty"] > 0]
 
             id_need = {
@@ -538,3 +545,4 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
