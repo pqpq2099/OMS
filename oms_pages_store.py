@@ -152,78 +152,46 @@ def page_order_entry() -> None:
 
         st.markdown("---")
 
-        for _, row in vendor_items.iterrows():
-            item_id = str(row["item_id"]).strip()
-            item_name = str(row["display_name"]).strip()
-            base_unit = str(row["base_unit"]).strip()
-            default_order_unit = str(row["default_order_unit"]).strip()
-            default_stock_unit = str(row["default_stock_unit"]).strip()
-            orderable_units_raw = str(row["orderable_units"]).strip()
+for _, row in vendor_items.iterrows():
 
-            if orderable_units_raw:
-                order_unit_options = [u.strip() for u in orderable_units_raw.split(",") if u.strip()]
-            else:
-                order_unit_options = []
+    item_id = str(row["item_id"]).strip()
+    item_name = str(row["display_name"]).strip()
+    base_unit = str(row["base_unit"]).strip()
+    default_order_unit = str(row["default_order_unit"]).strip()
 
-            if default_order_unit and default_order_unit not in order_unit_options:
-                order_unit_options.insert(0, default_order_unit)
+    st.markdown("---")
 
-            if not order_unit_options:
-                order_unit_options = [default_order_unit or base_unit or ""]
+    # 品項名稱
+    st.markdown(f"### {item_name}")
 
-            cols = st.columns([4, 1.2, 1.2, 1.5])
+    # 附屬資訊
+    st.caption(f"{base_unit} (前結:0.0 | 單價:0.0 | 建議:0.0)")
 
-            with cols[0]:
-                st.markdown(f"**{item_name}**")
-                unit_text = f"庫存單位：{default_stock_unit or base_unit or '-'}　基準單位：{base_unit or '-'}"
-                st.caption(unit_text)
+    col1, col2 = st.columns([1,1])
 
-            with cols[1]:
-                stock_qty = st.number_input(
-                    f"{item_id}_stock",
-                    min_value=0.0,
-                    value=0.0,
-                    step=0.5,
-                    label_visibility="collapsed",
-                    key=f"stock_{item_id}",
-                )
+    with col1:
+        stock_qty = st.number_input(
+            "庫",
+            min_value=0.0,
+            value=0.0,
+            step=0.5,
+            key=f"stock_{item_id}"
+        )
 
-            with cols[2]:
-                order_qty = st.number_input(
-                    f"{item_id}_order",
-                    min_value=0.0,
-                    value=0.0,
-                    step=0.5,
-                    label_visibility="collapsed",
-                    key=f"order_{item_id}",
-                )
+    with col2:
+        order_qty = st.number_input(
+            "進",
+            min_value=0.0,
+            value=0.0,
+            step=0.5,
+            key=f"order_{item_id}"
+        )
 
-            with cols[3]:
-                default_index = 0
-                if default_order_unit in order_unit_options:
-                    default_index = order_unit_options.index(default_order_unit)
-
-                order_unit = st.selectbox(
-                    f"{item_id}_unit",
-                    options=order_unit_options,
-                    index=default_index,
-                    label_visibility="collapsed",
-                    key=f"unit_{item_id}",
-                )
-
-            submit_rows.append(
-                {
-                    "vendor_id": selected_vendor_id,
-                    "vendor_name": selected_vendor_name,
-                    "item_id": item_id,
-                    "item_name": item_name,
-                    "stock_qty": _safe_float(stock_qty),
-                    "order_qty": _safe_float(order_qty),
-                    "order_unit": order_unit,
-                    "base_unit": base_unit,
-                    "stock_unit": default_stock_unit or base_unit,
-                }
-            )
+    order_unit = st.selectbox(
+        "單位",
+        options=[default_order_unit],
+        key=f"unit_{item_id}"
+    )
 
         st.markdown("---")
         submitted = st.form_submit_button("提交叫貨 / 庫存")
@@ -285,3 +253,4 @@ def page_stocktake_history() -> None:
 
     st.subheader("預計欄位")
     st.write("日期 / 品項 / 上次庫存 / 期間進貨 / 庫存合計 / 這次庫存 / 期間消耗 / 日平均")
+
