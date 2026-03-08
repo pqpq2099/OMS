@@ -124,10 +124,10 @@ def router():
         page_cost_debug()
 
     elif step == "admin_home":
-    page_admin_home()
+        page_admin_home()
 
     elif step == "admin_vendors":
-    page_admin_vendors()
+        page_admin_vendors()
     
     else:
         page_select_store()
@@ -156,4 +156,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
