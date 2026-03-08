@@ -31,6 +31,26 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _parse_unit_options(
+    orderable_units_raw: str,
+    default_order_unit: str,
+    base_unit: str,
+) -> list[str]:
+    options: list[str] = []
+
+    if orderable_units_raw:
+        options = [u.strip() for u in orderable_units_raw.split(",") if u.strip()]
+
+    if default_order_unit and default_order_unit not in options:
+        options.insert(0, default_order_unit)
+
+    if not options:
+        fallback = default_order_unit or base_unit or ""
+        options = [fallback]
+
+    return options
+
+
 def page_order_entry() -> None:
     _page_header(
         "叫貨 / 庫存",
@@ -78,7 +98,9 @@ def page_order_entry() -> None:
             st.error(f"items 缺少欄位：{col}")
             return
 
+    # --------------------------------------------------------
     # 可選欄位補齊
+    # --------------------------------------------------------
     items["item_name"] = _safe_col(items, "item_name", "")
     items["item_name_zh"] = _safe_col(items, "item_name_zh", "")
     items["item_type"] = _safe_col(items, "item_type", "")
@@ -116,8 +138,6 @@ def page_order_entry() -> None:
     items["default_vendor_id"] = items["default_vendor_id"].astype(str).str.strip()
     vendor_items = items[items["default_vendor_id"] == selected_vendor_id].copy()
 
-    st.subheader("品項列表")
-
     if vendor_items.empty:
         st.warning("此廠商目前沒有綁定品項。")
         return
@@ -136,62 +156,95 @@ def page_order_entry() -> None:
     vendor_items["default_stock_unit"] = vendor_items["default_stock_unit"].astype(str).str.strip()
     vendor_items["orderable_units"] = vendor_items["orderable_units"].astype(str).str.strip()
 
+    st.subheader("品項列表")
     st.caption(f"共 {len(vendor_items)} 項")
 
-    # --------------------------------------------------------
-    # 輸入區
-    # --------------------------------------------------------
     with st.form("order_entry_form"):
         submit_rows = []
 
-        header_cols = st.columns([4, 1.2, 1.2, 1.5])
-        header_cols[0].markdown("**品項名稱**")
-        header_cols[1].markdown("**庫存**")
-        header_cols[2].markdown("**進貨**")
-        header_cols[3].markdown("**單位**")
+        header_cols = st.columns([6, 1.4, 1.4])
+        with header_cols[0]:
+            st.markdown("**品項名稱**")
+        with header_cols[1]:
+            st.markdown("**庫**")
+        with header_cols[2]:
+            st.markdown("**進**")
 
         st.markdown("---")
 
-for _, row in vendor_items.iterrows():
+        for _, row in vendor_items.iterrows():
+            item_id = str(row["item_id"]).strip()
+            item_name = str(row["display_name"]).strip()
+            base_unit = str(row["base_unit"]).strip()
+            default_order_unit = str(row["default_order_unit"]).strip()
+            default_stock_unit = str(row["default_stock_unit"]).strip()
+            orderable_units_raw = str(row["orderable_units"]).strip()
 
-    item_id = str(row["item_id"]).strip()
-    item_name = str(row["display_name"]).strip()
-    base_unit = str(row["base_unit"]).strip()
-    default_order_unit = str(row["default_order_unit"]).strip()
+            order_unit_options = _parse_unit_options(
+                orderable_units_raw=orderable_units_raw,
+                default_order_unit=default_order_unit,
+                base_unit=base_unit,
+            )
 
-    st.markdown("---")
+            block_cols = st.columns([6, 1.4, 1.4])
 
-    # 品項名稱
-    st.markdown(f"### {item_name}")
+            with block_cols[0]:
+                st.markdown(f"**{item_name}**")
+                st.caption(
+                    f"庫存單位：{default_stock_unit or base_unit or '-'}　基準單位：{base_unit or '-'}"
+                )
 
-    # 附屬資訊
-    st.caption(f"{base_unit} (前結:0.0 | 單價:0.0 | 建議:0.0)")
+            with block_cols[1]:
+                stock_qty = st.number_input(
+                    f"{item_id}_stock",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.5,
+                    format="%.1f",
+                    label_visibility="collapsed",
+                    key=f"stock_{item_id}",
+                )
+                st.caption(default_stock_unit or base_unit or "-")
 
-    col1, col2 = st.columns([1,1])
+            with block_cols[2]:
+                order_qty = st.number_input(
+                    f"{item_id}_order",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.5,
+                    format="%.1f",
+                    label_visibility="collapsed",
+                    key=f"order_{item_id}",
+                )
 
-    with col1:
-        stock_qty = st.number_input(
-            "庫",
-            min_value=0.0,
-            value=0.0,
-            step=0.5,
-            key=f"stock_{item_id}"
-        )
+                default_index = 0
+                if default_order_unit in order_unit_options:
+                    default_index = order_unit_options.index(default_order_unit)
 
-    with col2:
-        order_qty = st.number_input(
-            "進",
-            min_value=0.0,
-            value=0.0,
-            step=0.5,
-            key=f"order_{item_id}"
-        )
+                order_unit = st.selectbox(
+                    f"{item_id}_unit",
+                    options=order_unit_options,
+                    index=default_index,
+                    label_visibility="collapsed",
+                    key=f"unit_{item_id}",
+                )
+                st.caption(base_unit or "-")
 
-    order_unit = st.selectbox(
-        "單位",
-        options=[default_order_unit],
-        key=f"unit_{item_id}"
-    )
+            submit_rows.append(
+                {
+                    "vendor_id": selected_vendor_id,
+                    "vendor_name": selected_vendor_name,
+                    "item_id": item_id,
+                    "item_name": item_name,
+                    "stock_qty": _safe_float(stock_qty),
+                    "order_qty": _safe_float(order_qty),
+                    "order_unit": order_unit,
+                    "base_unit": base_unit,
+                    "stock_unit": default_stock_unit or base_unit,
+                }
+            )
+
+            st.markdown("")
 
         st.markdown("---")
         submitted = st.form_submit_button("提交叫貨 / 庫存")
@@ -202,7 +255,6 @@ for _, row in vendor_items.iterrows():
     if submitted:
         result_df = pd.DataFrame(submit_rows)
 
-        # 只保留有輸入的列
         result_df = result_df[
             (result_df["stock_qty"] > 0) | (result_df["order_qty"] > 0)
         ].copy()
@@ -253,4 +305,3 @@ def page_stocktake_history() -> None:
 
     st.subheader("預計欄位")
     st.write("日期 / 品項 / 上次庫存 / 期間進貨 / 庫存合計 / 這次庫存 / 期間消耗 / 日平均")
-
