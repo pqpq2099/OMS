@@ -551,33 +551,42 @@ def page_cost_debug():
     )
 
     st.markdown("---")
-    st.subheader("檢查結果")
-    st.write(f"**品項名稱：** {_item_display_name(item_row)}")
-    st.write(f"**item_id：** {selected_item_id}")
-    st.write(f"**base_unit：** {base_unit or '未設定'}")
-    st.write(f"**default_stock_unit：** {default_stock_unit or '未設定'}")
-    st.write(f"**default_order_unit：** {default_order_unit or '未設定'}")
-    st.write(f"**價格：** {unit_price}")
-    st.write(f"**價格單位：** {price_unit or '未設定'}")
-    st.write(f"**價格生效日：** {effective_date or '未設定'}")
-    st.write(f"**base_unit_cost：** {base_unit_cost if base_unit_cost is not None else '無法計算'}")
-
+    st.subheader("檢查結果 Check Result")
+    st.write(f"**品項名稱 Item Name：** {_item_display_name(item_row)}")
+    st.write(f"**品項編號 Item ID：** {selected_item_id}")
+    st.write(f"**基準單位 Base Unit：** {base_unit or '未設定 Not Set'}")
+    st.write(f"**庫存單位 Stock Unit：** {default_stock_unit or '未設定 Not Set'}")
+    st.write(f"**叫貨單位 Order Unit：** {default_order_unit or '未設定 Not Set'}")
+    st.write(f"**價格 Unit Price：** {unit_price}")
+    st.write(f"**價格單位 Price Unit：** {price_unit or '未設定 Not Set'}")
+    st.write(f"**價格生效日 Effective Date：** {effective_date or '未設定 Not Set'}")
+    st.write(f"**基準成本 Base Unit Cost：** {base_unit_cost if base_unit_cost is not None else '無法計算 Unable to Calculate'}")
+    
     st.markdown("---")
-    st.subheader("換算規則")
-
+    st.subheader("換算規則 Conversion Rules")
+    
     conv_show = conversions_df.copy()
     if not conv_show.empty and "item_id" in conv_show.columns:
         conv_show = conv_show[
             conv_show["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
         ].copy()
-
+    
     if conv_show.empty:
-        st.caption("此品項目前沒有換算規則")
+        st.caption("此品項目前沒有換算規則 No conversion rules for this item")
     else:
         show_cols = [c for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"] if c in conv_show.columns]
-        st.dataframe(conv_show[show_cols], use_container_width=True, hide_index=True)
-
+    
+        show_df = conv_show[show_cols].rename(columns={
+            "conversion_id": "換算編號 Conversion ID",
+            "from_unit": "原單位 From Unit",
+            "to_unit": "目標單位 To Unit",
+            "ratio": "換算倍率 Ratio",
+            "is_active": "啟用 Active"
+        })
+    
+        st.dataframe(show_df, use_container_width=True, hide_index=True)
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
