@@ -1631,19 +1631,7 @@ def page_view_history():
             ]
 
             render_report_dataframe(
-                filt_df[show_cols],
-                column_config={
-                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                    "品項": st.column_config.TextColumn(width="medium"),
-                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                }
-            )
-
+                
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
@@ -2472,49 +2460,6 @@ def page_order_entry():
 # [E4] View History
 # ============================================================
 
-def page_view_history():
-    st.markdown(
-        """
-        <style>
-        [data-testid='stMainBlockContainer'] {
-            max-width: 95% !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
-        }
-        [data-testid='stDataFrame'] [role='gridcell'] {
-            padding: 1px 2px !important;
-            line-height: 1.0 !important;
-        }
-        [data-testid='stDataFrame'] [role='columnheader'] {
-            padding: 2px 2px !important;
-            font-size: 10px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.title(f"📜 {st.session_state.store_name} 歷史庫")
-
-    c_h_date1, c_h_date2 = st.columns(2)
-    h_start = c_h_date1.date_input(
-        "起始日期",
-        value=date.today() - timedelta(days=7),
-        key="hist_start_date"
-    )
-    h_end = c_h_date2.date_input(
-        "結束日期",
-        value=date.today(),
-        key="hist_end_date"
-    )
-
-    hist_df = _build_inventory_history_summary_df(
-        store_id=st.session_state.store_id,
-        start_date=h_start,
-        end_date=h_end,
-    )
-
-    t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
 
     with t1:
         if hist_df.empty:
