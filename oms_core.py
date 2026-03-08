@@ -1066,14 +1066,13 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 po_work["item_id"].astype(str).str.strip() == item_id
             ].copy()
 
-            if prev_date is None:
-                item_po = item_po[item_po["order_date_dt"] <= curr_date]
-            else:
-                item_po = item_po[
-                    (item_po["order_date_dt"] > prev_date)
-                    & (item_po["order_date_dt"] <= curr_date)
-                ]
-
+        if prev_date is None:
+            item_po = item_po[item_po["order_date_dt"] < curr_date]
+        else:
+            item_po = item_po[
+                (item_po["order_date_dt"] >= prev_date)
+                & (item_po["order_date_dt"] < curr_date)
+            ]
             order_sum = _sum_purchase_qty_in_display_unit(
                 item_po=item_po,
                 item_id=item_id,
@@ -1174,3 +1173,4 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
