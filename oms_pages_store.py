@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 記憶對齊穩定版（手機欄寬修正版）
+# 記憶對齊穩定版（回到 1.0 固定欄寬思路）
 # ============================================================
 
 from __future__ import annotations
@@ -70,19 +70,32 @@ def _inject_fill_items_style() -> None:
         """
         <style>
         .block-container {
-            padding-top: 1rem !important;
-            padding-left: 0.55rem !important;
-            padding-right: 0.55rem !important;
-            max-width: 920px !important;
+            padding-top: 1.2rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+            max-width: 900px !important;
         }
 
-        /* 主區 columns 維持橫向 */
+        /* 直接沿用 1.0 的固定欄寬概念 */
         [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
             align-items: flex-start !important;
-            gap: 0.28rem !important;
         }
 
-        /* 舊版/新版 number_input +/- 全移除 */
+        div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+        }
+
+        div[data-testid="stHorizontalBlock"] > div:nth-child(2),
+        div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
+            flex: 0 0 78px !important;
+            min-width: 78px !important;
+            max-width: 78px !important;
+        }
+
+        /* 移除 number input 的 +/- */
         div[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputStepDown"],
         div[data-testid="stNumberInput"] button,
@@ -108,44 +121,31 @@ def _inject_fill_items_style() -> None:
             margin: 0 !important;
         }
 
-        div[data-testid="stNumberInput"] {
-            width: 100% !important;
+        div[data-testid="stNumberInput"] label {
+            display: none !important;
         }
 
         div[data-testid="stNumberInput"] input {
-            width: 100% !important;
             text-align: center !important;
-            padding: 0.34rem 0.12rem !important;
+            padding: 0.35rem 0.15rem !important;
             font-size: 0.95rem !important;
         }
 
-        /* number_input 外框縮窄 */
-        div[data-testid="stNumberInput"] > div {
-            max-width: 4.4rem !important;
-            min-width: 4.4rem !important;
-        }
-
-        /* Selectbox 壓縮 */
         div[data-testid="stSelectbox"] {
             width: 100% !important;
         }
 
-        div[data-testid="stSelectbox"] > div {
-            max-width: 4.2rem !important;
-            min-width: 4.2rem !important;
-        }
-
         div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-            min-height: 2.2rem !important;
+            min-height: 2.25rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-            min-height: 2.2rem !important;
+            min-height: 2.25rem !important;
             padding-top: 0 !important;
             padding-bottom: 0 !important;
             padding-left: 0.28rem !important;
-            padding-right: 1.05rem !important;
-            font-size: 0.92rem !important;
+            padding-right: 1.0rem !important;
+            font-size: 0.9rem !important;
         }
 
         div[data-testid="stSelectbox"] svg {
@@ -153,25 +153,17 @@ def _inject_fill_items_style() -> None:
         }
 
         .vendor-title {
-            font-size: 2.2rem;
+            font-size: 2.4rem;
             font-weight: 800;
             line-height: 1.1;
-            margin-bottom: 0.3rem;
+            margin-bottom: 0.35rem;
         }
 
         .order-meta-line {
             font-size: 0.88rem;
             color: rgba(49,51,63,0.62);
             margin-top: 0.05rem;
-            margin-bottom: 0.08rem;
-        }
-
-        .unit-inline {
-            font-size: 0.95rem;
-            font-weight: 600;
-            padding-top: 0.32rem;
-            white-space: nowrap;
-            text-align: left;
+            margin-bottom: 0.10rem;
         }
 
         .mobile-header-fix {
@@ -180,51 +172,43 @@ def _inject_fill_items_style() -> None:
             white-space: nowrap;
         }
 
-        /* 手機版 */
+        .stock-unit-line {
+            font-size: 0.92rem;
+            color: rgba(49,51,63,0.72);
+            text-align: center;
+            margin-top: 0.18rem;
+        }
+
+        /* 手機再縮一點 */
         @media (max-width: 768px) {
             .block-container {
-                padding-top: 0.65rem !important;
-                padding-left: 0.36rem !important;
-                padding-right: 0.36rem !important;
+                padding-top: 0.8rem !important;
+                padding-left: 0.25rem !important;
+                padding-right: 0.25rem !important;
+            }
+
+            div[data-testid="stHorizontalBlock"] > div:nth-child(2),
+            div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
+                flex: 0 0 72px !important;
+                min-width: 72px !important;
+                max-width: 72px !important;
             }
 
             .vendor-title {
-                font-size: 1.9rem !important;
-                margin-bottom: 0.2rem !important;
+                font-size: 2rem !important;
             }
 
             .order-meta-line {
                 font-size: 0.78rem !important;
-                margin-bottom: 0.05rem !important;
-            }
-
-            .unit-inline {
-                font-size: 0.84rem !important;
-                padding-top: 0.38rem !important;
             }
 
             .mobile-header-fix {
-                font-size: 0.88rem !important;
+                font-size: 0.9rem !important;
             }
 
             div[data-testid="stNumberInput"] input {
                 font-size: 0.88rem !important;
-                padding-top: 0.28rem !important;
-                padding-bottom: 0.28rem !important;
-                padding-left: 0.08rem !important;
-                padding-right: 0.08rem !important;
-            }
-
-            /* 手機上只留夠 9.9 / 99 的寬度 */
-            div[data-testid="stNumberInput"] > div {
-                max-width: 3.6rem !important;
-                min-width: 3.6rem !important;
-            }
-
-            /* 手機上單位更窄 */
-            div[data-testid="stSelectbox"] > div {
-                max-width: 3.25rem !important;
-                min-width: 3.25rem !important;
+                padding: 0.28rem 0.08rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] {
@@ -235,12 +219,11 @@ def _inject_fill_items_style() -> None:
                 min-height: 2.05rem !important;
                 font-size: 0.84rem !important;
                 padding-left: 0.12rem !important;
-                padding-right: 0.92rem !important;
+                padding-right: 0.85rem !important;
             }
 
-            /* 降低欄間距，避免超出 */
-            [data-testid="stHorizontalBlock"] {
-                gap: 0.14rem !important;
+            .stock-unit-line {
+                font-size: 0.82rem !important;
             }
         }
         </style>
@@ -321,7 +304,7 @@ def page_order_entry() -> None:
 
     st.write("---")
 
-    h1, h2, h3 = st.columns([5.9, 1.35, 1.35])
+    h1, h2, h3 = st.columns([6, 1, 1])
     with h1:
         st.markdown('<div class="mobile-header-fix">品項名稱（建議量 = 日均 × 1.5）</div>', unsafe_allow_html=True)
     with h2:
@@ -359,7 +342,7 @@ def page_order_entry() -> None:
                 if not matched.empty:
                     price = float(matched.iloc[-1]["unit_price"])
 
-            c1, c2, c3 = st.columns([5.9, 1.35, 1.35])
+            c1, c2, c3 = st.columns([6, 1, 1])
 
             with c1:
                 if display_name == last_item_display_name:
@@ -377,22 +360,19 @@ def page_order_entry() -> None:
                 last_item_display_name = display_name
 
             with c2:
-                stock_inline_cols = st.columns([1.55, 0.55])
-                with stock_inline_cols[0]:
-                    stock_qty = st.number_input(
-                        "庫",
-                        min_value=0.0,
-                        step=0.1,
-                        key=f"s_{item_id}",
-                        format="%.1f",
-                        value=0.0,
-                        label_visibility="collapsed",
-                    )
-                with stock_inline_cols[1]:
-                    st.markdown(
-                        f'<div class="unit-inline">{stock_unit or "-"}</div>',
-                        unsafe_allow_html=True,
-                    )
+                stock_qty = st.number_input(
+                    "庫",
+                    min_value=0.0,
+                    step=0.1,
+                    key=f"s_{item_id}",
+                    format="%.1f",
+                    value=0.0,
+                    label_visibility="collapsed",
+                )
+                st.markdown(
+                    f'<div class="stock-unit-line">{stock_unit or "-"}</div>',
+                    unsafe_allow_html=True,
+                )
 
             with c3:
                 order_qty = st.number_input(
