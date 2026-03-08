@@ -1,5 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
+# 記憶對齊版：叫貨 / 庫存頁
 # ============================================================
 
 from __future__ import annotations
@@ -63,11 +64,68 @@ def _get_item_display_name(row: pd.Series) -> str:
     return item_id
 
 
+def _inject_order_entry_css() -> None:
+    st.markdown(
+        """
+        <style>
+        /* 整體寬度微放大 */
+        [data-testid="stMainBlockContainer"]{
+            max-width: 95% !important;
+        }
+
+        /* 品項區塊：不要大卡片感，只留淡淡邊界 */
+        .order-item-wrap{
+            border-bottom: 1px solid rgba(120,120,120,0.18);
+            padding: 12px 0 14px 0;
+            margin: 0;
+        }
+
+        .order-item-name{
+            font-size: 1.02rem;
+            font-weight: 700;
+            line-height: 1.35;
+            margin-bottom: 4px;
+        }
+
+        .order-item-meta{
+            font-size: 0.90rem;
+            color: rgba(49,51,63,0.65);
+            margin-bottom: 8px;
+        }
+
+        .order-header{
+            font-weight: 700;
+            font-size: 0.96rem;
+            margin-bottom: 6px;
+        }
+
+        /* 壓縮 number_input 高度 */
+        div[data-testid="stNumberInput"] input{
+            text-align: center;
+        }
+
+        /* 盡量縮窄 selectbox */
+        div[data-testid="stSelectbox"] > div{
+            min-height: 0 !important;
+        }
+
+        /* caption 更緊湊 */
+        [data-testid="stCaptionContainer"]{
+            margin-top: 0.15rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def page_order_entry() -> None:
     _page_header(
         "叫貨 / 庫存",
-        "門市日常操作入口：品名一行、輸入一行，先確認版型正確。",
+        "門市日常操作入口：品名一行、資訊一行、輸入一行。",
     )
+
+    _inject_order_entry_css()
 
     # --------------------------------------------------------
     # 讀取資料
@@ -107,7 +165,7 @@ def page_order_entry() -> None:
             return
 
     # --------------------------------------------------------
-    # 可選欄位補齊
+    # 補齊欄位
     # --------------------------------------------------------
     items["item_name"] = _safe_col(items, "item_name", "")
     items["item_name_zh"] = _safe_col(items, "item_name_zh", "")
@@ -115,6 +173,10 @@ def page_order_entry() -> None:
     items["default_order_unit"] = _safe_col(items, "default_order_unit", "")
     items["default_stock_unit"] = _safe_col(items, "default_stock_unit", "")
     items["orderable_units"] = _safe_col(items, "orderable_units", "")
+
+    # 若目前還沒有總庫存 / 建議量資料，先用 0.0 占位
+    items["current_stock_qty"] = _safe_col(items, "current_stock_qty", 0.0)
+    items["suggested_qty"] = _safe_col(items, "suggested_qty", 0.0)
 
     # --------------------------------------------------------
     # 廠商選擇
@@ -157,19 +219,21 @@ def page_order_entry() -> None:
     vendor_items["default_stock_unit"] = (
         vendor_items["default_stock_unit"].astype(str).str.strip()
     )
-    vendor_items["orderable_units"] = vendor_items["orderable_units"].astype(str).str.strip()
+    vendor_items["orderable_units"] = (
+        vendor_items["orderable_units"].astype(str).str.strip()
+    )
 
     st.markdown("### 品項列表")
     st.caption(f"共 {len(vendor_items)} 項")
 
-    # 表頭只保留「庫 / 進」概念，不做表格感
-    top_cols = st.columns([6, 3, 3])
+    # 表頭：只保留你定過的「庫 / 進」
+    top_cols = st.columns([6, 2.4, 2.4])
     with top_cols[0]:
-        st.markdown("**品項名稱**")
+        st.markdown('<div class="order-header">品項名稱</div>', unsafe_allow_html=True)
     with top_cols[1]:
-        st.markdown("**庫**")
+        st.markdown('<div class="order-header">庫</div>', unsafe_allow_html=True)
     with top_cols[2]:
-        st.markdown("**進**")
+        st.markdown('<div class="order-header">進</div>', unsafe_allow_html=True)
 
     with st.form("order_entry_form"):
         submit_rows = []
@@ -188,72 +252,81 @@ def page_order_entry() -> None:
                 base_unit=base_unit,
             )
 
-            with st.container(border=True):
-                # 品名一行
-                st.markdown(f"**{item_name}**")
+            current_stock_qty = _safe_float(row.get("current_stock_qty", 0.0))
+            suggested_qty = _safe_float(row.get("suggested_qty", 0.0))
 
-                # 資訊一行
-                st.caption("總庫存：0.0　建議量：0.0")
+            st.markdown('<div class="order-item-wrap">', unsafe_allow_html=True)
 
-                # 輸入一行（庫+單位 / 進+單位）
-                row_cols = st.columns([6, 3, 3])
+            # 品名一行
+            row_top = st.columns([6, 2.4, 2.4])
 
-                with row_cols[0]:
-                    st.write("")
-
-                with row_cols[1]:
-                    inner_cols_left = st.columns([2, 1])
-                    with inner_cols_left[0]:
-                        stock_qty = st.number_input(
-                            f"{item_id}_stock",
-                            min_value=0.0,
-                            value=0.0,
-                            step=0.5,
-                            format="%.1f",
-                            label_visibility="collapsed",
-                            key=f"stock_{item_id}",
-                        )
-                    with inner_cols_left[1]:
-                        st.markdown(f"**{stock_unit or '-'}**")
-
-                with row_cols[2]:
-                    inner_cols_right = st.columns([2, 1])
-                    with inner_cols_right[0]:
-                        order_qty = st.number_input(
-                            f"{item_id}_order",
-                            min_value=0.0,
-                            value=0.0,
-                            step=0.5,
-                            format="%.1f",
-                            label_visibility="collapsed",
-                            key=f"order_{item_id}",
-                        )
-                    with inner_cols_right[1]:
-                        default_index = 0
-                        if default_order_unit in order_unit_options:
-                            default_index = order_unit_options.index(default_order_unit)
-
-                        order_unit = st.selectbox(
-                            f"{item_id}_unit",
-                            options=order_unit_options,
-                            index=default_index,
-                            label_visibility="collapsed",
-                            key=f"unit_{item_id}",
-                        )
-
-                submit_rows.append(
-                    {
-                        "vendor_id": selected_vendor_id,
-                        "vendor_name": selected_vendor_name,
-                        "item_id": item_id,
-                        "item_name": item_name,
-                        "stock_qty": _safe_float(stock_qty),
-                        "order_qty": _safe_float(order_qty),
-                        "order_unit": order_unit,
-                        "base_unit": base_unit,
-                        "stock_unit": stock_unit,
-                    }
+            with row_top[0]:
+                st.markdown(
+                    f'<div class="order-item-name">{item_name}</div>',
+                    unsafe_allow_html=True,
                 )
+                st.markdown(
+                    f'<div class="order-item-meta">總庫存：{current_stock_qty:.1f}　建議量：{suggested_qty:.1f}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            with row_top[1]:
+                stock_cols = st.columns([2.2, 0.8])
+                with stock_cols[0]:
+                    stock_qty = st.number_input(
+                        f"{item_id}_stock",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.5,
+                        format="%.1f",
+                        label_visibility="collapsed",
+                        key=f"stock_{item_id}",
+                    )
+                with stock_cols[1]:
+                    st.markdown(f"**{stock_unit or '-'}**")
+
+            with row_top[2]:
+                order_cols = st.columns([2.0, 1.0])
+                with order_cols[0]:
+                    order_qty = st.number_input(
+                        f"{item_id}_order",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.5,
+                        format="%.1f",
+                        label_visibility="collapsed",
+                        key=f"order_{item_id}",
+                    )
+                with order_cols[1]:
+                    default_index = 0
+                    if default_order_unit in order_unit_options:
+                        default_index = order_unit_options.index(default_order_unit)
+
+                    order_unit = st.selectbox(
+                        f"{item_id}_unit",
+                        options=order_unit_options,
+                        index=default_index,
+                        label_visibility="collapsed",
+                        key=f"unit_{item_id}",
+                    )
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            submit_rows.append(
+                {
+                    "vendor_id": selected_vendor_id,
+                    "vendor_name": selected_vendor_name,
+                    "item_id": item_id,
+                    "item_name": item_name,
+                    "stock_qty": _safe_float(stock_qty),
+                    "order_qty": _safe_float(order_qty),
+                    "order_unit": order_unit,
+                    "base_unit": base_unit,
+                    "stock_unit": stock_unit,
+                    "current_stock_qty": current_stock_qty,
+                    "suggested_qty": suggested_qty,
+                }
+            )
 
         submitted = st.form_submit_button("提交叫貨 / 庫存")
 
@@ -279,9 +352,11 @@ def page_order_entry() -> None:
                 "order_unit": "進貨單位",
                 "base_unit": "基準單位",
                 "stock_unit": "庫存單位",
+                "current_stock_qty": "總庫存",
+                "suggested_qty": "建議量",
             }
         )[
-            ["廠商", "品項ID", "品項名稱", "庫存", "庫存單位", "進貨", "進貨單位", "基準單位"]
+            ["廠商", "品項ID", "品項名稱", "總庫存", "建議量", "庫存", "庫存單位", "進貨", "進貨單位", "基準單位"]
         ]
 
         st.subheader("提交預覽")
