@@ -1,161 +1,196 @@
-from __future__ import annotations
+# ============================================================
+# ORIVIA OMS - app.py（瘦身版骨架）
+# 只保留：
+# 1. 基本設定
+# 2. Sidebar
+# 3. Router
+# 4. Main
+# ============================================================
 
-from datetime import date
+from __future__ import annotations
 
 import streamlit as st
 
-from oms_core import apply_global_style
-from pages_order import (
+# ============================================================
+# Pages - Store
+# ============================================================
+from oms_pages_store import (
     page_order_entry,
-    page_select_store,
-    page_select_vendor,
-)
-from pages_reports import (
-    page_analysis,
-    page_cost_debug,
-    page_export,
-    page_view_history,
+    page_order_history,
+    page_stocktake_history,
 )
 
-from oms_admin import (
-    page_admin_home,
-    page_admin_vendors,
+# ============================================================
+# Pages - Analysis
+# ============================================================
+from oms_pages_analysis import (
+    page_inventory_analysis,
+    page_cost_analysis,
+    page_purchase_report,
 )
-st.set_page_config(page_title="OMS 系統", layout="centered")
+
+# ============================================================
+# Pages - Admin
+# ============================================================
+from oms_pages_admin import (
+    page_vendors,
+    page_items,
+    page_stores,
+    page_brands,
+    page_users,
+)
+
+# ============================================================
+# Pages - Settings
+# ============================================================
+from oms_pages_settings import (
+    page_appearance,
+    page_operation_rules,
+    page_inventory_rules,
+)
+
+# ============================================================
+# Pages - System
+# ============================================================
+from oms_pages_system import (
+    page_system_info,
+)
 
 
 # ============================================================
-# Session State
+# [A1] Config
 # ============================================================
-def init_session():
-
-    if "step" not in st.session_state:
-        st.session_state.step = "select_store"
-
-    if "record_date" not in st.session_state:
-        st.session_state.record_date = date.today()
-
-    if "store_id" not in st.session_state:
-        st.session_state.store_id = ""
-
-    if "store_name" not in st.session_state:
-        st.session_state.store_name = ""
-
-    if "vendor_id" not in st.session_state:
-        st.session_state.vendor_id = ""
-
-    if "vendor_name" not in st.session_state:
-        st.session_state.vendor_name = ""
+APP_TITLE = "ORIVIA OMS"
+APP_ICON = "📦"
 
 
 # ============================================================
-# Sidebar
+# [A2] Sidebar Menu Map
 # ============================================================
-def render_sidebar():
-
-    with st.sidebar:
-
-        st.title("ORIVIA OMS")
-
-        st.markdown("---")
-
-        # =========================
-        # 分店
-        # =========================
-        st.markdown("### 📍 分店")
-
-        if st.session_state.store_name:
-            st.caption(f"目前分店：{st.session_state.store_name}")
-
-        if st.button("選擇分店", use_container_width=True):
-            st.session_state.step = "select_store"
-            st.rerun()
-
-        st.markdown("---")
-
-        # =========================
-        # 分析
-        # =========================
-        st.markdown("### 📊 分析")
-
-        if st.button("進銷存分析", use_container_width=True):
-            st.session_state.step = "analysis"
-            st.rerun()
-
-        if st.button("成本檢查", use_container_width=True):
-            st.session_state.step = "cost_debug"
-            st.rerun()
-
-        if st.button("歷史紀錄", use_container_width=True):
-            st.session_state.step = "view_history"
-            st.rerun()
-
-        st.markdown("---")
-
-        st.caption("OMS Schema v1")
+MENU_TREE = {
+    "門市營運": [
+        "叫貨 / 庫存",
+        "叫貨紀錄",
+        "盤點歷史",
+    ],
+    "數據分析": [
+        "進銷存分析",
+        "成本分析",
+        "進貨報表",
+    ],
+    "系統管理": [
+        "廠商管理",
+        "品項管理",
+        "分店管理",
+        "品牌管理",
+        "帳號權限",
+    ],
+    "系統設定": [
+        "外觀設定",
+        "營運規則",
+        "庫存規則",
+    ],
+    "系統資訊": [
+        "系統資訊",
+    ],
+}
 
 
 # ============================================================
-# Router
+# [A3] Sidebar
 # ============================================================
-def router():
+def build_sidebar() -> tuple[str, str]:
+    st.sidebar.title(APP_TITLE)
 
-    step = st.session_state.step
+    menu_main = st.sidebar.selectbox(
+        "功能分類",
+        list(MENU_TREE.keys()),
+        index=0,
+    )
 
-    if step == "select_store":
-        page_select_store()
+    menu_sub = st.sidebar.radio(
+        "選擇功能",
+        MENU_TREE[menu_main],
+        index=0,
+    )
 
-    elif step == "select_vendor":
-        page_select_vendor()
+    return menu_main, menu_sub
 
-    elif step == "order_entry":
+
+# ============================================================
+# [A4] Router
+# ============================================================
+def route_page(menu_sub: str) -> None:
+    # Store
+    if menu_sub == "叫貨 / 庫存":
         page_order_entry()
 
-    elif step == "view_history":
-        page_view_history()
+    elif menu_sub == "叫貨紀錄":
+        page_order_history()
 
-    elif step == "export":
-        page_export()
+    elif menu_sub == "盤點歷史":
+        page_stocktake_history()
 
-    elif step == "analysis":
-        page_analysis()
+    # Analysis
+    elif menu_sub == "進銷存分析":
+        page_inventory_analysis()
 
-    elif step == "cost_debug":
-        page_cost_debug()
+    elif menu_sub == "成本分析":
+        page_cost_analysis()
 
-    elif step == "admin_home":
-        page_admin_home()
+    elif menu_sub == "進貨報表":
+        page_purchase_report()
 
-    elif step == "admin_vendors":
-        page_admin_vendors()
-    
+    # Admin
+    elif menu_sub == "廠商管理":
+        page_vendors()
+
+    elif menu_sub == "品項管理":
+        page_items()
+
+    elif menu_sub == "分店管理":
+        page_stores()
+
+    elif menu_sub == "品牌管理":
+        page_brands()
+
+    elif menu_sub == "帳號權限":
+        page_users()
+
+    # Settings
+    elif menu_sub == "外觀設定":
+        page_appearance()
+
+    elif menu_sub == "營運規則":
+        page_operation_rules()
+
+    elif menu_sub == "庫存規則":
+        page_inventory_rules()
+
+    # System
+    elif menu_sub == "系統資訊":
+        page_system_info()
+
     else:
-        page_select_store()
-        
-    st.markdown("---")
-    
-    st.markdown("### ⚙ 系統管理")
-    
-    if st.button("系統管理", use_container_width=True):
-        st.session_state.step = "admin_home"
-        st.rerun()
+        st.warning("找不到對應頁面。")
+
 
 # ============================================================
-# Main
+# [A5] Main
 # ============================================================
-def main():
+def main() -> None:
+    st.set_page_config(
+        page_title=APP_TITLE,
+        page_icon=APP_ICON,
+        layout="wide",
+    )
 
-    apply_global_style()
-
-    init_session()
-
-    render_sidebar()
-
-    router()
+    _, menu_sub = build_sidebar()
+    route_page(menu_sub)
 
 
+# ============================================================
+# [A6] Run
+# ============================================================
 if __name__ == "__main__":
     main()
-
-
-
