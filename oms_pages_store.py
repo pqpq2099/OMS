@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 回接 1.0 版型重建版
+# 回接 1.0 版型修正版（無廠商下拉）
 # ============================================================
 
 from __future__ import annotations
@@ -76,7 +76,6 @@ def _inject_fill_items_style() -> None:
             max-width: 900px !important;
         }
 
-        /* 移除 number_input +/- */
         div[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputStepDown"] {
             display: none !important;
@@ -88,17 +87,14 @@ def _inject_fill_items_style() -> None:
             margin: 0 !important;
         }
 
-        /* 讓 row 維持橫向 */
         [data-testid="stHorizontalBlock"] {
             align-items: start !important;
         }
 
-        /* 壓縮數字框 */
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
         }
 
-        /* 標題區更像 1.0 */
         .vendor-title {
             font-size: 2.6rem;
             font-weight: 800;
@@ -133,22 +129,10 @@ def page_order_entry() -> None:
         st.warning("目前沒有 items 資料。")
         return
 
-    if vendors is None or vendors.empty:
-        st.warning("目前沒有 vendors 資料。")
-        return
-
     items = items.copy()
-    vendors = vendors.copy()
     prices = prices.copy() if prices is not None else pd.DataFrame()
 
-    required_vendor_cols = ["vendor_id", "vendor_name"]
     required_item_cols = ["item_id", "default_vendor_id"]
-
-    for col in required_vendor_cols:
-        if col not in vendors.columns:
-            st.error(f"vendors 缺少欄位：{col}")
-            return
-
     for col in required_item_cols:
         if col not in items.columns:
             st.error(f"items 缺少欄位：{col}")
@@ -162,48 +146,51 @@ def page_order_entry() -> None:
     items["orderable_units"] = _safe_col(items, "orderable_units", "")
     items["default_vendor_id"] = items["default_vendor_id"].astype(str).str.strip()
 
-    vendor_options = vendors[["vendor_id", "vendor_name"]].copy()
-    vendor_options["vendor_id"] = vendor_options["vendor_id"].astype(str).str.strip()
-    vendor_options["vendor_name"] = vendor_options["vendor_name"].astype(str).str.strip()
-    vendor_options = vendor_options[vendor_options["vendor_name"] != ""]
+    # 直接用 session 的廠商；沒有才退回第一個廠商
+    selected_vendor_name = str(st.session_state.get("vendor", "")).strip()
 
-    if vendor_options.empty:
-        st.warning("vendors 有資料，但沒有可用的 vendor_name。")
+    if not selected_vendor_name and vendors is not None and not vendors.empty and "vendor_name" in vendors.columns:
+        selected_vendor_name = str(vendors.iloc[0]["vendor_name"]).strip()
+
+    if not selected_vendor_name:
+        st.warning("目前沒有可用的廠商名稱。")
         return
 
-    selected_vendor_name = st.selectbox(
-        "選擇廠商",
-        options=vendor_options["vendor_name"].tolist(),
-        index=0,
-    )
+    selected_vendor_id = ""
+    if vendors is not None and not vendors.empty:
+        vendors = vendors.copy()
+        if {"vendor_id", "vendor_name"}.issubset(set(vendors.columns)):
+            vendors["vendor_id"] = vendors["vendor_id"].astype(str).str.strip()
+            vendors["vendor_name"] = vendors["vendor_name"].astype(str).str.strip()
+            matched_vendor = vendors[vendors["vendor_name"] == selected_vendor_name]
+            if not matched_vendor.empty:
+                selected_vendor_id = str(matched_vendor.iloc[0]["vendor_id"]).strip()
 
-    selected_vendor_row = vendor_options[
-        vendor_options["vendor_name"] == selected_vendor_name
-    ].iloc[0]
-    selected_vendor_id = str(selected_vendor_row["vendor_id"]).strip()
-
-    vendor_items = items[items["default_vendor_id"] == selected_vendor_id].copy()
+    if selected_vendor_id:
+        vendor_items = items[items["default_vendor_id"] == selected_vendor_id].copy()
+    else:
+        # 若 vendors 對不上，退回用名稱比對常見欄位
+        items["vendor_name"] = _safe_col(items, "vendor_name", "")
+        items["vendor_name"] = items["vendor_name"].astype(str).str.strip()
+        vendor_items = items[items["vendor_name"] == selected_vendor_name].copy()
 
     if vendor_items.empty:
         st.warning("此廠商目前沒有綁定品項。")
         return
 
     vendor_items["display_name"] = vendor_items.apply(_get_item_display_name, axis=1)
-
-    # 先做排序，讓畫面更接近舊版操作感
     vendor_items = vendor_items.sort_values("display_name").reset_index(drop=True)
 
-    # 標題區：接近舊版
     st.markdown(f'<div class="vendor-title">📝 {selected_vendor_name}</div>', unsafe_allow_html=True)
 
-    with st.expander("📊 查看上次叫貨 / 庫存參考（已自動隱藏無紀錄品項）", expanded=False):
+    with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
         st.caption("目前先保留區塊位置；之後再接歷史參考邏輯。")
 
     st.write("---")
 
     h1, h2, h3 = st.columns([6, 1, 1])
     with h1:
-        st.markdown("**品項名稱**")
+        st.markdown("**品項名稱（建議量=日均×1.5）**")
     with h2:
         st.markdown("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
     with h3:
@@ -227,13 +214,9 @@ def page_order_entry() -> None:
                 base_unit=base_unit,
             )
 
-            # 先用占位資料，避免又被其他表結構拖垮
-            previous_stock = 0.0
-            previous_order = 0.0
-            avg_usage = 0.0
+            current_stock_qty = 0.0
             suggest_qty = 0.0
 
-            # 若 prices 表存在且有基本欄位，先抓單價；沒有就 0
             price = 0.0
             if not prices.empty and {"item_id", "unit_price"}.issubset(set(prices.columns)):
                 p_df = prices.copy()
@@ -247,13 +230,14 @@ def page_order_entry() -> None:
 
             with c1:
                 if display_name == last_item_display_name:
-                    st.markdown(f"<span style='color:gray;'>└ </span> <b>{stock_unit or '-'}</b>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<span style='color:gray;'>└ </span> <b>{stock_unit or '-'}</b>",
+                        unsafe_allow_html=True,
+                    )
                 else:
                     st.markdown(f"**{display_name}**")
 
-                st.caption(
-                    f"{stock_unit or '-'} (前結:{previous_stock:.1f} | 單價:{price:.1f} | 💡建議:{suggest_qty:.1f})"
-                )
+                st.caption(f"總庫存：{current_stock_qty:.1f} | 建議量：{suggest_qty:.1f}")
                 last_item_display_name = display_name
 
             with c2:
@@ -266,6 +250,7 @@ def page_order_entry() -> None:
                     value=0.0,
                     label_visibility="collapsed",
                 )
+                st.caption(stock_unit or "-")
 
             with c3:
                 order_qty = st.number_input(
@@ -301,9 +286,7 @@ def page_order_entry() -> None:
                     "stock_qty": _safe_float(stock_qty),
                     "order_qty": _safe_float(order_qty),
                     "order_unit": order_unit,
-                    "previous_stock": previous_stock,
-                    "previous_order": previous_order,
-                    "avg_usage": avg_usage,
+                    "current_stock_qty": current_stock_qty,
                     "suggest_qty": suggest_qty,
                     "unit_price": price,
                     "record_date": str(date.today()),
@@ -327,6 +310,8 @@ def page_order_entry() -> None:
                         "vendor_name",
                         "item_id",
                         "item_name",
+                        "current_stock_qty",
+                        "suggest_qty",
                         "stock_qty",
                         "stock_unit",
                         "order_qty",
