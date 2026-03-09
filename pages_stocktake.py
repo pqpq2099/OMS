@@ -121,7 +121,7 @@ def render_item_row(item, units_df):
 # ---------------------------------------------------------
 # 主頁
 # ---------------------------------------------------------
-def render_page_stocktake(items_df, units_df):
+def page_stocktake(items_df, units_df):
 
     apply_compact_style()
 
