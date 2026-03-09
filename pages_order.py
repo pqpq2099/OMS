@@ -389,7 +389,7 @@ def page_order_entry():
 
     if submitted:
         try:
-            stocktake_rows = [r for r in submit_rows]
+            stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
             order_rows = [r for r in submit_rows if r["order_qty"] > 0]
 
             id_need = {
@@ -550,6 +550,7 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
