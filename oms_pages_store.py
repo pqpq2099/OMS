@@ -266,6 +266,7 @@ def _inject_order_page_style() -> None:
 # ============================================================
 
 def page_order_entry() -> None:
+    st.error("現在跑的是 oms_pages_store.py / page_order_entry")
     _inject_order_page_style()
 
     items_df = read_table("items")
@@ -501,3 +502,4 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
+
