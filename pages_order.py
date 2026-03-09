@@ -179,11 +179,13 @@ def page_order_entry():
         }
 
         .order-unit-label {
-            text-align: center;
-            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            font-size: 1rem;
             font-weight: 500;
             opacity: 0.9;
-            margin-top: 0.15rem;
         }
         </style>
         """,
@@ -548,6 +550,7 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
