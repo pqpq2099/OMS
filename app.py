@@ -345,3 +345,4 @@ def page_export():
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
+            if selected_store:
