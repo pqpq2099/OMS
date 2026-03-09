@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 記憶對齊穩定版（回到 1.0 固定欄寬思路）
+# 記憶對齊穩定版（桌機/手機 selectbox 修正版）
 # ============================================================
 
 from __future__ import annotations
@@ -70,32 +70,13 @@ def _inject_fill_items_style() -> None:
         """
         <style>
         .block-container {
-            padding-top: 1.2rem !important;
-            padding-left: 0.35rem !important;
-            padding-right: 0.35rem !important;
-            max-width: 900px !important;
+            padding-top: 1rem !important;
+            padding-left: 0.45rem !important;
+            padding-right: 0.45rem !important;
+            max-width: 920px !important;
         }
 
-        /* 直接沿用 1.0 的固定欄寬概念 */
-        [data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-flow: row nowrap !important;
-            align-items: flex-start !important;
-        }
-
-        div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
-            flex: 1 1 auto !important;
-            min-width: 0 !important;
-        }
-
-        div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-        div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
-            flex: 0 0 78px !important;
-            min-width: 78px !important;
-            max-width: 78px !important;
-        }
-
-        /* 移除 number input 的 +/- */
+        /* 移除 number input +/- */
         div[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputStepDown"],
         div[data-testid="stNumberInput"] button,
@@ -127,30 +108,37 @@ def _inject_fill_items_style() -> None:
 
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
-            padding: 0.35rem 0.15rem !important;
+            padding: 0.32rem 0.10rem !important;
             font-size: 0.95rem !important;
         }
 
-        div[data-testid="stSelectbox"] {
-            width: 100% !important;
+        /* 數字框寬度：只夠 9.9 / 99 */
+        div[data-testid="stNumberInput"] > div {
+            width: 4.2rem !important;
+            min-width: 4.2rem !important;
+            max-width: 4.2rem !important;
         }
-        
+
+        /* 下拉寬度：要看得到單位，不只箭頭 */
         div[data-testid="stSelectbox"] > div {
-            max-width: 5.2rem !important;
-            min-width: 5.2rem !important;
+            width: 4.8rem !important;
+            min-width: 4.8rem !important;
+            max-width: 4.8rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-            min-height: 2.25rem !important;
+            min-height: 2.2rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-            min-height: 2.25rem !important;
+            min-height: 2.2rem !important;
             padding-top: 0 !important;
             padding-bottom: 0 !important;
-            padding-left: 0.28rem !important;
-            padding-right: 1.0rem !important;
-            font-size: 0.9rem !important;
+            padding-left: 0.30rem !important;
+            padding-right: 1.10rem !important;
+            font-size: 0.92rem !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
         }
 
         div[data-testid="stSelectbox"] svg {
@@ -158,10 +146,11 @@ def _inject_fill_items_style() -> None:
         }
 
         .vendor-title {
-            font-size: 2.4rem;
+            font-size: 2.25rem;
             font-weight: 800;
             line-height: 1.1;
             margin-bottom: 0.35rem;
+            white-space: nowrap;
         }
 
         .order-meta-line {
@@ -181,26 +170,18 @@ def _inject_fill_items_style() -> None:
             font-size: 0.92rem;
             color: rgba(49,51,63,0.72);
             text-align: center;
-            margin-top: 0.18rem;
+            margin-top: 0.16rem;
         }
 
-        /* 手機再縮一點 */
         @media (max-width: 768px) {
             .block-container {
-                padding-top: 0.8rem !important;
+                padding-top: 0.75rem !important;
                 padding-left: 0.25rem !important;
                 padding-right: 0.25rem !important;
             }
 
-            div[data-testid="stHorizontalBlock"] > div:nth-child(2),
-            div[data-testid="stHorizontalBlock"] > div:nth-child(3) {
-                flex: 0 0 72px !important;
-                min-width: 72px !important;
-                max-width: 72px !important;
-            }
-
             .vendor-title {
-                font-size: 2rem !important;
+                font-size: 1.9rem !important;
             }
 
             .order-meta-line {
@@ -208,23 +189,35 @@ def _inject_fill_items_style() -> None:
             }
 
             .mobile-header-fix {
-                font-size: 0.9rem !important;
+                font-size: 0.88rem !important;
             }
 
             div[data-testid="stNumberInput"] input {
                 font-size: 0.88rem !important;
-                padding: 0.28rem 0.08rem !important;
+                padding: 0.26rem 0.06rem !important;
+            }
+
+            div[data-testid="stNumberInput"] > div {
+                width: 3.7rem !important;
+                min-width: 3.7rem !important;
+                max-width: 3.7rem !important;
+            }
+
+            div[data-testid="stSelectbox"] > div {
+                width: 4.1rem !important;
+                min-width: 4.1rem !important;
+                max-width: 4.1rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-                min-height: 2.05rem !important;
+                min-height: 2.0rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-                min-height: 2.05rem !important;
+                min-height: 2.0rem !important;
                 font-size: 0.84rem !important;
-                padding-left: 0.12rem !important;
-                padding-right: 0.85rem !important;
+                padding-left: 0.18rem !important;
+                padding-right: 0.95rem !important;
             }
 
             .stock-unit-line {
@@ -319,7 +312,6 @@ def page_order_entry() -> None:
 
     with st.form("inventory_form"):
         submit_rows = []
-        last_item_display_name = ""
 
         for _, row in vendor_items.iterrows():
             item_id = str(row["item_id"]).strip()
@@ -350,19 +342,11 @@ def page_order_entry() -> None:
             c1, c2, c3 = st.columns([6, 1, 1])
 
             with c1:
-                if display_name == last_item_display_name:
-                    st.markdown(
-                        f"<span style='color:gray;'>└ </span> <b>{stock_unit or '-'}</b>",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(f"**{display_name}**")
-
+                st.markdown(f"**{display_name}**")
                 st.markdown(
                     f'<div class="order-meta-line">總庫存：{current_stock_qty:.1f}　建議量：{suggest_qty:.1f}</div>',
                     unsafe_allow_html=True,
                 )
-                last_item_display_name = display_name
 
             with c2:
                 stock_qty = st.number_input(
@@ -420,7 +404,7 @@ def page_order_entry() -> None:
                 }
             )
 
-        if st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True):
+        if st.form_submit_button("💾 儲存並同步", use_container_width=True):
             result_df = pd.DataFrame(submit_rows)
             result_df = result_df[
                 (result_df["stock_qty"] > 0) | (result_df["order_qty"] > 0)
@@ -450,6 +434,13 @@ def page_order_entry() -> None:
                 hide_index=True,
             )
 
+    st.button(
+        "⬅️ 返回功能選單",
+        on_click=lambda: st.session_state.update(step="select_vendor"),
+        use_container_width=True,
+        key="back_from_fill",
+    )
+
 
 def page_order_history() -> None:
     _page_header("叫貨紀錄", "查看歷史叫貨資料、廠商進貨內容與金額。")
@@ -460,8 +451,3 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
-
-
-
-
-
