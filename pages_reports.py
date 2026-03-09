@@ -96,11 +96,20 @@ def page_view_history():
                 "日平均",
             ]
 
+            detail_df = filt_df.copy()
+
+            detail_df = detail_df[
+                (detail_df["上次庫存"] != 0)
+                | (detail_df["期間進貨"] != 0)
+                | (detail_df["期間消耗"] != 0)
+                | (detail_df["這次庫存"] != 0)
+            ].copy()
+            
             render_report_dataframe(
-                filt_df[show_cols],
+                detail_df[show_cols],
                 column_config={
                     "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                    "品項": st.column_config.TextColumn(width="medium"),
+                    "品項": st.column_config.TextColumn(width="small"),
                     "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
@@ -531,6 +540,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
