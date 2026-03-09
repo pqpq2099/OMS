@@ -9,16 +9,16 @@ from oms_core import (
     _clean_option_list,
     _get_active_df,
     _get_last_po_summary,
-    _get_latest_stock_qty_in_display_unit,
     _get_latest_price_for_item,
+    _get_latest_stock_qty_in_display_unit,
     _item_display_name,
     _label_store,
     _label_vendor,
     _norm,
+    _now_ts,
     _safe_float,
     _sort_items_for_operation,
     _status_hint,
-    _now_ts,
     allocate_ids,
     append_rows_by_header,
     bust_cache,
@@ -32,7 +32,10 @@ from oms_engine import convert_to_base
 # [E1] Select Store
 # ============================================================
 def page_select_store():
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
+    st.markdown(
+        "<style>.block-container { padding-top: 4rem !important; }</style>",
+        unsafe_allow_html=True,
+    )
     st.title("🏠 選擇分店")
 
     stores_df = _get_active_df(read_table("stores"))
@@ -59,10 +62,16 @@ def page_select_store():
 # [E2] Select Vendor
 # ============================================================
 def page_select_vendor():
-    st.markdown("<style>.block-container { padding-top: 4rem !important; }</style>", unsafe_allow_html=True)
+    st.markdown(
+        "<style>.block-container { padding-top: 4rem !important; }</style>",
+        unsafe_allow_html=True,
+    )
     st.title(f"🏢 {st.session_state.store_name}")
 
-    st.session_state.record_date = st.date_input("🗓️ 作業日期", value=st.session_state.record_date)
+    st.session_state.record_date = st.date_input(
+        "🗓️ 作業日期",
+        value=st.session_state.record_date,
+    )
 
     vendors_df = _get_active_df(read_table("vendors"))
     items_df = _get_active_df(read_table("items"))
@@ -72,7 +81,9 @@ def page_select_vendor():
         return
 
     item_vendor_ids = set(items_df.get("default_vendor_id", []).astype(str).str.strip())
-    vendors = vendors_df[vendors_df["vendor_id"].astype(str).str.strip().isin(item_vendor_ids)].copy()
+    vendors = vendors_df[
+        vendors_df["vendor_id"].astype(str).str.strip().isin(item_vendor_ids)
+    ].copy()
 
     if vendors.empty:
         st.warning("⚠️ 目前沒有可用廠商")
@@ -86,7 +97,11 @@ def page_select_vendor():
 
         left = vendors.iloc[i]
         with cols[0]:
-            if st.button(f"📦 {left['vendor_label']}", key=f"vendor_{left.get('vendor_id','')}", use_container_width=True):
+            if st.button(
+                f"📦 {left['vendor_label']}",
+                key=f"vendor_{left.get('vendor_id', '')}",
+                use_container_width=True,
+            ):
                 st.session_state.vendor_id = _norm(left.get("vendor_id", ""))
                 st.session_state.vendor_name = left["vendor_label"]
                 st.session_state.step = "order_entry"
@@ -95,7 +110,11 @@ def page_select_vendor():
         if i + 1 < len(vendors):
             right = vendors.iloc[i + 1]
             with cols[1]:
-                if st.button(f"📦 {right['vendor_label']}", key=f"vendor_{right.get('vendor_id','')}", use_container_width=True):
+                if st.button(
+                    f"📦 {right['vendor_label']}",
+                    key=f"vendor_{right.get('vendor_id', '')}",
+                    use_container_width=True,
+                ):
                     st.session_state.vendor_id = _norm(right.get("vendor_id", ""))
                     st.session_state.vendor_name = right["vendor_label"]
                     st.session_state.step = "order_entry"
@@ -191,7 +210,7 @@ def page_order_entry():
         </style>
         """,
         unsafe_allow_html=True,
-        )
+    )
     st.title(f"📝 {st.session_state.vendor_name}")
 
     items_df = _get_active_df(read_table("items"))
@@ -211,7 +230,8 @@ def page_order_entry():
         return
 
     vendor_items = items_df[
-        items_df["default_vendor_id"].astype(str).str.strip() == str(st.session_state.vendor_id).strip()
+        items_df["default_vendor_id"].astype(str).str.strip()
+        == str(st.session_state.vendor_id).strip()
     ].copy()
 
     if vendor_items.empty:
@@ -243,7 +263,12 @@ def page_order_entry():
         base_unit = _norm(row.get("base_unit", ""))
         stock_unit = _norm(row.get("default_stock_unit", "")) or base_unit
         order_unit = _norm(row.get("default_order_unit", "")) or base_unit
-        price = _get_latest_price_for_item(prices_df, item_id, st.session_state.record_date)
+
+        price = _get_latest_price_for_item(
+            prices_df,
+            item_id,
+            st.session_state.record_date,
+        )
 
         current_stock_qty = _get_latest_stock_qty_in_display_unit(
             stocktakes_df=stocktakes_df,
@@ -298,6 +323,7 @@ def page_order_entry():
     ref_df = None
     if ref_rows:
         import pandas as pd
+
         ref_df = pd.DataFrame(ref_rows).sort_values(["品項名稱"]).reset_index(drop=True)
 
     with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
@@ -340,7 +366,7 @@ def page_order_entry():
                     f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
                     unsafe_allow_html=True,
                 )
-            
+
             with c2:
                 stock_input = st.number_input(
                     "庫",
@@ -355,7 +381,7 @@ def page_order_entry():
                     f"<div class='order-unit-label'>{base_unit}</div>",
                     unsafe_allow_html=True,
                 )
-            
+
             with c3:
                 order_input = st.number_input(
                     "進",
@@ -369,11 +395,13 @@ def page_order_entry():
                 selected_order_unit = st.selectbox(
                     "進貨單位",
                     options=meta["orderable_unit_options"],
-                    index=meta["orderable_unit_options"].index(order_unit) if order_unit in meta["orderable_unit_options"] else 0,
+                    index=meta["orderable_unit_options"].index(order_unit)
+                    if order_unit in meta["orderable_unit_options"]
+                    else 0,
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
-            
+
             submit_rows.append(
                 {
                     "item_id": item_id,
@@ -385,158 +413,23 @@ def page_order_entry():
                     "unit_price": float(meta["price"]),
                 }
             )
+
         submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
     if submitted:
         try:
-            stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
-            order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+            po_id = _save_order_entry(
+                submit_rows=submit_rows,
+                vendor_items=vendor_items,
+                conversions_df=conversions_df,
+                store_id=st.session_state.store_id,
+                vendor_id=st.session_state.vendor_id,
+                record_date=st.session_state.record_date,
+            )
 
-            id_need = {
-                "stocktake_id": 1 if stocktake_rows else 0,
-                "stocktake_line_id": len(stocktake_rows),
-                "po_id": 1 if order_rows else 0,
-                "po_line_id": len(order_rows),
-            }
-            id_map = allocate_ids(id_need)
-
-            now = _now_ts()
-
-            if stocktake_rows:
-                stocktake_header = get_header("stocktakes")
-                stl_header = get_header("stocktake_lines")
-
-                stocktake_id = id_map["stocktake_id"][0]
-                stocktake_main_row = {c: "" for c in stocktake_header}
-                for k, v in {
-                    "stocktake_id": stocktake_id,
-                    "store_id": st.session_state.store_id,
-                    "stocktake_date": str(st.session_state.record_date),
-                    "status": "done",
-                    "note": f"vendor={st.session_state.vendor_id}",
-                    "created_at": now,
-                    "created_by": "SYSTEM",
-                    "updated_at": "",
-                    "updated_by": "",
-                }.items():
-                    if k in stocktake_main_row:
-                        stocktake_main_row[k] = v
-
-                append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
-
-                stock_line_rows = []
-                for idx, r in enumerate(stocktake_rows):
-                    stocktake_line_id = id_map["stocktake_line_id"][idx]
-
-                    try:
-                        stock_base_qty, stock_base_unit = convert_to_base(
-                            item_id=r["item_id"],
-                            qty=r["stock_qty"],
-                            from_unit=r["stock_unit"],
-                            items_df=vendor_items,
-                            conversions_df=conversions_df,
-                            as_of_date=st.session_state.record_date,
-                        )
-                    except Exception:
-                        stock_base_qty = r["stock_qty"]
-                        stock_base_unit = r["stock_unit"]
-
-                    row_dict = {c: "" for c in stl_header}
-                    defaults_line = {
-                        "stocktake_line_id": stocktake_line_id,
-                        "stocktake_id": stocktake_id,
-                        "item_id": r["item_id"],
-                        "qty": str(r["stock_qty"]),
-                        "stock_qty": str(r["stock_qty"]),
-                        "unit_id": r["stock_unit"],
-                        "stock_unit": r["stock_unit"],
-                        "base_qty": str(round(stock_base_qty, 3)),
-                        "base_unit": stock_base_unit,
-                        "created_at": now,
-                        "created_by": "SYSTEM",
-                        "updated_at": "",
-                        "updated_by": "",
-                    }
-                    for k, v in defaults_line.items():
-                        if k in row_dict:
-                            row_dict[k] = v
-                    stock_line_rows.append(row_dict)
-
-                append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
-
-            po_id = ""
-            if order_rows:
-                po_header = get_header("purchase_orders")
-                pol_header = get_header("purchase_order_lines")
-
-                po_id = id_map["po_id"][0]
-
-                po_row = {c: "" for c in po_header}
-                defaults_po = {
-                    "po_id": po_id,
-                    "store_id": st.session_state.store_id,
-                    "vendor_id": st.session_state.vendor_id,
-                    "order_date": str(st.session_state.record_date),
-                    "status": "draft",
-                    "note": "",
-                    "created_at": now,
-                    "created_by": "SYSTEM",
-                    "updated_at": "",
-                    "updated_by": "",
-                }
-                for k, v in defaults_po.items():
-                    if k in po_row:
-                        po_row[k] = v
-
-                append_rows_by_header("purchase_orders", po_header, [po_row])
-
-                po_line_rows = []
-                for idx, r in enumerate(order_rows):
-                    po_line_id = id_map["po_line_id"][idx]
-
-                    try:
-                        order_base_qty, order_base_unit = convert_to_base(
-                            item_id=r["item_id"],
-                            qty=r["order_qty"],
-                            from_unit=r["order_unit"],
-                            items_df=vendor_items,
-                            conversions_df=conversions_df,
-                            as_of_date=st.session_state.record_date,
-                        )
-                    except Exception:
-                        order_base_qty = r["order_qty"]
-                        order_base_unit = r["order_unit"]
-
-                    line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
-
-                    row_dict = {c: "" for c in pol_header}
-                    defaults_pol = {
-                        "po_line_id": po_line_id,
-                        "po_id": po_id,
-                        "item_id": r["item_id"],
-                        "qty": str(r["order_qty"]),
-                        "order_qty": str(r["order_qty"]),
-                        "unit_id": r["order_unit"],
-                        "order_unit": r["order_unit"],
-                        "base_qty": str(round(order_base_qty, 3)),
-                        "base_unit": order_base_unit,
-                        "unit_price": str(r["unit_price"]),
-                        "amount": str(line_amount),
-                        "line_amount": str(line_amount),
-                        "created_at": now,
-                        "created_by": "SYSTEM",
-                        "updated_at": "",
-                        "updated_by": "",
-                    }
-                    for k, v in defaults_pol.items():
-                        if k in row_dict:
-                            row_dict[k] = v
-                    po_line_rows.append(row_dict)
-
-                append_rows_by_header("purchase_order_lines", pol_header, po_line_rows)
-
-            bust_cache()
-            st.success(f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}")
+            st.success(
+                f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}"
+            )
             st.session_state.step = "select_vendor"
             st.rerun()
 
@@ -552,13 +445,161 @@ def page_order_entry():
         st.rerun()
 
 
+# ============================================================
+# Save Order Entry
+# ============================================================
+def _save_order_entry(
+    submit_rows,
+    vendor_items,
+    conversions_df,
+    store_id,
+    vendor_id,
+    record_date,
+):
+    stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
+    order_rows = [r for r in submit_rows if r["order_qty"] > 0]
 
+    id_need = {
+        "stocktake_id": 1 if stocktake_rows else 0,
+        "stocktake_line_id": len(stocktake_rows),
+        "po_id": 1 if order_rows else 0,
+        "po_line_id": len(order_rows),
+    }
+    id_map = allocate_ids(id_need)
+    now = _now_ts()
 
+    if stocktake_rows:
+        stocktake_header = get_header("stocktakes")
+        stl_header = get_header("stocktake_lines")
 
+        stocktake_id = id_map["stocktake_id"][0]
+        stocktake_main_row = {c: "" for c in stocktake_header}
 
+        defaults = {
+            "stocktake_id": stocktake_id,
+            "store_id": store_id,
+            "stocktake_date": str(record_date),
+            "status": "done",
+            "note": f"vendor={vendor_id}",
+            "created_at": now,
+            "created_by": "SYSTEM",
+        }
 
+        for k, v in defaults.items():
+            if k in stocktake_main_row:
+                stocktake_main_row[k] = v
 
+        append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
 
+        stock_line_rows = []
+        for idx, r in enumerate(stocktake_rows):
+            stocktake_line_id = id_map["stocktake_line_id"][idx]
 
+            try:
+                stock_base_qty, stock_base_unit = convert_to_base(
+                    item_id=r["item_id"],
+                    qty=r["stock_qty"],
+                    from_unit=r["stock_unit"],
+                    items_df=vendor_items,
+                    conversions_df=conversions_df,
+                    as_of_date=record_date,
+                )
+            except Exception:
+                stock_base_qty = r["stock_qty"]
+                stock_base_unit = r["stock_unit"]
 
+            row_dict = {c: "" for c in stl_header}
+            defaults_line = {
+                "stocktake_line_id": stocktake_line_id,
+                "stocktake_id": stocktake_id,
+                "item_id": r["item_id"],
+                "qty": str(r["stock_qty"]),
+                "stock_qty": str(r["stock_qty"]),
+                "unit_id": r["stock_unit"],
+                "stock_unit": r["stock_unit"],
+                "base_qty": str(round(stock_base_qty, 3)),
+                "base_unit": stock_base_unit,
+                "created_at": now,
+                "created_by": "SYSTEM",
+            }
 
+            for k, v in defaults_line.items():
+                if k in row_dict:
+                    row_dict[k] = v
+
+            stock_line_rows.append(row_dict)
+
+        append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
+
+    po_id = ""
+
+    if order_rows:
+        po_header = get_header("purchase_orders")
+        pol_header = get_header("purchase_order_lines")
+
+        po_id = id_map["po_id"][0]
+        po_row = {c: "" for c in po_header}
+
+        defaults_po = {
+            "po_id": po_id,
+            "store_id": store_id,
+            "vendor_id": vendor_id,
+            "order_date": str(record_date),
+            "status": "draft",
+            "created_at": now,
+            "created_by": "SYSTEM",
+        }
+
+        for k, v in defaults_po.items():
+            if k in po_row:
+                po_row[k] = v
+
+        append_rows_by_header("purchase_orders", po_header, [po_row])
+
+        po_line_rows = []
+        for idx, r in enumerate(order_rows):
+            po_line_id = id_map["po_line_id"][idx]
+
+            try:
+                order_base_qty, order_base_unit = convert_to_base(
+                    item_id=r["item_id"],
+                    qty=r["order_qty"],
+                    from_unit=r["order_unit"],
+                    items_df=vendor_items,
+                    conversions_df=conversions_df,
+                    as_of_date=record_date,
+                )
+            except Exception:
+                order_base_qty = r["order_qty"]
+                order_base_unit = r["order_unit"]
+
+            line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
+
+            row_dict = {c: "" for c in pol_header}
+            defaults_pol = {
+                "po_line_id": po_line_id,
+                "po_id": po_id,
+                "item_id": r["item_id"],
+                "qty": str(r["order_qty"]),
+                "order_qty": str(r["order_qty"]),
+                "unit_id": r["order_unit"],
+                "order_unit": r["order_unit"],
+                "base_qty": str(round(order_base_qty, 3)),
+                "base_unit": order_base_unit,
+                "unit_price": str(r["unit_price"]),
+                "amount": str(line_amount),
+                "line_amount": str(line_amount),
+                "created_at": now,
+                "created_by": "SYSTEM",
+            }
+
+            for k, v in defaults_pol.items():
+                if k in row_dict:
+                    row_dict[k] = v
+
+            po_line_rows.append(row_dict)
+
+        append_rows_by_header("purchase_order_lines", pol_header, po_line_rows)
+
+    bust_cache()
+    return po_id
