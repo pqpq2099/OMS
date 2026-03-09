@@ -10,7 +10,7 @@ from oms_core import (
     _get_active_df,
     _get_last_po_summary,
     _get_latest_stock_qty_in_display_unit,
-    _get_latest_price_for_item,st
+    _get_latest_price_for_item,
     _item_display_name,
     _label_store,
     _label_vendor,
@@ -538,5 +538,6 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
