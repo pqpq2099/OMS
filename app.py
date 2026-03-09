@@ -350,3 +350,39 @@ def page_export():
                     st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
                 else:
                     st.error("❌ 發送失敗，請檢查設定。")
+
+# ============================================================
+# [F1] Router
+# ============================================================
+def router(df_s, df_i, df_pr, item_display_map):
+    step = st.session_state.get("step", "select_store")
+
+    if step == "select_store":
+        page_select_store(df_s)
+    elif step == "select_vendor":
+        page_select_vendor(df_i)
+    elif step == "fill_items":
+        page_fill_items(df_i, df_pr, item_display_map)
+    elif step == "view_history":
+        page_view_history()
+    elif step == "export":
+        page_export()
+    elif step == "analysis":
+        page_analysis()
+    else:
+        st.session_state.step = "select_store"
+        page_select_store(df_s)
+
+
+# ============================================================
+# [G1] Main
+# ============================================================
+def main():
+    apply_global_style()
+    init_session()
+    df_s, df_i, df_pr, item_map = load_master_data()
+    router(df_s, df_i, df_pr, item_map)
+
+
+if __name__ == "__main__":
+    main()
