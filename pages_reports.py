@@ -109,7 +109,6 @@ def page_view_history():
                     "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
                 }
             )
-
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
@@ -532,6 +531,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
