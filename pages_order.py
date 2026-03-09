@@ -136,62 +136,65 @@ def page_order_entry():
             padding-left: 0.35rem !important;
             padding-right: 0.35rem !important;
         }
-
+        
+        /* 三欄固定布局 */
         [data-testid='stHorizontalBlock'] {
             display: flex !important;
             flex-flow: row nowrap !important;
             align-items: flex-start !important;
             gap: 0.35rem !important;
         }
-
+        
+        /* 品項名稱欄 */
         div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
             flex: 1 1 auto !important;
             min-width: 0px !important;
         }
-
+        
+        /* 庫 / 進 欄位 */
         div[data-testid='stHorizontalBlock'] > div:nth-child(2),
         div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
             flex: 0 0 84px !important;
             min-width: 84px !important;
             max-width: 84px !important;
         }
-
-        div[data-testid='stNumberInput'] label {
-            display: none !important;
-        }
-
+        
+        /* 數字框 */
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
             padding-left: 0.4rem !important;
             padding-right: 0.4rem !important;
         }
-
+        
+        /* 隱藏 number_input label */
+        div[data-testid='stNumberInput'] label {
+            display: none !important;
+        }
+        
+        /* 分隔線 */
         .order-divider {
             margin: 10px 0 14px 0;
             border-top: 1px solid rgba(128,128,128,0.25);
         }
-
+        
+        /* 品項資訊 */
         .order-meta {
             font-size: 0.82rem;
-            color: rgba(170, 178, 195, 0.9);
+            color: rgba(170,178,195,0.9);
             margin-top: -0.2rem;
-            margin-bottom: 0.2rem;
+            margin-bottom: 0.25rem;
         }
-
+        
+        /* 單位文字 */
         .order-unit-label {
             display: flex;
             align-items: flex-end;
             justify-content: center;
-            height: 32px;
+            height: 34px;
             font-size: 1rem;
             font-weight: 500;
-            opacity: 0.9;
+            margin-top: 3px;
         }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.title(f"📝 {st.session_state.vendor_name}")
 
     items_df = _get_active_df(read_table("items"))
@@ -550,6 +553,7 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
