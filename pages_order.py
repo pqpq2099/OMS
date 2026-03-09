@@ -177,6 +177,13 @@ def page_order_entry():
             margin-top: -0.2rem;
             margin-bottom: 0.2rem;
         }
+
+        .order-unit-label {
+            text-align: center;
+            font-size: 0.8rem;
+            opacity: 0.8;
+            margin-top: 0.15rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -336,20 +343,23 @@ def page_order_entry():
                     "庫",
                     min_value=0.0,
                     step=0.1,
-                    format="%.1f",
-                    value=float(current_stock_qty),
+                    format="%g",
+                    value=0 if current_stock_qty <= 0 else float(current_stock_qty),
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
-                st.caption(base_unit)
+                st.markdown(
+                    f"<div class='order-unit-label'>{base_unit}</div>",
+                    unsafe_allow_html=True,
+                )
 
             with c3:
                 order_input = st.number_input(
                     "進",
                     min_value=0.0,
                     step=0.1,
-                    format="%.1f",
-                    value=0.0,
+                    format="%g",
+                    value=0,
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
@@ -538,7 +548,3 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
-
-
-
