@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS
-# Main App Router
+# Main Router
 # ============================================================
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import streamlit as st
 st.set_page_config(
     page_title="ORIVIA OMS",
     page_icon="📦",
-    layout="wide"
+    layout="wide",
 )
 
 
@@ -23,25 +23,17 @@ st.set_page_config(
 # Import Pages
 # ============================================================
 
-from oms_pages_store import (
-    page_order_entry,
-    page_order_history,
-    page_stocktake_history,
-)
-
+from oms_pages_store import page_order_entry
 from oms_pages_analysis import (
-    page_analysis_inventory,
-    page_analysis_cost,
+    page_inventory_analysis,
+    page_cost_analysis,
+    page_purchase_report,
 )
-
-from oms_pages_admin import (
-    page_admin_vendors,
-    page_admin_items,
-)
+from oms_pages_admin import page_admin_panel
 
 
 # ============================================================
-# Session State
+# Session
 # ============================================================
 
 if "page" not in st.session_state:
@@ -56,40 +48,34 @@ def render_sidebar():
 
     with st.sidebar:
 
-        st.title("📦 ORIVIA OMS")
+        st.title("ORIVIA OMS")
 
         st.markdown("---")
 
-        st.subheader("Operations")
+        st.subheader("門市營運")
 
         if st.button("叫貨 / 庫存"):
             st.session_state.page = "order"
 
-        if st.button("叫貨紀錄"):
-            st.session_state.page = "order_history"
-
-        if st.button("盤點歷史"):
-            st.session_state.page = "stocktake_history"
-
         st.markdown("---")
 
-        st.subheader("Analysis")
+        st.subheader("分析")
 
         if st.button("進銷存分析"):
-            st.session_state.page = "analysis_inventory"
+            st.session_state.page = "inventory_analysis"
 
         if st.button("成本分析"):
-            st.session_state.page = "analysis_cost"
+            st.session_state.page = "cost_analysis"
+
+        if st.button("進貨報表"):
+            st.session_state.page = "purchase_report"
 
         st.markdown("---")
 
-        st.subheader("Admin")
+        st.subheader("系統")
 
-        if st.button("廠商管理"):
-            st.session_state.page = "admin_vendors"
-
-        if st.button("品項管理"):
-            st.session_state.page = "admin_items"
+        if st.button("系統管理"):
+            st.session_state.page = "admin"
 
 
 # ============================================================
@@ -103,39 +89,21 @@ def router():
     if page == "order":
         page_order_entry()
 
-    elif page == "order_history":
-        page_order_history()
+    elif page == "inventory_analysis":
+        page_inventory_analysis()
 
-    elif page == "stocktake_history":
-        page_stocktake_history()
+    elif page == "cost_analysis":
+        page_cost_analysis()
 
-    elif page == "analysis_inventory":
-        page_analysis_inventory()
+    elif page == "purchase_report":
+        page_purchase_report()
 
-    elif page == "analysis_cost":
-        page_analysis_cost()
-
-    elif page == "admin_vendors":
-        page_admin_vendors()
-
-    elif page == "admin_items":
-        page_admin_items()
-
-    else:
-        st.session_state.page = "order"
-        page_order_entry()
+    elif page == "admin":
+        page_admin_panel()
 
 
 # ============================================================
 # Main
 # ============================================================
 
-def main():
-
-    render_sidebar()
-
-    router()
-
-
-if __name__ == "__main__":
-    main()
+def main
