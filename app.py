@@ -12,8 +12,6 @@ from pages_order import (
     page_select_vendor,
 )
 
-from pages_stocktake import page_stocktake
-
 from pages_reports import (
     page_analysis,
     page_cost_debug,
@@ -105,8 +103,6 @@ def router():
         page_view_history()
     elif step == "export":
         page_export()
-    elif step == "stocktake":
-        page_stocktake()    
     elif step == "analysis":
         page_analysis()
     elif step == "cost_debug":
@@ -127,6 +123,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
