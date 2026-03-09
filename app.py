@@ -5,11 +5,15 @@ from datetime import date
 import streamlit as st
 
 from oms_core import apply_global_style
+
 from pages_order import (
     page_order_entry,
     page_select_store,
     page_select_vendor,
 )
+
+from pages_stocktake import page_stocktake
+
 from pages_reports import (
     page_analysis,
     page_cost_debug,
@@ -121,3 +125,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
