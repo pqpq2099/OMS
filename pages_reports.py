@@ -279,76 +279,19 @@ def page_analysis():
     if not hist_filt.empty and not items_df.empty and not prices_df.empty:
         latest_rows = hist_filt.sort_values("日期_dt").groupby("item_id", as_index=False).tail(1).copy()
 
-        stock_detail_df = read_table("stocktake_lines")
-        stock_header_df = read_table("stocktakes")
+        latest_rows["base_unit_cost"] = latest_rows.apply(
+            lambda r: get_base_unit_cost(
+                item_id=_norm(r.get("item_id", "")),
+                target_date=end,
+                items_df=items_df,
+                prices_df=prices_df,
+                conversions_df=conversions_df,
+            ) or 0.0,
+            axis=1,
+        )
+        latest_rows["stock_value"] = latest_rows["這次庫存"].astype(float) * latest_rows["base_unit_cost"].astype(float)
+        total_stock_value = float(latest_rows["stock_value"].sum())
 
-        total_stock_value = 0.0
-
-        if not stock_detail_df.empty and not stock_header_df.empty:
-            stx = stock_header_df.copy()
-            stl = stock_detail_df.copy()
-
-            stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
-            stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
-            stl["item_id"] = stl["item_id"].astype(str).str.strip()
-
-            stx = stx[
-                stx["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
-            ].copy()
-
-            stx["stocktake_date_dt"] = stx["stocktake_date"].apply(lambda x: __import__("pandas").to_datetime(x).date() if str(x).strip() != "" else None)
-            stx = stx[
-                stx["stocktake_date_dt"].notna()
-                & (stx["stocktake_date_dt"] >= start)
-                & (stx["stocktake_date_dt"] <= end)
-            ].copy()
-
-            if not stx.empty:
-                merged_stock = stl.merge(
-                    stx[["stocktake_id", "stocktake_date_dt"]],
-                    on="stocktake_id",
-                    how="inner",
-                )
-
-                merged_stock["base_qty_num"] = __import__("pandas").to_numeric(
-                    merged_stock.get("base_qty", 0), errors="coerce"
-                ).fillna(0)
-
-                latest_stock = (
-                    merged_stock.sort_values("stocktake_date_dt")
-                    .groupby("item_id", as_index=False)
-                    .tail(1)
-                    .copy()
-                )
-
-                if selected_item != "全部品項":
-                    item_name_map = items_df.copy()
-                    item_name_map["item_id"] = item_name_map["item_id"].astype(str).str.strip()
-                    item_name_map["品項"] = item_name_map.apply(_item_display_name, axis=1)
-                    latest_stock = latest_stock.merge(
-                        item_name_map[["item_id", "品項"]],
-                        on="item_id",
-                        how="left"
-                    )
-                    latest_stock = latest_stock[latest_stock["品項"] == selected_item].copy()
-
-                latest_stock["base_unit_cost"] = latest_stock.apply(
-                    lambda r: get_base_unit_cost(
-                        item_id=_norm(r.get("item_id", "")),
-                        target_date=end,
-                        items_df=items_df,
-                        prices_df=prices_df,
-                        conversions_df=conversions_df,
-                    ) or 0.0,
-                    axis=1,
-                )
-
-                latest_stock["stock_value"] = (
-                    latest_stock["base_qty_num"].astype(float)
-                    * latest_stock["base_unit_cost"].astype(float)
-                )
-
-                total_stock_value = float(latest_stock["stock_value"].sum())
     st.markdown(
         f"""
         <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
@@ -551,42 +494,32 @@ def page_cost_debug():
     )
 
     st.markdown("---")
-    st.subheader("檢查結果 Check Result")
-    st.write(f"**品項名稱 Item Name：** {_item_display_name(item_row)}")
-    st.write(f"**品項編號 Item ID：** {selected_item_id}")
-    st.write(f"**基準單位 Base Unit：** {base_unit or '未設定 Not Set'}")
-    st.write(f"**庫存單位 Stock Unit：** {default_stock_unit or '未設定 Not Set'}")
-    st.write(f"**叫貨單位 Order Unit：** {default_order_unit or '未設定 Not Set'}")
-    st.write(f"**價格 Unit Price：** {unit_price}")
-    st.write(f"**價格單位 Price Unit：** {price_unit or '未設定 Not Set'}")
-    st.write(f"**價格生效日 Effective Date：** {effective_date or '未設定 Not Set'}")
-    st.write(f"**基準成本 Base Unit Cost：** {base_unit_cost if base_unit_cost is not None else '無法計算 Unable to Calculate'}")
-    
+    st.subheader("檢查結果")
+    st.write(f"**品項名稱：** {_item_display_name(item_row)}")
+    st.write(f"**item_id：** {selected_item_id}")
+    st.write(f"**base_unit：** {base_unit or '未設定'}")
+    st.write(f"**default_stock_unit：** {default_stock_unit or '未設定'}")
+    st.write(f"**default_order_unit：** {default_order_unit or '未設定'}")
+    st.write(f"**價格：** {unit_price}")
+    st.write(f"**價格單位：** {price_unit or '未設定'}")
+    st.write(f"**價格生效日：** {effective_date or '未設定'}")
+    st.write(f"**base_unit_cost：** {base_unit_cost if base_unit_cost is not None else '無法計算'}")
+
     st.markdown("---")
-    st.subheader("換算規則 Conversion Rules")
-    
+    st.subheader("換算規則")
+
     conv_show = conversions_df.copy()
     if not conv_show.empty and "item_id" in conv_show.columns:
         conv_show = conv_show[
             conv_show["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
         ].copy()
-    
+
     if conv_show.empty:
-        st.caption("此品項目前沒有換算規則 No conversion rules for this item")
+        st.caption("此品項目前沒有換算規則")
     else:
         show_cols = [c for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"] if c in conv_show.columns]
-    
-        show_df = conv_show[show_cols].rename(columns={
-            "conversion_id": "換算編號 Conversion ID",
-            "from_unit": "原單位 From Unit",
-            "to_unit": "目標單位 To Unit",
-            "ratio": "換算倍率 Ratio",
-            "is_active": "啟用 Active"
-        })
-    
-        st.dataframe(show_df, use_container_width=True, hide_index=True)
+        st.dataframe(conv_show[show_cols], use_container_width=True, hide_index=True)
+
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
-
