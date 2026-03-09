@@ -280,7 +280,7 @@ def page_analysis():
     
     if not hist_filt.empty and not items_df.empty and not prices_df.empty:
         latest_rows = hist_filt.sort_values("日期_dt").groupby("item_id", as_index=False).tail(1).copy()
-        st.write(latest_rows.columns.tolist())
+        
         latest_rows["base_unit_cost"] = latest_rows.apply(
             lambda r: get_base_unit_cost(
                 item_id=_norm(r.get("item_id", "")),
@@ -525,6 +525,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
