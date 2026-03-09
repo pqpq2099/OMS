@@ -172,11 +172,11 @@ def page_order_entry():
         }
 
         .order-meta {
-        font-size: 0.82rem;
-        color: rgba(220, 225, 235, 0.95);
-        margin-top: -0.2rem;
-        margin-bottom: 0.2rem;
-    }
+            font-size: 0.82rem;
+            color: rgba(220, 225, 235, 0.95);
+            margin-top: -0.2rem;
+            margin-bottom: 0.2rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -538,4 +538,5 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
