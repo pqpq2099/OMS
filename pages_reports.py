@@ -315,6 +315,7 @@ def page_analysis():
             st.info("💡 尚未產生進銷存資料")
         else:
             show_cols = [
+                "日期顯示",
                 "品項",
                 "上次庫存",
                 "期間進貨",
@@ -323,7 +324,6 @@ def page_analysis():
                 "期間消耗",
                 "日平均",
             ]
-
             st.dataframe(
                 hist_filt[show_cols],
                 use_container_width=True,
@@ -521,6 +521,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
