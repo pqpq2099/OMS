@@ -276,6 +276,10 @@ def page_analysis():
     total_buy = float(purchase_filt.get("採購金額", []).sum()) if not purchase_filt.empty else 0.0
 
     total_stock_value = 0.0
+    st.write("hist_filt empty =", hist_filt.empty)
+    st.write("items_df empty =", items_df.empty)
+    st.write("prices_df empty =", prices_df.empty)
+    
     if not hist_filt.empty and not items_df.empty and not prices_df.empty:
         latest_rows = hist_filt.sort_values("日期_dt").groupby("item_id", as_index=False).tail(1).copy()
         st.write(latest_rows.columns.tolist())
@@ -523,4 +527,5 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
