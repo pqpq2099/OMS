@@ -1058,7 +1058,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             prev_qty = _safe_float(prev_stock.iloc[-1].get("display_stock_qty", 0))
             prev_date = prev_stock.iloc[-1].get("stocktake_date_dt")
 
-                curr_qty = _safe_float(curr_row.get("display_stock_qty", 0))
+        curr_qty = _safe_float(curr_row.get("display_stock_qty", 0))
 
         
         # 第一次紀錄：不補前帳、不補前面進貨
@@ -1175,5 +1175,6 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
 
 
