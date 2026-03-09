@@ -385,7 +385,7 @@ def page_order_entry():
                     "unit_price": float(meta["price"]),
                 }
             )
-        submitted = st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True)
+        submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
     if submitted:
         try:
@@ -550,6 +550,7 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
