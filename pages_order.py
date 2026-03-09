@@ -182,10 +182,10 @@ def page_order_entry():
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 32px;
+            height: 34px;
             font-size: 1rem;
             font-weight: 500;
-            opacity: 0.9;
+            color: rgba(200,210,230,0.85);
         }
         </style>
         """,
@@ -550,6 +550,7 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
