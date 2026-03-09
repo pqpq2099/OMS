@@ -191,7 +191,7 @@ def page_order_entry():
         </style>
         """,
         unsafe_allow_html=True,
-    )
+        )
     st.title(f"📝 {st.session_state.vendor_name}")
 
     items_df = _get_active_df(read_table("items"))
@@ -550,6 +550,7 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
