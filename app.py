@@ -106,4 +106,14 @@ def router():
 # Main
 # ============================================================
 
-def main
+def main():
+
+    render_sidebar()
+
+    router()
+
+
+if __name__ == "__main__":
+
+    main()
+
