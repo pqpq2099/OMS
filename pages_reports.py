@@ -308,7 +308,7 @@ def page_analysis():
 
     t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
 
-        with t_detail:
+            with t_detail:
             st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
     
             if hist_filt.empty:
@@ -350,7 +350,6 @@ def page_analysis():
                         "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
                     },
                 )
-
     with t_trend:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
@@ -533,6 +532,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
