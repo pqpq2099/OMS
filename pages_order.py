@@ -335,7 +335,10 @@ def page_order_entry():
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
                 tail = f"　{status_hint}" if status_hint else ""
                 st.markdown(
-                    f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>"
+                    f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
+                    unsafe_allow_html=True,
+                )
+            
             with c2:
                 stock_input = st.number_input(
                     "庫",
@@ -350,7 +353,7 @@ def page_order_entry():
                     f"<div class='order-unit-label'>{base_unit}</div>",
                     unsafe_allow_html=True,
                 )
-
+            
             with c3:
                 order_input = st.number_input(
                     "進",
@@ -368,7 +371,7 @@ def page_order_entry():
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
-
+            
             submit_rows.append(
                 {
                     "item_id": item_id,
@@ -380,7 +383,6 @@ def page_order_entry():
                     "unit_price": float(meta["price"]),
                 }
             )
-
         submitted = st.form_submit_button("💾 儲存庫存並同步叫貨", use_container_width=True)
 
     if submitted:
@@ -546,5 +548,6 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
