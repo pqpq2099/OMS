@@ -1,109 +1,154 @@
 # ============================================================
-# ORIVIA OMS 1.0 外觀 + OMS 2.0 資料庫（穩定整合版）
-# sidebar + 成本檢查頁
+# ORIVIA OMS - app.py
+# 最小可跑骨架版
+# 只保留：
+# 1. Streamlit 基本設定
+# 2. Sidebar
+# 3. Router
+# 4. Main
 # ============================================================
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Optional
-
-import gspread
-import pandas as pd
 import streamlit as st
-from google.oauth2.service_account import Credentials
 
-from oms_engine import convert_to_base, convert_unit, get_base_unit
+from oms_pages_store import (
+    page_order_entry,
+    page_order_history,
+    page_stocktake_history,
+)
+from oms_pages_analysis import (
+    page_inventory_analysis,
+    page_cost_analysis,
+    page_purchase_report,
+)
+from oms_pages_admin import (
+    page_vendors,
+    page_items,
+    page_stores,
+    page_brands,
+    page_users,
+)
+from oms_pages_settings import (
+    page_appearance,
+    page_operation_rules,
+    page_inventory_rules,
+)
+from oms_pages_system import page_system_info
 
-# Plotly
-try:
-    import plotly.express as px
-    HAS_PLOTLY = True
-except Exception:
-    HAS_PLOTLY = False
 
+APP_TITLE = "ORIVIA OMS"
+APP_ICON = "📦"
 
-# ============================================================
-# [A1] Config
-# ============================================================
-
-DEFAULT_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
-
-LOCAL_SERVICE_ACCOUNT = Path("service_account.json")
-
-PLOTLY_CONFIG = {
-    "displayModeBar": True,
-    "displaylogo": False,
-    "scrollZoom": False,
-    "doubleClick": False,
+MENU_TREE: dict[str, list[str]] = {
+    "門市營運": [
+        "叫貨 / 庫存",
+        "叫貨紀錄",
+        "盤點歷史",
+    ],
+    "數據分析": [
+        "進銷存分析",
+        "成本分析",
+        "進貨報表",
+    ],
+    "系統管理": [
+        "廠商管理",
+        "品項管理",
+        "分店管理",
+        "品牌管理",
+        "帳號權限",
+    ],
+    "系統設定": [
+        "外觀設定",
+        "營運規則",
+        "庫存規則",
+    ],
+    "系統資訊": [
+        "系統資訊",
+    ],
 }
 
 
-# ============================================================
-# [A2] UI Style
-# ============================================================
+def build_sidebar() -> tuple[str, str]:
+    """建立左側主選單與子選單。"""
+    with st.sidebar:
+        st.title(APP_TITLE)
+        st.caption("系統骨架版")
 
-st.set_page_config(
-    page_title="ORIVIA OMS",
-    page_icon="📦",
-    layout="wide"
-)
-
-
-# ============================================================
-# [B1] Helpers
-# ============================================================
-
-def _norm(v):
-    if v is None:
-        return ""
-    return str(v).strip()
-
-
-def _safe_float(v):
-    try:
-        return float(v)
-    except:
-        return 0.0
-
-
-def _now_ts():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-# ============================================================
-# [B2] Google Sheet Client
-# ============================================================
-
-@st.cache_resource
-def get_gsheet_client():
-
-    if "gcp" in st.secrets:
-
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp"],
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ],
+        menu_main = st.selectbox(
+            "功能分類",
+            options=list(MENU_TREE.keys()),
+            index=0,
         )
+
+        menu_sub = st.radio(
+            "選擇功能",
+            options=MENU_TREE[menu_main],
+            index=0,
+        )
+
+    return menu_main, menu_sub
+
+
+def route_page(menu_sub: str) -> None:
+    """依子選單導向對應頁面。"""
+    # 門市營運
+    if menu_sub == "叫貨 / 庫存":
+        page_order_entry()
+    elif menu_sub == "叫貨紀錄":
+        page_order_history()
+    elif menu_sub == "盤點歷史":
+        page_stocktake_history()
+
+    # 數據分析
+    elif menu_sub == "進銷存分析":
+        page_inventory_analysis()
+    elif menu_sub == "成本分析":
+        page_cost_analysis()
+    elif menu_sub == "進貨報表":
+        page_purchase_report()
+
+    # 系統管理
+    elif menu_sub == "廠商管理":
+        page_vendors()
+    elif menu_sub == "品項管理":
+        page_items()
+    elif menu_sub == "分店管理":
+        page_stores()
+    elif menu_sub == "品牌管理":
+        page_brands()
+    elif menu_sub == "帳號權限":
+        page_users()
+
+    # 系統設定
+    elif menu_sub == "外觀設定":
+        page_appearance()
+    elif menu_sub == "營運規則":
+        page_operation_rules()
+    elif menu_sub == "庫存規則":
+        page_inventory_rules()
+
+    # 系統資訊
+    elif menu_sub == "系統資訊":
+        page_system_info()
 
     else:
-
-        creds = Credentials.from_service_account_file(
-            LOCAL_SERVICE_ACCOUNT,
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ],
-        )
-
-    return gspread.authorize(creds)
+        st.warning("找不到對應頁面。")
 
 
-# ============================================================
-# [B3] Sheet Read
+def main() -> None:
+    st.set_page_config(
+        page_title=APP_TITLE,
+        page_icon=APP_ICON,
+        layout="wide",
+    )
+
+    _, menu_sub = build_sidebar()
+    route_page(menu_sub)
+
+
+if __name__ == "__main__":
+    main()# [B3] Sheet Read
 # ============================================================
 
 @st.cache_data(ttl=30)
@@ -362,4 +407,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
