@@ -70,9 +70,11 @@ def render_sidebar():
             if st.button("📝 叫貨 / 庫存", use_container_width=True, key="sb_order_entry"):
                 st.session_state.step = "order_entry"
                 st.rerun()
+                
             if st.button("📦 點貨 / 叫貨測試頁", use_container_width=True, key="sb_stocktake"):
                 st.session_state.step = "stocktake"
                 st.rerun()
+                
         if st.session_state.store_id:
             if st.button("📋 今日進貨明細", use_container_width=True, key="sb_export"):
                 st.session_state.step = "export"
@@ -129,6 +131,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
