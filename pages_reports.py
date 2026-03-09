@@ -297,10 +297,6 @@ def page_analysis():
     st.markdown(
         f"""
         <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
-            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #4A90E2; background: rgba(74, 144, 226, 0.05);'>
-                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>💰 採購總額</div>
-                <div style='font-size: 18px; font-weight: 800; color: #4A90E2;'>${total_buy:,.1f}</div>
-            </div>
             <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
                 <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
                 <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
@@ -525,6 +521,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
