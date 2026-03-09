@@ -344,4 +344,9 @@ def page_export():
                     output += f"{r['品項名稱']} {val_s} {r['單位']}\n"
                 output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
+
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
+                if send_line_message(output):
+                    st.success(f"✅ 已成功推送到【{st.session_state.store}】群組！")
+                else:
+                    st.error("❌ 發送失敗，請檢查設定。")
