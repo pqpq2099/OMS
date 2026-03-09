@@ -346,3 +346,5 @@ def page_export():
             st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
             if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
             if selected_store:
+                st.session_state["store"] = selected_store
+
