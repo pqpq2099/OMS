@@ -1,11 +1,10 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 依最近可用版回接的穩定版
+# 穩定版（手機不再硬擠三欄）
 # ============================================================
 
 from __future__ import annotations
 
-from datetime import date
 import pandas as pd
 import streamlit as st
 
@@ -110,31 +109,13 @@ def _inject_fill_items_style() -> None:
         """
         <style>
         .block-container {
-            padding-top: 2rem !important;
-            padding-left: 0.35rem !important;
-            padding-right: 0.35rem !important;
+            padding-top: 1rem !important;
+            padding-left: 0.45rem !important;
+            padding-right: 0.45rem !important;
+            max-width: 920px !important;
         }
 
-        [data-testid='stHorizontalBlock'] {
-            display: flex !important;
-            flex-flow: row nowrap !important;
-            align-items: flex-start !important;
-            gap: 0.35rem !important;
-        }
-
-        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
-            flex: 1 1 auto !important;
-            min-width: 0px !important;
-        }
-
-        div[data-testid='stHorizontalBlock'] > div:nth-child(2),
-        div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
-            flex: 0 0 84px !important;
-            min-width: 84px !important;
-            max-width: 84px !important;
-        }
-
-        /* 移除 +/- */
+        /* 移除 number input +/- */
         div[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputStepDown"],
         div[data-testid="stNumberInput"] button,
@@ -160,14 +141,28 @@ def _inject_fill_items_style() -> None:
             margin: 0 !important;
         }
 
-        div[data-testid='stNumberInput'] label {
+        div[data-testid="stNumberInput"] label {
             display: none !important;
         }
 
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
-            padding-left: 0.4rem !important;
-            padding-right: 0.4rem !important;
+            padding: 0.32rem 0.10rem !important;
+            font-size: 0.95rem !important;
+        }
+
+        /* 輸入框寬度：夠 9.9 / 99 */
+        div[data-testid="stNumberInput"] > div {
+            width: 4.3rem !important;
+            min-width: 4.3rem !important;
+            max-width: 4.3rem !important;
+        }
+
+        /* 下拉要看得到文字 */
+        div[data-testid="stSelectbox"] > div {
+            width: 4.8rem !important;
+            min-width: 4.8rem !important;
+            max-width: 4.8rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] {
@@ -178,10 +173,15 @@ def _inject_fill_items_style() -> None:
             min-height: 2.2rem !important;
             padding-top: 0 !important;
             padding-bottom: 0 !important;
-            padding-left: 0.35rem !important;
-            padding-right: 1.1rem !important;
+            padding-left: 0.30rem !important;
+            padding-right: 1.05rem !important;
             font-size: 0.92rem !important;
             white-space: nowrap !important;
+            overflow: hidden !important;
+        }
+
+        div[data-testid="stSelectbox"] svg {
+            transform: scale(0.82) !important;
         }
 
         .order-divider {
@@ -190,36 +190,73 @@ def _inject_fill_items_style() -> None:
         }
 
         .order-meta {
-            font-size: 0.78rem;
-            color: rgba(49, 51, 63, 0.85);
-            margin-top: -0.25rem;
-            margin-bottom: 0.15rem;
+            font-size: 0.82rem;
+            color: rgba(49, 51, 63, 0.82);
+            margin-top: -0.15rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .order-head {
+            font-size: 0.98rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .order-item {
+            padding: 0.15rem 0 0.35rem 0;
+        }
+
+        .unit-text {
+            font-size: 0.86rem;
+            color: rgba(49, 51, 63, 0.78);
+            margin-top: 0.12rem;
         }
 
         @media (max-width: 768px) {
             .block-container {
-                padding-top: 1rem !important;
+                padding-top: 0.8rem !important;
                 padding-left: 0.25rem !important;
                 padding-right: 0.25rem !important;
             }
 
-            div[data-testid='stHorizontalBlock'] > div:nth-child(2),
-            div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
-                flex: 0 0 80px !important;
-                min-width: 80px !important;
-                max-width: 80px !important;
-            }
-
-            div[data-testid="stNumberInput"] input {
-                padding-left: 0.18rem !important;
-                padding-right: 0.18rem !important;
+            .order-head {
                 font-size: 0.9rem !important;
             }
 
+            .order-meta {
+                font-size: 0.76rem !important;
+            }
+
+            div[data-testid="stNumberInput"] input {
+                font-size: 0.88rem !important;
+                padding: 0.26rem 0.06rem !important;
+            }
+
+            div[data-testid="stNumberInput"] > div {
+                width: 3.8rem !important;
+                min-width: 3.8rem !important;
+                max-width: 3.8rem !important;
+            }
+
+            div[data-testid="stSelectbox"] > div {
+                width: 4.2rem !important;
+                min-width: 4.2rem !important;
+                max-width: 4.2rem !important;
+            }
+
+            div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+                min-height: 2.0rem !important;
+            }
+
             div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-                font-size: 0.86rem !important;
+                min-height: 2.0rem !important;
+                font-size: 0.84rem !important;
                 padding-left: 0.18rem !important;
-                padding-right: 0.95rem !important;
+                padding-right: 0.90rem !important;
+            }
+
+            .unit-text {
+                font-size: 0.78rem !important;
             }
         }
         </style>
@@ -298,10 +335,11 @@ def page_order_entry() -> None:
 
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
 
-    h1, h2, h3 = st.columns([6, 1, 1])
-    h1.write("**品項名稱（建議量 = 日均 × 1.5）**")
-    h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
-    h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
+    head1, head2 = st.columns([6, 2])
+    with head1:
+        st.markdown("<div class='order-head'>品項名稱（建議量 = 日均 × 1.5）</div>", unsafe_allow_html=True)
+    with head2:
+        st.markdown("<div class='order-head' style='text-align:center;'>庫　進</div>", unsafe_allow_html=True)
 
     with st.form("order_entry_form"):
         submit_rows = []
@@ -336,44 +374,50 @@ def page_order_entry() -> None:
                 if not matched.empty:
                     price = float(matched.iloc[-1]["unit_price"])
 
-            c1, c2, c3 = st.columns([6, 1, 1])
+            row_left, row_right = st.columns([6, 2])
 
-            with c1:
-                st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
+            with row_left:
+                st.markdown(f"<div class='order-item'><b>{item_name}</b></div>", unsafe_allow_html=True)
                 st.markdown(
                     f"<div class='order-meta'>總庫存：{total_stock_ref:.1f}　建議量：{suggest_qty:.1f} {status_hint}</div>",
                     unsafe_allow_html=True,
                 )
 
-            with c2:
-                stock_input = st.number_input(
-                    "庫",
-                    min_value=0.0,
-                    step=0.1,
-                    format="%.1f",
-                    value=float(current_stock_qty),
-                    key=f"stock_{item_id}",
-                    label_visibility="collapsed",
-                )
-                st.caption(stock_unit or "-")
+            with row_right:
+                stock_col, order_col = st.columns(2)
 
-            with c3:
-                order_input = st.number_input(
-                    "進",
-                    min_value=0.0,
-                    step=0.1,
-                    format="%.1f",
-                    value=0.0,
-                    key=f"order_{item_id}",
-                    label_visibility="collapsed",
-                )
-                selected_order_unit = st.selectbox(
-                    "進貨單位",
-                    options=orderable_unit_options,
-                    index=orderable_unit_options.index(order_unit) if order_unit in orderable_unit_options else 0,
-                    key=f"order_unit_{item_id}",
-                    label_visibility="collapsed",
-                )
+                with stock_col:
+                    stock_input = st.number_input(
+                        "庫",
+                        min_value=0.0,
+                        step=0.1,
+                        format="%.1f",
+                        value=float(current_stock_qty),
+                        key=f"stock_{item_id}",
+                        label_visibility="collapsed",
+                    )
+                    st.markdown(
+                        f"<div class='unit-text' style='text-align:center;'>{stock_unit or '-'}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                with order_col:
+                    order_input = st.number_input(
+                        "進",
+                        min_value=0.0,
+                        step=0.1,
+                        format="%.1f",
+                        value=0.0,
+                        key=f"order_{item_id}",
+                        label_visibility="collapsed",
+                    )
+                    selected_order_unit = st.selectbox(
+                        "進貨單位",
+                        options=orderable_unit_options,
+                        index=orderable_unit_options.index(order_unit) if order_unit in orderable_unit_options else 0,
+                        key=f"order_unit_{item_id}",
+                        label_visibility="collapsed",
+                    )
 
             submit_rows.append(
                 {
