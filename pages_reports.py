@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from oms_core import send_line_message
+
 import streamlit as st
 
 from oms_core import (
     PLOTLY_CONFIG,
     _build_inventory_history_summary_df,
     _build_purchase_detail_df,
-    _build_purchase_summary_df,
     _clean_option_list,
-    _get_active_df,
     _item_display_name,
     _norm,
     get_base_unit_cost,
@@ -220,8 +220,7 @@ def page_export():
 
     st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-    from oms_core import send_line_message
-
+    
     if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
         if send_line_message(output):
             st.success(f"✅ 已成功推送到 {store_name} 群組！")
@@ -254,8 +253,7 @@ def page_analysis():
         end_date=end,
     )
 
-    stock_df = read_table("stocktake_lines")
-    stock_header_df = read_table("stocktakes")
+
     prices_df = read_table("prices")
     items_df = read_table("items")
     conversions_df = _get_active_df(read_table("unit_conversions"))
@@ -343,7 +341,7 @@ def page_analysis():
                     "日平均",
                 ]
     
-                st.dataframe(
+                render_report_dataframe(...)
                     detail_df[show_cols],
                     use_container_width=True,
                     hide_index=True,
@@ -535,11 +533,12 @@ def page_cost_debug():
         st.caption("此品項目前沒有換算規則")
     else:
         show_cols = [c for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"] if c in conv_show.columns]
-        st.dataframe(conv_show[show_cols], use_container_width=True, hide_index=True)
+        render_report_dataframe(conv_show[show_cols], use_container_width=True, hide_index=True)
 
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
