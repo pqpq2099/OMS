@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 記憶對齊穩定版（桌機/手機 selectbox 修正版）
+# 依最近可用版回接的穩定版
 # ============================================================
 
 from __future__ import annotations
@@ -33,6 +33,13 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _norm(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "none", "nat"} else text
+
+
 def _parse_unit_options(
     orderable_units_raw: str,
     default_order_unit: str,
@@ -54,9 +61,9 @@ def _parse_unit_options(
 
 
 def _get_item_display_name(row: pd.Series) -> str:
-    item_name_zh = str(row.get("item_name_zh", "")).strip()
-    item_name = str(row.get("item_name", "")).strip()
-    item_id = str(row.get("item_id", "")).strip()
+    item_name_zh = _norm(row.get("item_name_zh", ""))
+    item_name = _norm(row.get("item_name", ""))
+    item_id = _norm(row.get("item_id", ""))
 
     if item_name_zh:
         return item_name_zh
@@ -65,18 +72,69 @@ def _get_item_display_name(row: pd.Series) -> str:
     return item_id
 
 
+def _sort_items_for_operation(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    work = df.copy()
+    work["_display_name"] = work.apply(_get_item_display_name, axis=1)
+
+    if "display_order" in work.columns:
+        work["_display_order_num"] = pd.to_numeric(
+            work["display_order"], errors="coerce"
+        ).fillna(999999)
+        work = work.sort_values(
+            ["_display_order_num", "_display_name"],
+            ascending=[True, True],
+        )
+    else:
+        work = work.sort_values(["_display_name"], ascending=[True])
+
+    return work.reset_index(drop=True)
+
+
+def _status_hint(total_stock: float, daily_avg: float, suggest_qty: float) -> str:
+    total_stock = _safe_float(total_stock)
+    daily_avg = _safe_float(daily_avg)
+    suggest_qty = _safe_float(suggest_qty)
+
+    if daily_avg > 0 and total_stock < daily_avg:
+        return "🔴"
+    if suggest_qty > 0 and total_stock < suggest_qty:
+        return "🟡"
+    return "⚪"
+
+
 def _inject_fill_items_style() -> None:
     st.markdown(
         """
         <style>
         .block-container {
-            padding-top: 1rem !important;
-            padding-left: 0.45rem !important;
-            padding-right: 0.45rem !important;
-            max-width: 920px !important;
+            padding-top: 2rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
         }
 
-        /* 移除 number input +/- */
+        [data-testid='stHorizontalBlock'] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            gap: 0.35rem !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0px !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(2),
+        div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
+            flex: 0 0 84px !important;
+            min-width: 84px !important;
+            max-width: 84px !important;
+        }
+
+        /* 移除 +/- */
         div[data-testid="stNumberInputStepUp"],
         div[data-testid="stNumberInputStepDown"],
         div[data-testid="stNumberInput"] button,
@@ -102,28 +160,14 @@ def _inject_fill_items_style() -> None:
             margin: 0 !important;
         }
 
-        div[data-testid="stNumberInput"] label {
+        div[data-testid='stNumberInput'] label {
             display: none !important;
         }
 
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
-            padding: 0.32rem 0.10rem !important;
-            font-size: 0.95rem !important;
-        }
-
-        /* 數字框寬度：只夠 9.9 / 99 */
-        div[data-testid="stNumberInput"] > div {
-            width: 4.2rem !important;
-            min-width: 4.2rem !important;
-            max-width: 4.2rem !important;
-        }
-
-        /* 下拉寬度：要看得到單位，不只箭頭 */
-        div[data-testid="stSelectbox"] > div {
-            width: 4.8rem !important;
-            min-width: 4.8rem !important;
-            max-width: 4.8rem !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
         }
 
         div[data-testid="stSelectbox"] div[data-baseweb="select"] {
@@ -134,94 +178,48 @@ def _inject_fill_items_style() -> None:
             min-height: 2.2rem !important;
             padding-top: 0 !important;
             padding-bottom: 0 !important;
-            padding-left: 0.30rem !important;
-            padding-right: 1.10rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 1.1rem !important;
             font-size: 0.92rem !important;
             white-space: nowrap !important;
-            overflow: hidden !important;
         }
 
-        div[data-testid="stSelectbox"] svg {
-            transform: scale(0.82) !important;
+        .order-divider {
+            margin: 10px 0 14px 0;
+            border-top: 1px solid rgba(128,128,128,0.25);
         }
 
-        .vendor-title {
-            font-size: 2.25rem;
-            font-weight: 800;
-            line-height: 1.1;
-            margin-bottom: 0.35rem;
-            white-space: nowrap;
-        }
-
-        .order-meta-line {
-            font-size: 0.88rem;
-            color: rgba(49,51,63,0.62);
-            margin-top: 0.05rem;
-            margin-bottom: 0.10rem;
-        }
-
-        .mobile-header-fix {
-            font-size: 0.98rem;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .stock-unit-line {
-            font-size: 0.92rem;
-            color: rgba(49,51,63,0.72);
-            text-align: center;
-            margin-top: 0.16rem;
+        .order-meta {
+            font-size: 0.78rem;
+            color: rgba(49, 51, 63, 0.85);
+            margin-top: -0.25rem;
+            margin-bottom: 0.15rem;
         }
 
         @media (max-width: 768px) {
             .block-container {
-                padding-top: 0.75rem !important;
+                padding-top: 1rem !important;
                 padding-left: 0.25rem !important;
                 padding-right: 0.25rem !important;
             }
 
-            .vendor-title {
-                font-size: 1.9rem !important;
-            }
-
-            .order-meta-line {
-                font-size: 0.78rem !important;
-            }
-
-            .mobile-header-fix {
-                font-size: 0.88rem !important;
+            div[data-testid='stHorizontalBlock'] > div:nth-child(2),
+            div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
+                flex: 0 0 80px !important;
+                min-width: 80px !important;
+                max-width: 80px !important;
             }
 
             div[data-testid="stNumberInput"] input {
-                font-size: 0.88rem !important;
-                padding: 0.26rem 0.06rem !important;
-            }
-
-            div[data-testid="stNumberInput"] > div {
-                width: 3.7rem !important;
-                min-width: 3.7rem !important;
-                max-width: 3.7rem !important;
-            }
-
-            div[data-testid="stSelectbox"] > div {
-                width: 4.1rem !important;
-                min-width: 4.1rem !important;
-                max-width: 4.1rem !important;
-            }
-
-            div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-                min-height: 2.0rem !important;
+                padding-left: 0.18rem !important;
+                padding-right: 0.18rem !important;
+                font-size: 0.9rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-                min-height: 2.0rem !important;
-                font-size: 0.84rem !important;
+                font-size: 0.86rem !important;
                 padding-left: 0.18rem !important;
                 padding-right: 0.95rem !important;
-            }
-
-            .stock-unit-line {
-                font-size: 0.82rem !important;
             }
         }
         </style>
@@ -233,106 +231,105 @@ def _inject_fill_items_style() -> None:
 def page_order_entry() -> None:
     _inject_fill_items_style()
 
-    try:
-        items = read_table("items")
-        vendors = read_table("vendors")
-        prices = read_table("prices")
-    except Exception as e:
-        st.error(f"讀取資料失敗：{e}")
+    items_df = read_table("items")
+    vendors_df = read_table("vendors")
+    prices_df = read_table("prices")
+
+    if items_df is None or items_df.empty:
+        st.warning("⚠️ 品項資料讀取失敗")
         return
 
-    if items is None or items.empty:
-        st.warning("目前沒有 items 資料。")
-        return
-
-    items = items.copy()
-    prices = prices.copy() if prices is not None else pd.DataFrame()
+    items_df = items_df.copy()
+    prices_df = prices_df.copy() if prices_df is not None else pd.DataFrame()
 
     required_item_cols = ["item_id", "default_vendor_id"]
     for col in required_item_cols:
-        if col not in items.columns:
+        if col not in items_df.columns:
             st.error(f"items 缺少欄位：{col}")
             return
 
-    items["item_name"] = _safe_col(items, "item_name", "")
-    items["item_name_zh"] = _safe_col(items, "item_name_zh", "")
-    items["base_unit"] = _safe_col(items, "base_unit", "")
-    items["default_order_unit"] = _safe_col(items, "default_order_unit", "")
-    items["default_stock_unit"] = _safe_col(items, "default_stock_unit", "")
-    items["orderable_units"] = _safe_col(items, "orderable_units", "")
-    items["default_vendor_id"] = items["default_vendor_id"].astype(str).str.strip()
+    items_df["item_name"] = _safe_col(items_df, "item_name", "")
+    items_df["item_name_zh"] = _safe_col(items_df, "item_name_zh", "")
+    items_df["base_unit"] = _safe_col(items_df, "base_unit", "")
+    items_df["default_order_unit"] = _safe_col(items_df, "default_order_unit", "")
+    items_df["default_stock_unit"] = _safe_col(items_df, "default_stock_unit", "")
+    items_df["orderable_units"] = _safe_col(items_df, "orderable_units", "")
+    items_df["default_vendor_id"] = items_df["default_vendor_id"].astype(str).str.strip()
 
-    selected_vendor_name = str(st.session_state.get("vendor", "")).strip()
+    selected_vendor_name = _norm(st.session_state.get("vendor", ""))
+    selected_vendor_id = _norm(st.session_state.get("vendor_id", ""))
 
-    if not selected_vendor_name and vendors is not None and not vendors.empty and "vendor_name" in vendors.columns:
-        selected_vendor_name = str(vendors.iloc[0]["vendor_name"]).strip()
+    if not selected_vendor_name and vendors_df is not None and not vendors_df.empty and "vendor_name" in vendors_df.columns:
+        selected_vendor_name = _norm(vendors_df.iloc[0]["vendor_name"])
+
+    if not selected_vendor_id and vendors_df is not None and not vendors_df.empty:
+        vendors_work = vendors_df.copy()
+        if {"vendor_id", "vendor_name"}.issubset(set(vendors_work.columns)):
+            vendors_work["vendor_id"] = vendors_work["vendor_id"].astype(str).str.strip()
+            vendors_work["vendor_name"] = vendors_work["vendor_name"].astype(str).str.strip()
+            matched_vendor = vendors_work[vendors_work["vendor_name"] == selected_vendor_name]
+            if not matched_vendor.empty:
+                selected_vendor_id = _norm(matched_vendor.iloc[0]["vendor_id"])
 
     if not selected_vendor_name:
         st.warning("目前沒有可用的廠商名稱。")
         return
 
-    selected_vendor_id = ""
-    if vendors is not None and not vendors.empty:
-        vendors = vendors.copy()
-        if {"vendor_id", "vendor_name"}.issubset(set(vendors.columns)):
-            vendors["vendor_id"] = vendors["vendor_id"].astype(str).str.strip()
-            vendors["vendor_name"] = vendors["vendor_name"].astype(str).str.strip()
-            matched_vendor = vendors[vendors["vendor_name"] == selected_vendor_name]
-            if not matched_vendor.empty:
-                selected_vendor_id = str(matched_vendor.iloc[0]["vendor_id"]).strip()
-
-    if selected_vendor_id:
-        vendor_items = items[items["default_vendor_id"] == selected_vendor_id].copy()
-    else:
-        items["vendor_name"] = _safe_col(items, "vendor_name", "")
-        items["vendor_name"] = items["vendor_name"].astype(str).str.strip()
-        vendor_items = items[items["vendor_name"] == selected_vendor_name].copy()
+    vendor_items = items_df[
+        items_df["default_vendor_id"].astype(str).str.strip() == selected_vendor_id
+    ].copy()
 
     if vendor_items.empty:
-        st.warning("此廠商目前沒有綁定品項。")
+        st.info("💡 此廠商目前沒有對應品項")
+        st.button(
+            "⬅️ 返回功能選單",
+            on_click=lambda: st.session_state.update(step="select_vendor"),
+            use_container_width=True,
+            key="back_from_order_entry_empty",
+        )
         return
 
-    vendor_items["display_name"] = vendor_items.apply(_get_item_display_name, axis=1)
-    vendor_items = vendor_items.sort_values("display_name").reset_index(drop=True)
+    vendor_items = _sort_items_for_operation(vendor_items)
 
-    st.markdown(f'<div class="vendor-title">📝 {selected_vendor_name}</div>', unsafe_allow_html=True)
+    st.title(f"📝 {selected_vendor_name}")
 
     with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
         st.caption("目前先保留區塊位置；之後再接歷史參考邏輯。")
 
-    st.write("---")
+    st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
 
     h1, h2, h3 = st.columns([6, 1, 1])
-    with h1:
-        st.markdown('<div class="mobile-header-fix">品項名稱（建議量 = 日均 × 1.5）</div>', unsafe_allow_html=True)
-    with h2:
-        st.markdown('<div class="mobile-header-fix" style="text-align:center;">庫</div>', unsafe_allow_html=True)
-    with h3:
-        st.markdown('<div class="mobile-header-fix" style="text-align:center;">進</div>', unsafe_allow_html=True)
+    h1.write("**品項名稱（建議量 = 日均 × 1.5）**")
+    h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+    h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
 
-    with st.form("inventory_form"):
+    with st.form("order_entry_form"):
         submit_rows = []
 
         for _, row in vendor_items.iterrows():
-            item_id = str(row["item_id"]).strip()
-            display_name = str(row["display_name"]).strip()
-            base_unit = str(row["base_unit"]).strip()
-            stock_unit = str(row["default_stock_unit"]).strip() or base_unit
-            default_order_unit = str(row["default_order_unit"]).strip()
-            orderable_units_raw = str(row["orderable_units"]).strip()
+            item_id = _norm(row.get("item_id", ""))
+            item_name = _get_item_display_name(row)
 
-            order_unit_options = _parse_unit_options(
+            base_unit = _norm(row.get("base_unit", ""))
+            stock_unit = _norm(row.get("default_stock_unit", "")) or base_unit
+            order_unit = _norm(row.get("default_order_unit", "")) or base_unit
+
+            orderable_units_raw = _norm(row.get("orderable_units", ""))
+            orderable_unit_options = _parse_unit_options(
                 orderable_units_raw=orderable_units_raw,
-                default_order_unit=default_order_unit,
+                default_order_unit=order_unit,
                 base_unit=base_unit,
             )
 
             current_stock_qty = 0.0
-            suggest_qty = 0.0
+            total_stock_ref = 0.0
+            daily_avg = 0.0
+            suggest_qty = round(daily_avg * 1.5, 1)
+            status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
             price = 0.0
-            if not prices.empty and {"item_id", "unit_price"}.issubset(set(prices.columns)):
-                p_df = prices.copy()
+            if not prices_df.empty and {"item_id", "unit_price"}.issubset(set(prices_df.columns)):
+                p_df = prices_df.copy()
                 p_df["item_id"] = p_df["item_id"].astype(str).str.strip()
                 p_df["unit_price"] = pd.to_numeric(p_df["unit_price"], errors="coerce").fillna(0)
                 matched = p_df[p_df["item_id"] == item_id]
@@ -342,103 +339,90 @@ def page_order_entry() -> None:
             c1, c2, c3 = st.columns([6, 1, 1])
 
             with c1:
-                st.markdown(f"**{display_name}**")
+                st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
                 st.markdown(
-                    f'<div class="order-meta-line">總庫存：{current_stock_qty:.1f}　建議量：{suggest_qty:.1f}</div>',
+                    f"<div class='order-meta'>總庫存：{total_stock_ref:.1f}　建議量：{suggest_qty:.1f} {status_hint}</div>",
                     unsafe_allow_html=True,
                 )
 
             with c2:
-                stock_qty = st.number_input(
+                stock_input = st.number_input(
                     "庫",
                     min_value=0.0,
                     step=0.1,
-                    key=f"s_{item_id}",
                     format="%.1f",
-                    value=0.0,
+                    value=float(current_stock_qty),
+                    key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
-                st.markdown(
-                    f'<div class="stock-unit-line">{stock_unit or "-"}</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption(stock_unit or "-")
 
             with c3:
-                order_qty = st.number_input(
+                order_input = st.number_input(
                     "進",
                     min_value=0.0,
                     step=0.1,
-                    key=f"p_{item_id}",
                     format="%.1f",
                     value=0.0,
+                    key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
-
-                default_index = 0
-                if default_order_unit in order_unit_options:
-                    default_index = order_unit_options.index(default_order_unit)
-
-                order_unit = st.selectbox(
-                    f"{item_id}_unit",
-                    options=order_unit_options,
-                    index=default_index,
+                selected_order_unit = st.selectbox(
+                    "進貨單位",
+                    options=orderable_unit_options,
+                    index=orderable_unit_options.index(order_unit) if order_unit in orderable_unit_options else 0,
+                    key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
-                    key=f"u_{item_id}",
                 )
 
             submit_rows.append(
                 {
-                    "vendor_id": selected_vendor_id,
-                    "vendor_name": selected_vendor_name,
                     "item_id": item_id,
-                    "item_name": display_name,
+                    "item_name": item_name,
+                    "stock_qty": float(stock_input),
                     "stock_unit": stock_unit,
-                    "base_unit": base_unit,
-                    "stock_qty": _safe_float(stock_qty),
-                    "order_qty": _safe_float(order_qty),
-                    "order_unit": order_unit,
-                    "current_stock_qty": current_stock_qty,
-                    "suggest_qty": suggest_qty,
+                    "order_qty": float(order_input),
+                    "order_unit": selected_order_unit,
                     "unit_price": price,
-                    "record_date": str(date.today()),
                 }
             )
 
-        if st.form_submit_button("💾 儲存並同步", use_container_width=True):
-            result_df = pd.DataFrame(submit_rows)
-            result_df = result_df[
-                (result_df["stock_qty"] > 0) | (result_df["order_qty"] > 0)
-            ].copy()
+        submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
-            if result_df.empty:
-                st.warning("你還沒有輸入任何庫存或進貨數量。")
-                return
+    if submitted:
+        result_df = pd.DataFrame(submit_rows)
+        result_df = result_df[
+            (result_df["stock_qty"] > 0) | (result_df["order_qty"] > 0)
+        ].copy()
 
-            st.success("已完成提交預覽。這一版先不寫入資料庫，只先確認畫面與輸入流程。")
-            st.dataframe(
-                result_df[
-                    [
-                        "vendor_name",
-                        "item_id",
-                        "item_name",
-                        "current_stock_qty",
-                        "suggest_qty",
-                        "stock_qty",
-                        "stock_unit",
-                        "order_qty",
-                        "order_unit",
-                        "unit_price",
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
+        if result_df.empty:
+            st.warning("你還沒有輸入任何庫存或進貨數量。")
+            return
+
+        st.success("已完成提交預覽。這一版先不寫入資料庫，只先確認畫面與輸入流程。")
+        st.dataframe(
+            result_df[
+                [
+                    "item_id",
+                    "item_name",
+                    "stock_qty",
+                    "stock_unit",
+                    "order_qty",
+                    "order_unit",
+                    "unit_price",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.caption("備註：Enter 自動跳下一格未放入這版，先以穩定畫面對齊為主。")
 
     st.button(
         "⬅️ 返回功能選單",
         on_click=lambda: st.session_state.update(step="select_vendor"),
         use_container_width=True,
-        key="back_from_fill",
+        key="back_from_order_entry",
     )
 
 
