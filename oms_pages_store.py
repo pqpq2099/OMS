@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 穩定還原版（廠商顯示 + 2:1:1 三列固定）
+# 簡潔表格式穩定版（依示意圖 2:1:1）
 # ============================================================
 
 from __future__ import annotations
@@ -26,15 +26,6 @@ def _norm(v) -> str:
         return ""
     text = str(v).strip()
     return "" if text.lower() in {"nan", "none", "nat"} else text
-
-
-def _safe_float(v, default: float = 0.0) -> float:
-    try:
-        if v in (None, ""):
-            return default
-        return float(v)
-    except Exception:
-        return default
 
 
 def _safe_col(df: pd.DataFrame, col_name: str, default_value="") -> pd.Series:
@@ -106,8 +97,8 @@ def _inject_order_page_style() -> None:
         <style>
         .block-container {
             padding-top: 0.8rem !important;
-            padding-left: 0.28rem !important;
-            padding-right: 0.28rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
             max-width: 920px !important;
         }
 
@@ -143,45 +134,15 @@ def _inject_order_page_style() -> None:
 
         div[data-testid="stNumberInput"] input {
             text-align: center !important;
-            padding: 0.22rem 0.04rem !important;
-            font-size: 0.90rem !important;
-        }
-
-        div[data-testid="stNumberInput"] > div {
-            width: 3.4rem !important;
-            min-width: 3.4rem !important;
-            max-width: 3.4rem !important;
-        }
-
-        div[data-testid="stSelectbox"] > div {
-            width: 3.8rem !important;
-            min-width: 3.8rem !important;
-            max-width: 3.8rem !important;
-        }
-
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-            min-height: 2.0rem !important;
-        }
-
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-            min-height: 2.0rem !important;
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-            padding-left: 0.18rem !important;
-            padding-right: 0.80rem !important;
-            font-size: 0.82rem !important;
-            white-space: nowrap !important;
-        }
-
-        div[data-testid="stSelectbox"] svg {
-            transform: scale(0.78) !important;
+            padding: 0.20rem 0.04rem !important;
+            font-size: 0.92rem !important;
         }
 
         .vendor-title {
-            font-size: 2.0rem;
+            font-size: 2rem;
             font-weight: 800;
             line-height: 1.1;
-            margin-top: 0.15rem;
+            margin-top: 0.1rem;
             margin-bottom: 0.5rem;
             white-space: nowrap;
         }
@@ -192,7 +153,7 @@ def _inject_order_page_style() -> None:
         }
 
         .head-text {
-            font-size: 0.95rem;
+            font-size: 0.98rem;
             font-weight: 700;
             white-space: nowrap;
         }
@@ -201,28 +162,39 @@ def _inject_order_page_style() -> None:
             font-size: 1rem;
             font-weight: 700;
             line-height: 1.25;
-            margin-bottom: 0.12rem;
+            margin-bottom: 0.06rem;
             word-break: break-word;
         }
 
         .meta-line {
-            font-size: 0.76rem;
+            font-size: 0.80rem;
             color: rgba(49, 51, 63, 0.82);
-            line-height: 1.25;
-            margin-top: 0.08rem;
-        }
-
-        .unit-line {
-            font-size: 0.78rem;
-            color: rgba(49, 51, 63, 0.78);
-            text-align: center;
-            margin-top: 0.10rem;
+            line-height: 1.2;
+            margin-top: 0.04rem;
             white-space: nowrap;
         }
 
+        .unit-line {
+            font-size: 0.85rem;
+            color: rgba(49, 51, 63, 0.82);
+            text-align: center;
+            white-space: nowrap;
+            margin-top: -0.1rem;
+        }
+
+        .row-gap {
+            height: 0.15rem;
+        }
+
         @media (max-width: 768px) {
+            .block-container {
+                padding-top: 0.6rem !important;
+                padding-left: 0.22rem !important;
+                padding-right: 0.22rem !important;
+            }
+
             .vendor-title {
-                font-size: 1.7rem !important;
+                font-size: 1.65rem !important;
             }
 
             .head-text {
@@ -234,25 +206,20 @@ def _inject_order_page_style() -> None:
             }
 
             .meta-line {
-                font-size: 0.70rem !important;
+                font-size: 0.72rem !important;
             }
 
-            div[data-testid="stNumberInput"] > div {
-                width: 3.1rem !important;
-                min-width: 3.1rem !important;
-                max-width: 3.1rem !important;
+            .unit-line {
+                font-size: 0.78rem !important;
             }
 
-            div[data-testid="stSelectbox"] > div {
-                width: 3.4rem !important;
-                min-width: 3.4rem !important;
-                max-width: 3.4rem !important;
+            div[data-testid="stNumberInput"] input {
+                font-size: 0.86rem !important;
+                padding: 0.16rem 0.03rem !important;
             }
 
             div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-                font-size: 0.78rem !important;
-                padding-left: 0.12rem !important;
-                padding-right: 0.72rem !important;
+                font-size: 0.80rem !important;
             }
         }
         </style>
@@ -266,19 +233,16 @@ def _inject_order_page_style() -> None:
 # ============================================================
 
 def page_order_entry() -> None:
-    st.error("現在跑的是 oms_pages_store.py / page_order_entry")
     _inject_order_page_style()
 
     items_df = read_table("items")
     vendors_df = read_table("vendors")
-    prices_df = read_table("prices")
 
     if items_df is None or items_df.empty:
         st.warning("⚠️ 品項資料讀取失敗")
         return
 
     items_df = items_df.copy()
-    prices_df = prices_df.copy() if prices_df is not None else pd.DataFrame()
 
     required_item_cols = ["item_id", "default_vendor_id"]
     for col in required_item_cols:
@@ -332,7 +296,6 @@ def page_order_entry() -> None:
 
     vendor_items = _sort_items_for_operation(vendor_items)
 
-    # 廠商標題固定顯示
     st.markdown(
         f"<div class='vendor-title'>📝 {selected_vendor_name}</div>",
         unsafe_allow_html=True,
@@ -343,10 +306,10 @@ def page_order_entry() -> None:
 
     st.markdown("<div class='section-line'></div>", unsafe_allow_html=True)
 
-    # 表頭固定同一行 2:1:1
+    # 表頭：固定同一行 2:1:1
     h1, h2, h3 = st.columns([2, 1, 1], gap="small")
     with h1:
-        st.markdown("<div class='head-text'>品項名稱（建議量 = 日均 × 1.5）</div>", unsafe_allow_html=True)
+        st.markdown("<div class='head-text'>品項名稱（建議量=日均×1.5）</div>", unsafe_allow_html=True)
     with h2:
         st.markdown("<div class='head-text' style='text-align:center;'>庫</div>", unsafe_allow_html=True)
     with h3:
@@ -370,20 +333,11 @@ def page_order_entry() -> None:
                 base_unit=base_unit,
             )
 
+            # 先用穩定版固定值，之後再接真資料
             total_stock_ref = 0.0
-            daily_avg = 0.0
-            suggest_qty = round(daily_avg * 1.5, 1)
+            suggest_qty = 0.0
 
-            price = 0.0
-            if not prices_df.empty and {"item_id", "unit_price"}.issubset(set(prices_df.columns)):
-                p_df = prices_df.copy()
-                p_df["item_id"] = p_df["item_id"].astype(str).str.strip()
-                p_df["unit_price"] = pd.to_numeric(p_df["unit_price"], errors="coerce").fillna(0)
-                matched = p_df[p_df["item_id"] == item_id]
-                if not matched.empty:
-                    price = float(matched.iloc[-1]["unit_price"])
-
-            # 第1列：品名 / 空 / 空
+            # 第 1 列：品項名稱 / 庫 / 進（同一行）
             r1c1, r1c2, r1c3 = st.columns([2, 1, 1], gap="small")
             with r1c1:
                 st.markdown(f"<div class='item-name'>{item_name}</div>", unsafe_allow_html=True)
@@ -392,11 +346,11 @@ def page_order_entry() -> None:
             with r1c3:
                 st.write("")
 
-            # 第2列：資訊 / 庫存輸入 / 進貨輸入
+            # 第 2 列：名稱下方資訊 / 庫存輸入 / 進貨輸入
             r2c1, r2c2, r2c3 = st.columns([2, 1, 1], gap="small")
             with r2c1:
                 st.markdown(
-                    f"<div class='meta-line'>總庫存：{total_stock_ref:.1f}　建議量：{suggest_qty:.1f}</div>",
+                    f"<div class='meta-line'>總庫存：{total_stock_ref:.1f} 建議量：{suggest_qty:.1f}</div>",
                     unsafe_allow_html=True,
                 )
             with r2c2:
@@ -420,15 +374,12 @@ def page_order_entry() -> None:
                     label_visibility="collapsed",
                 )
 
-            # 第3列：空 / 庫存單位 / 進貨單位
+            # 第 3 列：空 / 固定單位 / 下拉單位
             r3c1, r3c2, r3c3 = st.columns([2, 1, 1], gap="small")
             with r3c1:
                 st.write("")
             with r3c2:
-                st.markdown(
-                    f"<div class='unit-line'>{stock_unit or '-'}</div>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f"<div class='unit-line'>{stock_unit or '-'}</div>", unsafe_allow_html=True)
             with r3c3:
                 selected_order_unit = st.selectbox(
                     "進貨單位",
@@ -438,7 +389,7 @@ def page_order_entry() -> None:
                     label_visibility="collapsed",
                 )
 
-            st.write("")
+            st.markdown("<div class='row-gap'></div>", unsafe_allow_html=True)
 
             submit_rows.append(
                 {
@@ -448,7 +399,6 @@ def page_order_entry() -> None:
                     "stock_unit": stock_unit,
                     "order_qty": float(order_input),
                     "order_unit": selected_order_unit,
-                    "unit_price": price,
                 }
             )
 
@@ -465,21 +415,7 @@ def page_order_entry() -> None:
             return
 
         st.success("已完成提交預覽。這一版先不寫入資料庫，只先確認畫面與輸入流程。")
-        st.dataframe(
-            result_df[
-                [
-                    "item_id",
-                    "item_name",
-                    "stock_qty",
-                    "stock_unit",
-                    "order_qty",
-                    "order_unit",
-                    "unit_price",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.dataframe(result_df, use_container_width=True, hide_index=True)
 
     st.button(
         "⬅️ 返回功能選單",
@@ -502,4 +438,3 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
-
