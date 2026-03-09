@@ -1,6 +1,6 @@
 # ============================================================
 # ORIVIA OMS - Store Pages
-# 穩定版（手機不再硬擠三欄）
+# 穩定版（避免手機 / 桌機跑版）
 # ============================================================
 
 from __future__ import annotations
@@ -11,98 +11,277 @@ import streamlit as st
 from oms_data import read_table
 
 
-def _page_header(title: str, desc: str) -> None:
-    st.title(title)
-    st.caption(desc)
-    st.divider()
+# ============================================================
+# Style（只控制輸入框，不碰整頁）
+# ============================================================
+
+def inject_style():
+
+    st.markdown(
+        """
+<style>
+
+.block-container{
+    padding-top:1rem;
+    padding-left:0.4rem;
+    padding-right:0.4rem;
+    max-width:900px;
+}
+
+/* 移除 +/- */
+div[data-testid="stNumberInputStepUp"],
+div[data-testid="stNumberInputStepDown"],
+div[data-testid="stNumberInput"] button{
+    display:none;
+}
+
+/* number input */
+
+div[data-testid="stNumberInput"] input{
+    text-align:center;
+    padding:0.25rem;
+}
+
+/* 數字框寬度 */
+
+div[data-testid="stNumberInput"] > div{
+    width:70px;
+}
+
+/* selectbox */
+
+div[data-testid="stSelectbox"] > div{
+    width:80px;
+}
+
+div[data-testid="stSelectbox"] div[data-baseweb="select"] > div{
+    font-size:0.9rem;
+}
+
+/* meta */
+
+.order-meta{
+    font-size:0.8rem;
+    color:#666;
+}
+
+</style>
+""",
+        unsafe_allow_html=True,
+    )
 
 
-def _safe_col(df: pd.DataFrame, col_name: str, default_value="") -> pd.Series:
-    if col_name in df.columns:
-        return df[col_name]
-    return pd.Series([default_value] * len(df), index=df.index)
+# ============================================================
+# Helper
+# ============================================================
 
-
-def _safe_float(value, default: float = 0.0) -> float:
-    try:
-        if value in (None, ""):
-            return default
-        return float(value)
-    except Exception:
-        return default
-
-
-def _norm(value) -> str:
-    if value is None:
+def norm(v):
+    if v is None:
         return ""
-    text = str(value).strip()
-    return "" if text.lower() in {"nan", "none", "nat"} else text
+    return str(v).strip()
 
 
-def _parse_unit_options(
-    orderable_units_raw: str,
-    default_order_unit: str,
-    base_unit: str,
-) -> list[str]:
-    options: list[str] = []
-
-    if orderable_units_raw:
-        options = [u.strip() for u in str(orderable_units_raw).split(",") if u.strip()]
-
-    if default_order_unit and default_order_unit not in options:
-        options.insert(0, default_order_unit)
-
-    if not options:
-        fallback = default_order_unit or base_unit or ""
-        options = [fallback]
-
-    return options
+def safe_float(v):
+    try:
+        return float(v)
+    except:
+        return 0.0
 
 
-def _get_item_display_name(row: pd.Series) -> str:
-    item_name_zh = _norm(row.get("item_name_zh", ""))
-    item_name = _norm(row.get("item_name", ""))
-    item_id = _norm(row.get("item_id", ""))
+def parse_units(raw, default_unit, base_unit):
 
-    if item_name_zh:
-        return item_name_zh
-    if item_name:
-        return item_name
-    return item_id
+    units = []
 
+    if raw:
+        units = [u.strip() for u in raw.split(",") if u.strip()]
 
-def _sort_items_for_operation(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
+    if default_unit and default_unit not in units:
+        units.insert(0, default_unit)
 
-    work = df.copy()
-    work["_display_name"] = work.apply(_get_item_display_name, axis=1)
+    if not units:
+        units = [default_unit or base_unit]
 
-    if "display_order" in work.columns:
-        work["_display_order_num"] = pd.to_numeric(
-            work["display_order"], errors="coerce"
-        ).fillna(999999)
-        work = work.sort_values(
-            ["_display_order_num", "_display_name"],
-            ascending=[True, True],
-        )
-    else:
-        work = work.sort_values(["_display_name"], ascending=[True])
-
-    return work.reset_index(drop=True)
+    return units
 
 
-def _status_hint(total_stock: float, daily_avg: float, suggest_qty: float) -> str:
-    total_stock = _safe_float(total_stock)
-    daily_avg = _safe_float(daily_avg)
-    suggest_qty = _safe_float(suggest_qty)
+def item_display(row):
 
-    if daily_avg > 0 and total_stock < daily_avg:
-        return "🔴"
-    if suggest_qty > 0 and total_stock < suggest_qty:
-        return "🟡"
-    return "⚪"
+    zh = norm(row.get("item_name_zh"))
+    en = norm(row.get("item_name"))
 
+    if zh:
+        return zh
+
+    if en:
+        return en
+
+    return norm(row.get("item_id"))
+
+
+# ============================================================
+# Page
+# ============================================================
+
+def page_order_entry():
+
+    inject_style()
+
+    items = read_table("items")
+    vendors = read_table("vendors")
+    prices = read_table("prices")
+
+    if items is None or items.empty:
+        st.warning("items 無資料")
+        return
+
+    vendor_name = norm(st.session_state.get("vendor"))
+    vendor_id = norm(st.session_state.get("vendor_id"))
+
+    if not vendor_name and vendors is not None and not vendors.empty:
+        vendor_name = vendors.iloc[0]["vendor_name"]
+
+    if not vendor_id and vendors is not None:
+
+        v = vendors[vendors["vendor_name"] == vendor_name]
+
+        if not v.empty:
+            vendor_id = v.iloc[0]["vendor_id"]
+
+    vendor_items = items[
+        items["default_vendor_id"].astype(str).str.strip() == vendor_id
+    ].copy()
+
+    if vendor_items.empty:
+        st.warning("此廠商沒有品項")
+        return
+
+    vendor_items["display"] = vendor_items.apply(item_display, axis=1)
+
+    vendor_items = vendor_items.sort_values("display")
+
+    st.title(f"📝 {vendor_name}")
+
+    st.write("---")
+
+    head1, head2 = st.columns([5,2])
+
+    with head1:
+        st.write("**品項名稱（建議量 = 日均 × 1.5）**")
+
+    with head2:
+        st.write("**庫 / 進**")
+
+    with st.form("order_form"):
+
+        rows = []
+
+        for _, row in vendor_items.iterrows():
+
+            item_id = norm(row["item_id"])
+            name = norm(row["display"])
+
+            base_unit = norm(row.get("base_unit"))
+            stock_unit = norm(row.get("default_stock_unit")) or base_unit
+            order_unit = norm(row.get("default_order_unit")) or base_unit
+
+            units = parse_units(
+                norm(row.get("orderable_units")),
+                order_unit,
+                base_unit,
+            )
+
+            c1, c2 = st.columns([5,2])
+
+            with c1:
+
+                st.write(f"**{name}**")
+
+                st.markdown(
+                    "<div class='order-meta'>總庫存：0.0　建議量：0.0</div>",
+                    unsafe_allow_html=True,
+                )
+
+            with c2:
+
+                s1, s2 = st.columns(2)
+
+                with s1:
+
+                    stock = st.number_input(
+                        "庫",
+                        min_value=0.0,
+                        step=0.1,
+                        format="%.1f",
+                        key=f"s_{item_id}",
+                        label_visibility="collapsed",
+                    )
+
+                    st.caption(stock_unit)
+
+                with s2:
+
+                    order = st.number_input(
+                        "進",
+                        min_value=0.0,
+                        step=0.1,
+                        format="%.1f",
+                        key=f"o_{item_id}",
+                        label_visibility="collapsed",
+                    )
+
+                    unit = st.selectbox(
+                        "單位",
+                        units,
+                        key=f"u_{item_id}",
+                        label_visibility="collapsed",
+                    )
+
+            rows.append(
+                {
+                    "item_id":item_id,
+                    "item_name":name,
+                    "stock":safe_float(stock),
+                    "stock_unit":stock_unit,
+                    "order":safe_float(order),
+                    "order_unit":unit,
+                }
+            )
+
+        submit = st.form_submit_button("💾 儲存並同步", use_container_width=True)
+
+    if submit:
+
+        df = pd.DataFrame(rows)
+
+        df = df[(df.stock>0)|(df.order>0)]
+
+        if df.empty:
+
+            st.warning("沒有輸入資料")
+
+            return
+
+        st.success("提交成功（目前為預覽）")
+
+        st.dataframe(df, use_container_width=True)
+
+
+# ============================================================
+# Other Pages
+# ============================================================
+
+def page_order_history():
+
+    st.title("叫貨紀錄")
+
+    st.info("未接資料")
+
+
+def page_stocktake_history():
+
+    st.title("盤點歷史")
+
+    st.info("未接資料")
 
 def _inject_fill_items_style() -> None:
     st.markdown(
@@ -479,3 +658,4 @@ def page_stocktake_history() -> None:
     _page_header("盤點歷史", "查看每次盤點前後的庫存變化與期間消耗。")
     st.info("骨架版：此頁先保留位置，後續再接 stocktakes / stocktake_lines。")
     st.write("上次庫存 + 期間進貨 - 這次庫存 = 期間消耗")
+
