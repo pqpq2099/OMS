@@ -2,25 +2,27 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from oms_core import send_line_message
-
 import streamlit as st
 
 from oms_core import (
     PLOTLY_CONFIG,
     _build_inventory_history_summary_df,
     _build_purchase_detail_df,
+    _build_purchase_summary_df,
     _clean_option_list,
+    _get_active_df,
     _item_display_name,
     _norm,
     get_base_unit_cost,
     read_table,
     render_report_dataframe,
+    send_line_message,
 )
 
 # Plotly (optional)
 try:
     import plotly.express as px
+
     HAS_PLOTLY = True
 except Exception:
     HAS_PLOTLY = False
@@ -57,12 +59,12 @@ def page_view_history():
     h_start = c_h_date1.date_input(
         "起始日期",
         value=date.today() - timedelta(days=30),
-        key="hist_start_date"
+        key="hist_start_date",
     )
     h_end = c_h_date2.date_input(
         "結束日期",
         value=date.today(),
-        key="hist_end_date"
+        key="hist_end_date",
     )
 
     hist_df = _build_inventory_history_summary_df(
@@ -97,14 +99,13 @@ def page_view_history():
             ]
 
             detail_df = filt_df.copy()
-
             detail_df = detail_df[
                 (detail_df["上次庫存"] != 0)
                 | (detail_df["期間進貨"] != 0)
                 | (detail_df["期間消耗"] != 0)
                 | (detail_df["這次庫存"] != 0)
             ].copy()
-            
+
             render_report_dataframe(
                 detail_df[show_cols],
                 column_config={
@@ -116,8 +117,9 @@ def page_view_history():
                     "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                }
+                },
             )
+
     with t2:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
@@ -220,7 +222,6 @@ def page_export():
 
     st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-    
     if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
         if send_line_message(output):
             st.success(f"✅ 已成功推送到 {store_name} 群組！")
@@ -253,7 +254,6 @@ def page_analysis():
         end_date=end,
     )
 
-
     prices_df = read_table("prices")
     items_df = read_table("items")
     conversions_df = _get_active_df(read_table("unit_conversions"))
@@ -267,7 +267,9 @@ def page_analysis():
 
     st.markdown("---")
 
-    all_items = ["全部品項"] + _clean_option_list(hist_df.get("品項", []).dropna().tolist() if not hist_df.empty else [])
+    all_items = ["全部品項"] + _clean_option_list(
+        hist_df.get("品項", []).dropna().tolist() if not hist_df.empty else []
+    )
     selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
 
     hist_filt = hist_df.copy()
@@ -282,11 +284,10 @@ def page_analysis():
     total_buy = float(purchase_filt.get("採購金額", []).sum()) if not purchase_filt.empty else 0.0
 
     total_stock_value = 0.0
-    
-    
+
     if not hist_filt.empty and not items_df.empty and not prices_df.empty:
         latest_rows = hist_filt.sort_values("日期_dt").groupby("item_id", as_index=False).tail(1).copy()
-        
+
         latest_rows["base_unit_cost"] = latest_rows.apply(
             lambda r: get_base_unit_cost(
                 item_id=_norm(r.get("item_id", "")),
@@ -294,10 +295,13 @@ def page_analysis():
                 items_df=items_df,
                 prices_df=prices_df,
                 conversions_df=conversions_df,
-            ) or 0.0,
+            )
+            or 0.0,
             axis=1,
         )
-        latest_rows["stock_value"] = latest_rows["這次庫存"].astype(float) * latest_rows["base_unit_cost"].astype(float)
+        latest_rows["stock_value"] = (
+            latest_rows["這次庫存"].astype(float) * latest_rows["base_unit_cost"].astype(float)
+        )
         total_stock_value = float(latest_rows["stock_value"].sum())
 
     st.markdown(
@@ -315,47 +319,44 @@ def page_analysis():
     t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
 
     with t_detail:
-            st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
-    
-            if hist_filt.empty:
-                st.info("💡 尚未產生進銷存資料")
-            else:
-                detail_df = hist_filt.copy()
-    
-                # 完全沒變化的列不顯示
-                detail_df = detail_df[
-                    (detail_df["上次庫存"] != 0)
-                    | (detail_df["期間進貨"] != 0)
-                    | (detail_df["期間消耗"] != 0)
-                    | (detail_df["這次庫存"] != 0)
-                ].copy()
-    
-                show_cols = [
-                    "日期顯示",
-                    "品項",
-                    "上次庫存",
-                    "期間進貨",
-                    "庫存合計",
-                    "這次庫存",
-                    "期間消耗",
-                    "日平均",
-                ]
-    
-                render_report_dataframe(...)
-                    detail_df[show_cols],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                        "品項": st.column_config.TextColumn(width="small"),
-                        "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    },
-                )
+        st.write("<b>📋 進銷存匯總明細</b>", unsafe_allow_html=True)
+
+        if hist_filt.empty:
+            st.info("💡 尚未產生進銷存資料")
+        else:
+            detail_df = hist_filt.copy()
+            detail_df = detail_df[
+                (detail_df["上次庫存"] != 0)
+                | (detail_df["期間進貨"] != 0)
+                | (detail_df["期間消耗"] != 0)
+                | (detail_df["這次庫存"] != 0)
+            ].copy()
+
+            show_cols = [
+                "日期顯示",
+                "品項",
+                "上次庫存",
+                "期間進貨",
+                "庫存合計",
+                "這次庫存",
+                "期間消耗",
+                "日平均",
+            ]
+
+            render_report_dataframe(
+                detail_df[show_cols],
+                column_config={
+                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                    "品項": st.column_config.TextColumn(width="small"),
+                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                },
+            )
+
     with t_trend:
         if not HAS_PLOTLY:
             st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
@@ -433,7 +434,7 @@ def page_cost_debug():
     work = items_df.copy()
     work["item_label"] = work.apply(
         lambda r: f"{_item_display_name(r)} ({_norm(r.get('item_id', ''))})",
-        axis=1
+        axis=1,
     )
     work = work.sort_values("item_label")
 
@@ -452,7 +453,9 @@ def page_cost_debug():
         key="cost_debug_date",
     )
 
-    item_row = work[work["item_id"].astype(str).str.strip() == str(selected_item_id).strip()].iloc[0]
+    item_row = work[
+        work["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
+    ].iloc[0]
 
     base_unit = _norm(item_row.get("base_unit", ""))
     default_stock_unit = _norm(item_row.get("default_stock_unit", ""))
@@ -466,17 +469,22 @@ def page_cost_debug():
 
         if "is_active" in price_rows.columns:
             price_rows = price_rows[
-                price_rows["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"])
+                price_rows["is_active"].apply(
+                    lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"]
+                )
             ].copy()
 
         if "effective_date" in price_rows.columns:
-            price_rows["__eff"] = price_rows["effective_date"].apply(lambda x: x if isinstance(x, date) else None)
-            price_rows["__eff"] = price_rows["effective_date"].apply(lambda x: None if str(x).strip() == "" else __import__("pandas").to_datetime(x).date())
+            price_rows["__eff"] = price_rows["effective_date"].apply(
+                lambda x: None if str(x).strip() == "" else __import__("pandas").to_datetime(x).date()
+            )
         else:
             price_rows["__eff"] = None
 
         if "end_date" in price_rows.columns:
-            price_rows["__end"] = price_rows["end_date"].apply(lambda x: None if str(x).strip() == "" else __import__("pandas").to_datetime(x).date())
+            price_rows["__end"] = price_rows["end_date"].apply(
+                lambda x: None if str(x).strip() == "" else __import__("pandas").to_datetime(x).date()
+            )
         else:
             price_rows["__end"] = None
 
@@ -532,8 +540,12 @@ def page_cost_debug():
     if conv_show.empty:
         st.caption("此品項目前沒有換算規則")
     else:
-        show_cols = [c for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"] if c in conv_show.columns]
-        render_report_dataframe(conv_show[show_cols], use_container_width=True, hide_index=True)
+        show_cols = [
+            c
+            for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"]
+            if c in conv_show.columns
+        ]
+        render_report_dataframe(conv_show[show_cols])
 
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
