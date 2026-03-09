@@ -121,7 +121,7 @@ def render_item_row(item, units_df):
 # ---------------------------------------------------------
 # 主頁
 # ---------------------------------------------------------
-def page_stocktake(items_df, units_df):
+def render_page_stocktake(items_df, units_df):
 
     apply_compact_style()
 
@@ -148,3 +148,13 @@ def page_stocktake(items_df, units_df):
         st.dataframe(df)
 
         # 這裡之後會接 DB 寫入
+# ---------------------------------------------------------
+# 頁面入口（給 app.py 用）
+# ---------------------------------------------------------
+def page_stocktake():
+
+    # 之後改成正式資料來源
+    items_df = pd.DataFrame()
+    units_df = pd.DataFrame()
+
+    render_page_stocktake(items_df, units_df)
