@@ -180,8 +180,9 @@ def page_order_entry():
 
         .order-unit-label {
             text-align: center;
-            font-size: 0.8rem;
-            opacity: 0.8;
+            font-size: 0.95rem;
+            font-weight: 500;
+            opacity: 0.9;
             margin-top: 0.15rem;
         }
         </style>
@@ -334,10 +335,7 @@ def page_order_entry():
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
                 tail = f"　{status_hint}" if status_hint else ""
                 st.markdown(
-                    f"<div class='order-meta'>總庫存：{total_stock_ref:.1f}　建議量：{suggest_qty:.1f}{tail}</div>",
-                    unsafe_allow_html=True,
-                )
-
+                    f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>"
             with c2:
                 stock_input = st.number_input(
                     "庫",
@@ -548,4 +546,5 @@ def page_order_entry():
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
