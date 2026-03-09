@@ -1,7 +1,6 @@
 from __future__ import annotations
-
 from datetime import date
-
+from oms_core import read_table
 import streamlit as st
 
 from oms_core import (
@@ -147,6 +146,22 @@ def page_select_vendor():
 # [E3] Order Entry
 # ============================================================
 def page_order_entry():
+    # ============================================================
+    # 初始化庫存判斷
+    # ============================================================
+    stocktakes_df = read_table("stocktakes")
+
+    store_stocktakes = stocktakes_df[
+        stocktakes_df["store_id"] == st.session_state.store_id
+    ]
+
+    is_initial_stock = len(store_stocktakes) == 0
+
+    if is_initial_stock:
+        st.warning(
+            "⚠️ 目前尚無庫存基準資料，本次儲存將建立「初始化庫存」。"
+            "請先填寫目前實際庫存，進貨欄位先不要填。"
+        )
     st.markdown(
         """
         <style>
@@ -480,7 +495,7 @@ def _save_order_entry(
             "store_id": store_id,
             "stocktake_date": str(record_date),
             "status": "done",
-            "note": f"vendor={vendor_id}",
+            "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
             "created_at": now,
             "created_by": "SYSTEM",
         }
@@ -603,3 +618,4 @@ def _save_order_entry(
 
     bust_cache()
     return po_id
+
