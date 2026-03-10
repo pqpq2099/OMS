@@ -103,83 +103,83 @@ def get_system_name() -> str:
         return default_name
 
 
-def save_setting(setting_key: str, setting_value: str) -> None:
-    """
-    將設定寫回 settings 表。
-    規則：
-    - 有 system_name 就更新
-    - 沒有就新增一列
-    """
+def save_setting(setting_key: str, setting_value: str):
+
     settings_df = read_table("settings").copy()
 
-    # 如果 settings 表完全是空的，先建立最基本結構
+    # 如果完全沒有資料
     if settings_df.empty:
-        settings_df = pd.DataFrame(columns=["key", "value"])
+        settings_df = pd.DataFrame({
+            "key": [setting_key],
+            "value": [setting_value],
+        })
 
-    settings_df.columns = [str(c).strip() for c in settings_df.columns]
-    key_col, value_col = _get_settings_key_value_cols(settings_df)
-
-    # 如果現有 settings 欄位不符合，就用最簡單 key/value 結構
-    if not key_col or not value_col:
-        settings_df = pd.DataFrame(columns=["key", "value"])
-        key_col = "key"
-        value_col = "value"
-
-    work = settings_df.copy()
-    work.columns = [str(c).strip() for c in work.columns]
-
-    mask = work[key_col].astype(str).str.strip().str.lower() == setting_key.lower()
-
-    if mask.any():
-        work.loc[mask, value_col] = setting_value
     else:
-        new_row = {c: "" for c in work.columns}
-        new_row[key_col] = setting_key
-        new_row[value_col] = setting_value
-        work = pd.concat([work, pd.DataFrame([new_row])], ignore_index=True)
 
-    header = get_header("settings")
-    if not header:
-        # 如果抓不到 header，就退回目前欄位
-        header = list(work.columns)
+        settings_df.columns = [str(c).strip() for c in settings_df.columns]
 
-    # 對齊 header，避免 append_rows_by_header 寫壞
-    for c in header:
-        if c not in work.columns:
-            work[c] = ""
+        key_col = None
+        value_col = None
 
-    work = work[header].copy()
+        for c in ["key", "setting_key", "name", "setting_name"]:
+            if c in settings_df.columns:
+                key_col = c
+                break
 
-    # 這裡用覆蓋型重寫策略：
-    # 先清 cache，再直接把 settings 表全部內容重寫
-    # 若你的 oms_core 沒有 overwrite function，這版先改成：
-    # 1) 若 key 已存在則只新增一筆會重複，不理想
-    # 因此這邊改用 Google Sheet 最穩邏輯：透過 get_header + append_rows_by_header 不足以更新舊列
-    # 所以此版本採「若已存在就提示需要 update support」會較安全
-    #
-    # 但為了讓你先看 UI，這裡先用簡化策略：
-    # - 若已存在 system_name，仍新增一筆最新值
-    # - get_system_name() 讀取時抓第一筆命中值
-    # 會導致舊值殘留，不理想
-    #
-    # 因此這裡改成：如果 settings 表目前已有 key/value 結構，就只允許新增第一筆；
-    # 若已有 system_name，則直接拋出訊息提示需後續補 update function。
-    #
-    # 為了避免你現在寫壞表，先做安全版：
-    existing = settings_df.copy()
-    existing.columns = [str(c).strip() for c in existing.columns]
-    existing_key_col, _ = _get_settings_key_value_cols(existing)
+        for c in ["value", "setting_value", "setting", "setting_val"]:
+            if c in settings_df.columns:
+                value_col = c
+                break
 
-    if existing_key_col and not existing.empty:
-        existing_mask = existing[existing_key_col].astype(str).str.strip().str.lower() == setting_key.lower()
-        if existing_mask.any():
-            raise ValueError("目前 settings 更新功能尚未支援覆寫舊值，請先刪除舊的 system_name 再儲存一次。")
+        if not key_col or not value_col:
+            raise ValueError("settings 表找不到 key/value 欄位")
 
-    row_to_append = {c: "" for c in header}
-    row_to_append[key_col] = setting_key
-    row_to_append[value_col] = setting_value
+        mask = (
+            settings_df[key_col]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            == setting_key.lower()
+        )
 
-    append_rows_by_header("settings", header, [row_to_append])
+        if mask.any():
+            settings_df.loc[mask, value_col] = setting_value
+        else:
+            new_row = {c: "" for c in settings_df.columns}
+            new_row[key_col] = setting_key
+            new_row[value_col] = setting_value
+            settings_df = pd.concat(
+                [settings_df, pd.DataFrame([new_row])],
+                ignore_index=True
+            )
+
+    # ------------------------------------------------
+    # 覆寫整張 settings 表
+    # ------------------------------------------------
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scope,
+    )
+
+    gc = gspread.authorize(creds)
+
+    sheet = gc.open_by_key(st.secrets["SHEET_ID"]).worksheet("settings")
+
+    sheet.clear()
+
+    sheet.update(
+        [settings_df.columns.values.tolist()]
+        + settings_df.values.tolist()
+    )
+
     bust_cache()
 
 
@@ -403,3 +403,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
