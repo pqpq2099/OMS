@@ -270,33 +270,52 @@ def _status_hint(total_stock: float, daily_avg: float, suggest_qty: float) -> st
 # ============================================================
 # Google Sheets Client
 # ============================================================
-@st.cache_resource(show_spinner=False)
-def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
+@st.cache_data(show_spinner=False, ttl=120)
+def read_table(sheet_name: str) -> pd.DataFrame:
+    sh = get_spreadsheet()
+    if sh is None:
+        return pd.DataFrame()
 
     try:
-        if "gcp_service_account" in st.secrets:
-            creds = Credentials.from_service_account_info(
-                dict(st.secrets["gcp_service_account"]),
-                scopes=scopes,
-            )
-        else:
-            if not LOCAL_SERVICE_ACCOUNT.exists():
-                st.error(f"找不到本機金鑰：{LOCAL_SERVICE_ACCOUNT}")
-                return None
-    
-            creds = Credentials.from_service_account_file(
-                str(LOCAL_SERVICE_ACCOUNT),
-                scopes=scopes,
-            )
-    
-        return gspread.authorize(creds)
+        ws = sh.worksheet(sheet_name)
+        values = ws.get_all_values()
+
+        # 連表頭都沒有
+        if not values:
+            return pd.DataFrame()
+
+        header = [_norm(c) for c in values[0]]
+        rows = values[1:]
+
+        # 只有表頭，沒有資料列
+        if not rows:
+            return pd.DataFrame(columns=header)
+
+        normalized_rows = []
+        for row in rows:
+            row = list(row)
+
+            # 補齊不足欄位
+            if len(row) < len(header):
+                row = row + [""] * (len(header) - len(row))
+            else:
+                row = row[:len(header)]
+
+            normalized_rows.append(row)
+
+        df = pd.DataFrame(normalized_rows, columns=header)
+
+        # 移除整列都空白的資料，但保留表頭
+        if not df.empty:
+            df = df[
+                df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
+            ].reset_index(drop=True)
+
+        return df
+
     except Exception as e:
-        st.error(f"Google Sheets 連線失敗：{e}")
-        return None
+        st.warning(f"{sheet_name} 讀取失敗：{e}")
+        return pd.DataFrame()
 
 
 def _get_secret_sheet_id() -> str:
@@ -334,27 +353,32 @@ def read_table(sheet_name: str) -> pd.DataFrame:
         ws = sh.worksheet(sheet_name)
         values = ws.get_all_values()
 
+        # 連表頭都沒有
         if not values:
             return pd.DataFrame()
 
         header = [_norm(c) for c in values[0]]
         rows = values[1:]
 
-        # 如果只有表頭沒有資料列
+        # 只有表頭，沒有資料列
         if not rows:
             return pd.DataFrame(columns=header)
 
         normalized_rows = []
         for row in rows:
             row = list(row)
+
+            # 補齊不足欄位
             if len(row) < len(header):
                 row = row + [""] * (len(header) - len(row))
             else:
                 row = row[:len(header)]
+
             normalized_rows.append(row)
 
         df = pd.DataFrame(normalized_rows, columns=header)
 
+        # 移除整列都空白的資料，但保留表頭
         if not df.empty:
             df = df[
                 df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
@@ -1201,6 +1225,7 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
 
 
 
