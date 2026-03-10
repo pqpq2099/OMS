@@ -779,31 +779,31 @@ def _save_order_entry(
 # 2. 顯示當天叫貨內容
 # 3. 顯示方式與LINE通知一致
 # ============================================================
-
 def page_order_message_detail():
     st.title("🧾 叫貨明細")
 
-    # ============================================================
-    # 分店確認
-    # ============================================================
-    store_id = st.session_state.get("store_id")
+    # ========================================================
+    # 1. 先確認目前分店
+    # ========================================================
+    store_id = st.session_state.get("store_id", "")
+    store_name = st.session_state.get("store_name", "")
 
     if not store_id:
         st.warning("請先選擇分店")
         return
 
-    # ============================================================
-    # 日期選擇（單日）
-    # ============================================================
+    # ========================================================
+    # 2. 選擇日期（單日）
+    # ========================================================
     selected_date = st.date_input(
         "日期",
         value=date.today(),
-        key="order_message_date",
+        key="order_message_detail_date",
     )
 
-    # ============================================================
-    # 讀資料表
-    # ============================================================
+    # ========================================================
+    # 3. 讀取資料
+    # ========================================================
     po_df = read_table("purchase_orders")
     pol_df = read_table("purchase_order_lines")
     vendors_df = read_table("vendors")
@@ -813,89 +813,160 @@ def page_order_message_detail():
         st.info("目前沒有叫貨資料")
         return
 
-    # ============================================================
-    # 日期轉換
-    # ============================================================
-    po_df["order_date"] = pd.to_datetime(po_df["order_date"]).dt.date
+    # ========================================================
+    # 4. 日期格式整理
+    # ========================================================
+    if "order_date" not in po_df.columns:
+        st.error("purchase_orders 缺少 order_date 欄位")
+        return
 
-    # ============================================================
-    # 篩出當天叫貨
-    # ============================================================
+    po_df = po_df.copy()
+    po_df["order_date"] = pd.to_datetime(po_df["order_date"], errors="coerce").dt.date
+
+    # ========================================================
+    # 5. 篩出指定分店＋指定日期的主單
+    # ========================================================
+    if "store_id" not in po_df.columns or "po_id" not in po_df.columns:
+        st.error("purchase_orders 缺少 store_id 或 po_id 欄位")
+        return
+
     po_today = po_df[
-        (po_df["store_id"] == store_id)
+        (po_df["store_id"].astype(str) == str(store_id))
         & (po_df["order_date"] == selected_date)
-    ]
+    ].copy()
 
     if po_today.empty:
         st.info("這一天沒有叫貨紀錄")
         return
 
-    # ============================================================
-    # 找出 PO ID
-    # ============================================================
+    # ========================================================
+    # 6. 篩出明細
+    # ========================================================
+    if "po_id" not in pol_df.columns:
+        st.error("purchase_order_lines 缺少 po_id 欄位")
+        return
+
     po_ids = po_today["po_id"].astype(str).tolist()
 
-    lines_today = pol_df[
-        pol_df["po_id"].astype(str).isin(po_ids)
-    ]
+    pol_df = pol_df.copy()
+    pol_df["po_id"] = pol_df["po_id"].astype(str)
+
+    lines_today = pol_df[pol_df["po_id"].isin(po_ids)].copy()
 
     if lines_today.empty:
         st.info("這一天沒有叫貨明細")
         return
 
-    # ============================================================
-    # 廠商名稱
-    # ============================================================
-    vendor_map = dict(
-        zip(vendors_df["vendor_id"].astype(str), vendors_df["vendor_name"])
-    )
+    # ========================================================
+    # 7. 建立廠商名稱對照
+    # ========================================================
+    vendor_name_col = "vendor_name"
+    if vendor_name_col not in vendors_df.columns:
+        if "vendor_name_zh" in vendors_df.columns:
+            vendor_name_col = "vendor_name_zh"
+        elif "name" in vendors_df.columns:
+            vendor_name_col = "name"
 
-    # ============================================================
-    # 品項名稱
-    # ============================================================
-    item_map = dict(
-        zip(items_df["item_id"].astype(str), items_df["item_name"])
-    )
+    vendor_map = {}
+    if "vendor_id" in vendors_df.columns and vendor_name_col in vendors_df.columns:
+        vendor_map = dict(
+            zip(
+                vendors_df["vendor_id"].astype(str),
+                vendors_df[vendor_name_col].fillna("").astype(str),
+            )
+        )
 
-    # ============================================================
-    # 合併資料
-    # ============================================================
+    # ========================================================
+    # 8. 建立品項名稱對照
+    #    顯示優先：item_name_zh > item_name > item_id
+    # ========================================================
+    item_name_col = None
+    if "item_name_zh" in items_df.columns:
+        item_name_col = "item_name_zh"
+    elif "item_name" in items_df.columns:
+        item_name_col = "item_name"
+
+    item_map = {}
+    if "item_id" in items_df.columns:
+        for _, r in items_df.iterrows():
+            iid = str(r.get("item_id", ""))
+            display_name = ""
+            if item_name_col:
+                display_name = str(r.get(item_name_col, "")).strip()
+            if not display_name:
+                display_name = iid
+            item_map[iid] = display_name
+
+    # ========================================================
+    # 9. 合併主單與明細
+    # ========================================================
+    po_today["po_id"] = po_today["po_id"].astype(str)
+
     merged = lines_today.merge(
         po_today[["po_id", "vendor_id"]],
         on="po_id",
         how="left",
     )
 
-    merged["vendor_name"] = merged["vendor_id"].astype(str).map(vendor_map)
-    merged["item_name"] = merged["item_id"].astype(str).map(item_map)
+    merged["vendor_name"] = merged["vendor_id"].astype(str).map(vendor_map).fillna("")
+    merged["item_name"] = merged["item_id"].astype(str).map(item_map).fillna(merged["item_id"].astype(str))
 
-    # ============================================================
-    # 產生 LINE 訊息
-    # ============================================================
+    # ========================================================
+    # 10. 抓數量 / 單位欄位
+    # ========================================================
+    qty_col = "order_qty" if "order_qty" in merged.columns else "qty"
+    unit_col = "order_unit" if "order_unit" in merged.columns else "unit_id"
+
+    if qty_col not in merged.columns:
+        st.error("purchase_order_lines 缺少 order_qty / qty 欄位")
+        return
+
+    if unit_col not in merged.columns:
+        st.error("purchase_order_lines 缺少 order_unit / unit_id 欄位")
+        return
+
+    # ========================================================
+    # 11. 數量格式整理
+    # ========================================================
+    def _fmt_qty(v):
+        try:
+            v = float(v)
+            if v.is_integer():
+                return str(int(v))
+            return f"{v:.1f}"
+        except Exception:
+            return str(v)
+
+    # ========================================================
+    # 12. 產生 LINE 訊息內容
+    # ========================================================
     lines = []
-
     lines.append("今日進貨明細")
+
+    if store_name:
+        lines.append(store_name)
+
     lines.append(str(selected_date))
     lines.append("")
 
-    for vendor, group in merged.groupby("vendor_name"):
-
-        lines.append(vendor)
+    for vendor_name, group in merged.groupby("vendor_name", sort=False):
+        show_vendor = vendor_name.strip() if str(vendor_name).strip() else "未分類廠商"
+        lines.append(show_vendor)
 
         for _, r in group.iterrows():
-            qty = r["order_qty"]
-            unit = r["order_unit"]
-            item = r["item_name"]
-
-            lines.append(f"{item} {qty}{unit}")
+            item_name = str(r.get("item_name", "")).strip()
+            qty = _fmt_qty(r.get(qty_col, ""))
+            unit = str(r.get(unit_col, "")).strip()
+            lines.append(f"{item_name} {qty}{unit}")
 
         lines.append("")
 
-    line_message = "\n".join(lines)
+    line_message = "\n".join(lines).strip()
 
-    # ============================================================
-    # 顯示
-    # ============================================================
+    # ========================================================
+    # 13. 顯示
+    # ========================================================
+    st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
 
 
