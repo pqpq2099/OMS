@@ -577,7 +577,10 @@ def _save_order_entry(
     last_stock_map = _get_last_stock_map_for_store(store_id=store_id)
 
     current_input_map = {
-        _norm(r["item_id"]): _safe_float(r["stock_qty"])
+        _norm(r["item_id"]): (
+            None if _safe_float(r["stock_qty"]) == 0
+            else _safe_float(r["stock_qty"])
+        )
         for r in submit_rows
     }
 
@@ -767,6 +770,7 @@ def _save_order_entry(
 
     bust_cache()
     return po_id
+
 
 
 
