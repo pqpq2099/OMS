@@ -860,23 +860,17 @@ def page_order_message_detail():
 
     # ========================================================
     # 7. 建立廠商名稱對照
+    #    直接沿用系統既有顯示規則
     # ========================================================
-    vendor_name_col = "vendor_name"
-    if vendor_name_col not in vendors_df.columns:
-        if "vendor_name_zh" in vendors_df.columns:
-            vendor_name_col = "vendor_name_zh"
-        elif "name" in vendors_df.columns:
-            vendor_name_col = "name"
-
     vendor_map = {}
-    if "vendor_id" in vendors_df.columns and vendor_name_col in vendors_df.columns:
-        vendor_map = dict(
-            zip(
-                vendors_df["vendor_id"].astype(str),
-                vendors_df[vendor_name_col].fillna("").astype(str),
-            )
-        )
 
+    if "vendor_id" in vendors_df.columns:
+        for _, r in vendors_df.iterrows():
+            vid = str(r.get("vendor_id", "")).strip()
+            display_name = _label_vendor(r)
+            if not display_name:
+                display_name = vid
+            vendor_map[vid] = display_name
     # ========================================================
     # 8. 建立品項名稱對照
     #    顯示優先：item_name_zh > item_name > item_id
@@ -988,6 +982,7 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+
 
 
 
