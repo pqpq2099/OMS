@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# ============================================================
+# [A1] 基本匯入
+# 這一區放：日期、Streamlit、核心函式
+# ============================================================
 from datetime import date, timedelta
 
 import streamlit as st
@@ -9,6 +13,7 @@ from oms_core import (
     _build_inventory_history_summary_df,
     _build_purchase_detail_df,
     _build_purchase_summary_df,
+    _build_stock_detail_df,
     _clean_option_list,
     _get_active_df,
     _item_display_name,
@@ -29,7 +34,76 @@ except Exception:
 
 
 # ============================================================
+# [B1] 歷史頁資料補強
+# 這一區放：把歷史摘要補上廠商欄位
+# 說明：
+# 目前 _build_inventory_history_summary_df() 主要回傳進銷存摘要，
+# 但未必含有廠商欄位，所以這裡額外從 stock detail 補回來。
+# ============================================================
+def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
+    hist_df = _build_inventory_history_summary_df(
+        store_id=store_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    if hist_df.empty:
+        return hist_df
+
+    # 如果原本已經有廠商欄位，就直接用
+    if "廠商" in hist_df.columns:
+        return hist_df
+
+    stock_detail_df = _build_stock_detail_df()
+    if stock_detail_df.empty:
+        hist_df["廠商"] = "-"
+        return hist_df
+
+    work = stock_detail_df[
+        stock_detail_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+    ].copy()
+
+    if work.empty:
+        hist_df["廠商"] = "-"
+        return hist_df
+
+    # 只保留需要欄位
+    need_cols = []
+    for c in ["stocktake_date_dt", "item_id", "vendor_name_disp"]:
+        if c in work.columns:
+            need_cols.append(c)
+
+    if len(need_cols) < 3:
+        hist_df["廠商"] = "-"
+        return hist_df
+
+    work = work[need_cols].copy()
+    work["廠商"] = work["vendor_name_disp"].apply(
+        lambda x: "-" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
+    )
+
+    # 用 日期_dt + item_id 對回摘要表
+    merged = hist_df.merge(
+        work[["stocktake_date_dt", "item_id", "廠商"]].drop_duplicates(),
+        left_on=["日期_dt", "item_id"],
+        right_on=["stocktake_date_dt", "item_id"],
+        how="left",
+    )
+
+    merged["廠商"] = merged["廠商"].fillna("-")
+    if "stocktake_date_dt" in merged.columns:
+        merged = merged.drop(columns=["stocktake_date_dt"])
+
+    return merged
+
+
+# ============================================================
 # [E4] View History
+# 這一區放：歷史紀錄頁
+# 已補：
+# 1. 日期篩選
+# 2. 廠商篩選
+# 3. 品項篩選
 # ============================================================
 def page_view_history():
     st.markdown(
@@ -55,6 +129,9 @@ def page_view_history():
 
     st.title(f"📜 {st.session_state.store_name} 歷史紀錄")
 
+    # ============================================================
+    # 日期篩選
+    # ============================================================
     c_h_date1, c_h_date2 = st.columns(2)
     h_start = c_h_date1.date_input(
         "起始日期",
@@ -67,7 +144,10 @@ def page_view_history():
         key="hist_end_date",
     )
 
-    hist_df = _build_inventory_history_summary_df(
+    # ============================================================
+    # 先建立含廠商欄位的歷史資料
+    # ============================================================
+    hist_df = _build_history_with_vendor(
         store_id=st.session_state.store_id,
         start_date=h_start,
         end_date=h_end,
@@ -79,16 +159,31 @@ def page_view_history():
         if hist_df.empty:
             st.info("💡 此區間內無紀錄。")
         else:
+            # ============================================================
+            # 廠商篩選
+            # ============================================================
+            vendor_values = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
+            all_v = ["全部廠商"] + vendor_values
+            sel_v = st.selectbox("🏢 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
+
+            # ============================================================
+            # 品項篩選
+            # ============================================================
             item_values = _clean_option_list(hist_df["品項"].dropna().tolist())
             all_i = ["全部品項"] + item_values
             sel_i = st.selectbox("🏷️ 選擇品項", options=all_i, index=0, key="hist_item_filter")
 
             filt_df = hist_df.copy()
+
+            if sel_v != "全部廠商":
+                filt_df = filt_df[filt_df["廠商"] == sel_v].copy()
+
             if sel_i != "全部品項":
                 filt_df = filt_df[filt_df["品項"] == sel_i].copy()
 
             show_cols = [
                 "日期顯示",
+                "廠商",
                 "品項",
                 "上次庫存",
                 "期間進貨",
@@ -98,6 +193,7 @@ def page_view_history():
                 "日平均",
             ]
 
+            # 只顯示有變化的列
             detail_df = filt_df.copy()
             detail_df = detail_df[
                 (detail_df["上次庫存"] != 0)
@@ -110,6 +206,7 @@ def page_view_history():
                 detail_df[show_cols],
                 column_config={
                     "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                    "廠商": st.column_config.TextColumn(width="small"),
                     "品項": st.column_config.TextColumn(width="small"),
                     "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
@@ -127,12 +224,23 @@ def page_view_history():
             if hist_df.empty:
                 st.info("💡 此區間內無趨勢資料。")
             else:
-                item_values2 = _clean_option_list(hist_df["品項"].dropna().tolist())
+                # ============================================================
+                # 趨勢頁也加入廠商篩選
+                # ============================================================
+                vendor_values2 = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
+                all_v2 = ["全部廠商"] + vendor_values2
+                sel_v2 = st.selectbox("🏢 選擇廠商", options=all_v2, index=0, key="hist_trend_vendor")
+
+                trend_base_df = hist_df.copy()
+                if sel_v2 != "全部廠商":
+                    trend_base_df = trend_base_df[trend_base_df["廠商"] == sel_v2].copy()
+
+                item_values2 = _clean_option_list(trend_base_df["品項"].dropna().tolist())
                 if not item_values2:
-                    st.info("💡 此區間內無品項資料。")
+                    st.info("💡 此條件下無品項資料。")
                 else:
                     sel_i2 = st.selectbox("🏷️ 選擇品項", options=item_values2, key="hist_trend_item")
-                    p_df = hist_df[hist_df["品項"] == sel_i2].copy()
+                    p_df = trend_base_df[trend_base_df["品項"] == sel_i2].copy()
 
                     trend = (
                         p_df.groupby("日期_dt", as_index=False)["期間消耗"]
@@ -142,12 +250,13 @@ def page_view_history():
                     trend["日期標記"] = trend["日期_dt"].dt.strftime("%Y-%m-%d")
 
                     if not trend.empty:
+                        title_vendor = "" if sel_v2 == "全部廠商" else f"｜{sel_v2}"
                         fig = px.line(
                             trend,
                             x="日期標記",
                             y="期間消耗",
                             markers=True,
-                            title=f"📈 【{sel_i2}】消耗趨勢",
+                            title=f"📈 【{sel_i2}】消耗趨勢{title_vendor}",
                         )
                         fig.update_layout(
                             xaxis_type="category",
@@ -165,6 +274,7 @@ def page_view_history():
 
 # ============================================================
 # [E5] Export
+# 這一區放：今日進貨明細 / LINE 匯出
 # ============================================================
 def page_export():
     st.title("📋 今日進貨明細")
@@ -235,6 +345,7 @@ def page_export():
 
 # ============================================================
 # [E6] Analysis
+# 這一區放：進銷存分析頁
 # ============================================================
 def page_analysis():
     st.title("📊 進銷存分析")
@@ -416,6 +527,7 @@ def page_analysis():
 
 # ============================================================
 # [E7] Cost Debug
+# 這一區放：成本檢查頁
 # ============================================================
 def page_cost_debug():
     st.title("🧮 成本檢查")
