@@ -158,28 +158,25 @@ def save_setting(setting_key: str, setting_value: str):
     # ------------------------------------------------
     import gspread
     from google.oauth2.service_account import Credentials
-
+    
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-
+    
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=scope,
     )
-
+    
     gc = gspread.authorize(creds)
-
     sheet = gc.open_by_key(st.secrets["SHEET_ID"]).worksheet("settings")
-
+    
+    rows = [settings_df.columns.tolist()] + settings_df.astype(str).values.tolist()
+    
     sheet.clear()
-
-    sheet.update(
-        [settings_df.columns.values.tolist()]
-        + settings_df.values.tolist()
-    )
-
+    sheet.update(rows)
+    
     bust_cache()
 
 
@@ -403,6 +400,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
