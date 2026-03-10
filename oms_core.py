@@ -302,7 +302,7 @@ def get_gspread_client():
 def _get_secret_sheet_id() -> str:
     try:
         if hasattr(st.secrets, "get"):
-            return st.secrets.get("sheet_id", DEFAULT_SHEET_ID)
+            return st.secrets.get("SHEET_ID") or st.secrets.get("sheet_id") or DEFAULT_SHEET_ID
     except Exception:
         pass
     return DEFAULT_SHEET_ID
@@ -1176,6 +1176,7 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
 
 
 
