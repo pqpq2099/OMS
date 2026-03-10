@@ -466,7 +466,14 @@ def page_analysis():
                 .sort_values("採購金額", ascending=False)
                 .reset_index(drop=True)
             )
-
+            st.download_button(
+                "📥 匯出 CSV",
+                vendor_summary.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"進銷存分析_全部廠商_{start}_{end}.csv",
+                mime="text/csv",
+                use_container_width=False,
+                key="download_analysis_all_vendors",
+            )
             st.dataframe(
                 vendor_summary,
                 use_container_width=True,
@@ -664,6 +671,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
