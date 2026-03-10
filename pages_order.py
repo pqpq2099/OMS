@@ -771,7 +771,9 @@ def _save_order_entry(
     bust_cache()
     return po_id
 
-
+def page_order_message_detail():
+    st.title("🧾 叫貨明細")
+    st.info("叫貨明細頁建置中")
 
 
 
