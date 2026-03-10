@@ -397,20 +397,66 @@ def page_analysis():
 
     st.markdown("---")
 
-    all_items = ["全部品項"] + _clean_option_list(
-        hist_df.get("品項", []).dropna().tolist() if not hist_df.empty else []
-    )
-    selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
+# ============================================================
+# 廠商 / 品項 篩選
+# ============================================================
+hist_filt = hist_df.copy()
+purchase_filt = purchase_summary_df.copy()
 
-    hist_filt = hist_df.copy()
-    purchase_filt = purchase_summary_df.copy()
+# 先補廠商欄位（如果 hist_df 還沒有）
+if not hist_filt.empty and "廠商" not in hist_filt.columns:
+    items_df_vendor = read_table("items")
+    vendors_df_vendor = read_table("vendors")
 
-    if selected_item != "全部品項":
-        if not hist_filt.empty:
-            hist_filt = hist_filt[hist_filt["品項"] == selected_item].copy()
-        if not purchase_filt.empty:
-            purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
+    if not items_df_vendor.empty and not vendors_df_vendor.empty:
+        items_map = items_df_vendor.copy()
+        vendors_map = vendors_df_vendor.copy()
 
+        if "item_id" in items_map.columns and "default_vendor_id" in items_map.columns and "vendor_id" in vendors_map.columns:
+            items_map["item_id"] = items_map["item_id"].astype(str).str.strip()
+            items_map["default_vendor_id"] = items_map["default_vendor_id"].astype(str).str.strip()
+
+            vendors_map["vendor_id"] = vendors_map["vendor_id"].astype(str).str.strip()
+            vendors_map["廠商"] = vendors_map.apply(
+                lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
+                axis=1,
+            )
+
+            hist_filt = hist_filt.merge(
+                items_map[["item_id", "default_vendor_id"]].drop_duplicates(),
+                on="item_id",
+                how="left",
+            )
+            hist_filt = hist_filt.merge(
+                vendors_map[["vendor_id", "廠商"]].drop_duplicates(),
+                left_on="default_vendor_id",
+                right_on="vendor_id",
+                how="left",
+            )
+            hist_filt["廠商"] = hist_filt["廠商"].fillna("-")
+
+# 廠商下拉
+vendor_values = _clean_option_list(hist_filt["廠商"].dropna().tolist()) if (not hist_filt.empty and "廠商" in hist_filt.columns) else []
+all_vendors = ["全部廠商"] + vendor_values
+selected_vendor = st.selectbox("🏢 選擇廠商", options=all_vendors, index=0, key="ana_vendor_filter")
+
+if selected_vendor != "全部廠商":
+    if not hist_filt.empty and "廠商" in hist_filt.columns:
+        hist_filt = hist_filt[hist_filt["廠商"] == selected_vendor].copy()
+    if not purchase_filt.empty and "廠商" in purchase_filt.columns:
+        purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
+
+# 品項下拉
+all_items = ["全部品項"] + _clean_option_list(
+    hist_filt.get("品項", []).dropna().tolist() if not hist_filt.empty else []
+)
+selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
+
+if selected_item != "全部品項":
+    if not hist_filt.empty:
+        hist_filt = hist_filt[hist_filt["品項"] == selected_item].copy()
+    if not purchase_filt.empty:
+        purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
     total_buy = float(purchase_filt.get("採購金額", []).sum()) if not purchase_filt.empty else 0.0
 
     total_stock_value = 0.0
@@ -681,5 +727,6 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
