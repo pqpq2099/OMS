@@ -516,7 +516,17 @@ def page_analysis():
                 "期間消耗",
                 "日平均",
             ]
+            export_df = detail_df[show_cols].copy()
 
+            st.download_button(
+                "📥 匯出 CSV",
+                export_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"進銷存分析_{selected_vendor}_{start}_{end}.csv",
+                mime="text/csv",
+                use_container_width=False,
+                key="download_analysis_single_vendor",
+            )
+            
             st.dataframe(
                 detail_df[show_cols],
                 use_container_width=True,
@@ -671,6 +681,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
