@@ -415,7 +415,9 @@ def page_analysis():
         start_date=start,
         end_date=end,
     )
-
+    if not purchase_summary_df.empty and "廠商" not in purchase_summary_df.columns:
+        purchase_summary_df["廠商"] = "-"
+        
     prices_df = read_table("prices")
     items_df = read_table("items")
     conversions_df = _get_active_df(read_table("unit_conversions"))
@@ -445,17 +447,7 @@ def page_analysis():
         if not purchase_filt.empty and "廠商" in purchase_filt.columns:
             purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
 
-    all_items = ["全部品項"] + _clean_option_list(
-        hist_filt.get("品項", []).dropna().tolist() if not hist_filt.empty else []
-    )
-    selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
-
-    if selected_item != "全部品項":
-        if not hist_filt.empty:
-            hist_filt = hist_filt[hist_filt["品項"] == selected_item].copy()
-        if not purchase_filt.empty:
-            purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
-
+    
     total_buy = float(purchase_filt.get("採購金額", []).sum()) if not purchase_filt.empty else 0.0
 
     total_stock_value = 0.0
@@ -761,4 +753,5 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
