@@ -52,7 +52,7 @@ def get_system_name() -> str:
     從 settings 表讀取 system_name。
     若沒有資料或欄位不同，回傳預設名稱。
     """
-    default_name = "ORIVIA 管理系統"
+    default_name = "營運管理系統"
 
     try:
         settings_df = read_table("settings")
@@ -276,3 +276,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
