@@ -39,20 +39,19 @@ def init_session():
     if "vendor_name" not in st.session_state:
         st.session_state.vendor_name = ""
 
-    # 先用固定角色當測試，之後再接 users / roles
+    # 先用假角色，之後再接 users / roles
     if "role" not in st.session_state:
         st.session_state.role = "owner"  # owner / admin / store_manager / leader
 
 
 # ============================================================
-# Placeholder Page
+# Placeholder
 # ============================================================
 def page_placeholder(title: str, desc: str = "此功能入口已建立，功能尚未接上。"):
     st.title(title)
     st.info(desc)
-
     st.markdown("---")
-    st.caption("目前為占位頁。之後功能完成後，這裡會接正式頁面。")
+    st.caption("目前為占位頁。之後功能完成後會接正式頁面。")
 
 
 # ============================================================
@@ -73,18 +72,14 @@ def render_sidebar():
         st.caption(f"目前角色：{role}")
         st.markdown("---")
 
-        # ----------------------------------------------------
-        # 首頁 / 基本入口
-        # ----------------------------------------------------
-        st.markdown("### 首頁")
+        # ====================================================
+        # 營運
+        # ====================================================
+        st.markdown("### 營運")
+
         if st.button("🏠 選擇分店", use_container_width=True, key="sb_select_store"):
             st.session_state.step = "select_store"
             st.rerun()
-
-        # ----------------------------------------------------
-        # 門市操作
-        # ----------------------------------------------------
-        st.markdown("### 門市操作")
 
         if st.session_state.store_id:
             if st.button("🏢 分店功能選單", use_container_width=True, key="sb_select_vendor"):
@@ -96,49 +91,46 @@ def render_sidebar():
                 st.session_state.step = "order_entry"
                 st.rerun()
 
-        if role in ["owner", "admin", "store_manager"]:
-            if st.button("🛠️ 庫存修正", use_container_width=True, key="sb_stock_adjust"):
-                st.session_state.step = "stock_adjust"
-                st.rerun()
-
-            if st.button("📦 到貨修正", use_container_width=True, key="sb_delivery_adjust"):
-                st.session_state.step = "delivery_adjust"
-                st.rerun()
-
-        # ----------------------------------------------------
-        # 報表分析
-        # ----------------------------------------------------
-        st.markdown("### 報表分析")
-
         if st.session_state.store_id:
             if st.button("📋 今日進貨明細", use_container_width=True, key="sb_export"):
                 st.session_state.step = "export"
                 st.rerun()
 
-            if st.button("🧾 歷史叫貨紀錄", use_container_width=True, key="sb_purchase_history"):
-                st.session_state.step = "purchase_history"
-                st.rerun()
+        # ====================================================
+        # 報表分析
+        # ====================================================
+        if role in ["owner", "admin", "store_manager"]:
+            st.markdown("### 報表分析")
 
-            if st.button("📈 期間進銷存分析", use_container_width=True, key="sb_analysis"):
-                st.session_state.step = "analysis"
-                st.rerun()
+            if st.session_state.store_id:
+                if st.button("🧾 歷史叫貨紀錄", use_container_width=True, key="sb_purchase_history"):
+                    st.session_state.step = "purchase_history"
+                    st.rerun()
 
-            if st.button("📜 歷史庫存紀錄", use_container_width=True, key="sb_view_history"):
-                st.session_state.step = "view_history"
-                st.rerun()
+                if st.button("📈 期間進銷存分析", use_container_width=True, key="sb_analysis"):
+                    st.session_state.step = "analysis"
+                    st.rerun()
 
-            if st.button("🧮 成本檢查", use_container_width=True, key="sb_cost_debug"):
-                st.session_state.step = "cost_debug"
-                st.rerun()
+                if st.button("📜 歷史紀錄", use_container_width=True, key="sb_view_history"):
+                    st.session_state.step = "view_history"
+                    st.rerun()
 
-        # ----------------------------------------------------
+                if st.button("📤 資料匯出", use_container_width=True, key="sb_data_export"):
+                    st.session_state.step = "data_export"
+                    st.rerun()
+
+        # ====================================================
         # 系統管理
-        # ----------------------------------------------------
+        # ====================================================
         if role in ["owner", "admin"]:
             st.markdown("### 系統管理")
 
-            if st.button("🏬 分店管理", use_container_width=True, key="sb_store_admin"):
-                st.session_state.step = "store_admin"
+            if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
+                st.session_state.step = "user_admin"
+                st.rerun()
+
+            if st.button("🧭 店長 / 組長指派", use_container_width=True, key="sb_manager_assign"):
+                st.session_state.step = "manager_assign"
                 st.rerun()
 
             if st.button("🚚 廠商管理", use_container_width=True, key="sb_vendor_admin"):
@@ -149,48 +141,30 @@ def render_sidebar():
                 st.session_state.step = "item_admin"
                 st.rerun()
 
-            if st.button("🔄 單位 / 換算管理", use_container_width=True, key="sb_unit_admin"):
-                st.session_state.step = "unit_admin"
-                st.rerun()
-
             if st.button("💲 價格管理", use_container_width=True, key="sb_price_admin"):
                 st.session_state.step = "price_admin"
                 st.rerun()
 
-            if st.button("👥 使用者 / 權限", use_container_width=True, key="sb_user_admin"):
-                st.session_state.step = "user_admin"
+            if st.button("🧮 成本檢查", use_container_width=True, key="sb_cost_debug"):
+                st.session_state.step = "cost_debug"
                 st.rerun()
 
-            if st.button("🧭 店長指派", use_container_width=True, key="sb_manager_assign"):
-                st.session_state.step = "manager_assign"
+            if st.button("🎨 系統外觀設定", use_container_width=True, key="sb_appearance_settings"):
+                st.session_state.step = "appearance_settings"
                 st.rerun()
 
-        # ----------------------------------------------------
-        # 系統工具
-        # ----------------------------------------------------
-        if role in ["owner", "admin"]:
+        # ====================================================
+        # 系統工具（Owner）
+        # ====================================================
+        if role == "owner":
             st.markdown("### 系統工具")
 
-            if st.button("📤 資料匯出", use_container_width=True, key="sb_data_export"):
-                st.session_state.step = "data_export"
+            if st.button("🛠️ 系統工具", use_container_width=True, key="sb_system_tools"):
+                st.session_state.step = "system_tools"
                 st.rerun()
 
-            if st.button("📝 Audit Log", use_container_width=True, key="sb_audit_log"):
-                st.session_state.step = "audit_log"
-                st.rerun()
-
-            if st.button("ℹ️ 系統資訊", use_container_width=True, key="sb_system_info"):
-                st.session_state.step = "system_info"
-                st.rerun()
-
-        # ----------------------------------------------------
-        # 開發 / 測試
-        # ----------------------------------------------------
-        if role == "owner":
-            st.markdown("### 開發 / 測試")
-
-            if st.button("🧪 測試頁", use_container_width=True, key="sb_test_page"):
-                st.session_state.step = "test_page"
+            if st.button("🧪 開發測試", use_container_width=True, key="sb_dev_test"):
+                st.session_state.step = "dev_test"
                 st.rerun()
 
 
@@ -218,26 +192,26 @@ def router():
     elif step == "analysis":
         page_analysis()
 
-    elif step == "cost_debug":
-        page_cost_debug()
-
     elif step == "view_history":
         page_view_history()
 
+    elif step == "cost_debug":
+        page_cost_debug()
+
     # ---------------------------
-    # 先做入口、功能未完成頁面
+    # 入口已建，功能待接
     # ---------------------------
     elif step == "purchase_history":
         page_placeholder("🧾 歷史叫貨紀錄")
 
-    elif step == "stock_adjust":
-        page_placeholder("🛠️ 庫存修正")
+    elif step == "data_export":
+        page_placeholder("📤 資料匯出")
 
-    elif step == "delivery_adjust":
-        page_placeholder("📦 到貨修正")
+    elif step == "user_admin":
+        page_placeholder("👥 使用者權限")
 
-    elif step == "store_admin":
-        page_placeholder("🏬 分店管理")
+    elif step == "manager_assign":
+        page_placeholder("🧭 店長 / 組長指派")
 
     elif step == "vendor_admin":
         page_placeholder("🚚 廠商管理")
@@ -245,29 +219,17 @@ def router():
     elif step == "item_admin":
         page_placeholder("📦 品項管理")
 
-    elif step == "unit_admin":
-        page_placeholder("🔄 單位 / 換算管理")
-
     elif step == "price_admin":
         page_placeholder("💲 價格管理")
 
-    elif step == "user_admin":
-        page_placeholder("👥 使用者 / 權限")
+    elif step == "appearance_settings":
+        page_placeholder("🎨 系統外觀設定")
 
-    elif step == "manager_assign":
-        page_placeholder("🧭 店長指派")
+    elif step == "system_tools":
+        page_placeholder("🛠️ 系統工具")
 
-    elif step == "data_export":
-        page_placeholder("📤 資料匯出")
-
-    elif step == "audit_log":
-        page_placeholder("📝 Audit Log")
-
-    elif step == "system_info":
-        page_placeholder("ℹ️ 系統資訊")
-
-    elif step == "test_page":
-        page_placeholder("🧪 測試頁")
+    elif step == "dev_test":
+        page_placeholder("🧪 開發測試")
 
     else:
         page_select_store()
