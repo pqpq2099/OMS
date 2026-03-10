@@ -464,10 +464,9 @@ def page_order_entry():
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
                 tail = f"　{status_hint}" if status_hint else ""
                 st.markdown(
-                    f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
-                    unsafe_allow_html=True,
-                )
-
+                f"<div class='order-meta'>上次合計：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
+                unsafe_allow_html=True,
+            )
             with c2:
                 stock_input = st.number_input(
                     "庫",
@@ -768,6 +767,7 @@ def _save_order_entry(
 
     bust_cache()
     return po_id
+
 
 
 
