@@ -862,25 +862,12 @@ def page_order_message_detail():
     # 7. 建立廠商名稱對照
     #    顯示優先沿用系統既有規則
     # ========================================================
-    vendor_map = {}
-
-    if "vendor_id" in vendors_df.columns:
-        for _, r in vendors_df.iterrows():
-            vid = str(r.get("vendor_id", "")).strip()
-
-            # 先吃系統既有欄位
-            display_name = ""
-            for c in ["vendor_name_zh", "vendor_name", "name"]:
-                if c in vendors_df.columns:
-                    display_name = str(r.get(c, "")).strip()
-                    if display_name:
-                        break
-
-            # 如果上面都沒有，就退回 vendor_id
-            if not display_name:
-                display_name = vid
-
-            vendor_map[vid] = display_name
+    vendor_map = dict(
+        zip(
+            vendors_df["vendor_id"].astype(str),
+            vendors_df["vendor_name_zh"].fillna("").astype(str),
+        )
+    )
     # ========================================================
     # 8. 建立品項名稱對照
     #    顯示優先：item_name_zh > item_name > item_id
@@ -930,7 +917,7 @@ def page_order_message_detail():
         return
 
     merged["vendor_name"] = (
-        merged[vendor_id_col].astype(str).map(vendor_map).fillna("")
+        merged[vendor_id_col].astype(str).map(vendor_map).fillna("未分類廠商")
     )
     merged["item_name"] = (
         merged["item_id"].astype(str).map(item_map).fillna(merged["item_id"].astype(str))
@@ -992,6 +979,7 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+
 
 
 
