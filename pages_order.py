@@ -907,11 +907,30 @@ def page_order_message_detail():
         po_today[["po_id", "vendor_id"]],
         on="po_id",
         how="left",
+        suffixes=("", "_po"),
     )
 
-    merged["vendor_name"] = merged["vendor_id"].astype(str).map(vendor_map).fillna("")
-    merged["item_name"] = merged["item_id"].astype(str).map(item_map).fillna(merged["item_id"].astype(str))
+    # 找實際可用的 vendor_id 欄位
+    vendor_id_col = None
+    if "vendor_id" in merged.columns:
+        vendor_id_col = "vendor_id"
+    elif "vendor_id_po" in merged.columns:
+        vendor_id_col = "vendor_id_po"
+    elif "vendor_id_x" in merged.columns:
+        vendor_id_col = "vendor_id_x"
+    elif "vendor_id_y" in merged.columns:
+        vendor_id_col = "vendor_id_y"
 
+    if vendor_id_col is None:
+        st.error("合併後找不到 vendor_id 欄位")
+        return
+
+    merged["vendor_name"] = (
+        merged[vendor_id_col].astype(str).map(vendor_map).fillna("")
+    )
+    merged["item_name"] = (
+        merged["item_id"].astype(str).map(item_map).fillna(merged["item_id"].astype(str))
+    )
     # ========================================================
     # 10. 抓數量 / 單位欄位
     # ========================================================
@@ -969,6 +988,7 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+
 
 
 
