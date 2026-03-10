@@ -342,7 +342,7 @@ def page_order_entry():
             st.rerun()
         return
 
-    vendor_items = _sort_items_for_operation(vendor_items)
+    vendor_items = vendor_items.reset_index(drop=True)
 
     latest_metrics_df = _build_latest_item_metrics_df(
         store_id=st.session_state.store_id,
@@ -471,10 +471,10 @@ def page_order_entry():
             with c2:
                 stock_input = st.number_input(
                     "庫",
-                    min_value=0.0,
-                    step=0.1,
-                    format="%g",
-                    value=0.0 if current_stock_qty <= 0 else float(current_stock_qty),
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    value=0,
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
@@ -768,3 +768,4 @@ def _save_order_entry(
 
     bust_cache()
     return po_id
+
