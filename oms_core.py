@@ -278,20 +278,21 @@ def get_gspread_client():
     ]
 
     try:
-        if "gcp" in st.secrets:
+        if "gcp_service_account" in st.secrets:
             creds = Credentials.from_service_account_info(
-                dict(st.secrets["gcp"]),
+                dict(st.secrets["gcp_service_account"]),
                 scopes=scopes,
             )
         else:
             if not LOCAL_SERVICE_ACCOUNT.exists():
                 st.error(f"找不到本機金鑰：{LOCAL_SERVICE_ACCOUNT}")
                 return None
+    
             creds = Credentials.from_service_account_file(
                 str(LOCAL_SERVICE_ACCOUNT),
                 scopes=scopes,
             )
-
+    
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"Google Sheets 連線失敗：{e}")
@@ -1175,6 +1176,7 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
 
 
 
