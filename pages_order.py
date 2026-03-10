@@ -6,6 +6,7 @@ from __future__ import annotations
 # ============================================================
 from datetime import date
 import streamlit as st
+import pandas as pd
 
 from oms_core import (
     _build_latest_item_metrics_df,
@@ -968,6 +969,7 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+
 
 
 
