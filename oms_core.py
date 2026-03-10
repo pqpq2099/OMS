@@ -332,11 +332,36 @@ def read_table(sheet_name: str) -> pd.DataFrame:
 
     try:
         ws = sh.worksheet(sheet_name)
-        records = ws.get_all_records()
-        df = pd.DataFrame(records)
+        values = ws.get_all_values()
+
+        if not values:
+            return pd.DataFrame()
+
+        header = [_norm(c) for c in values[0]]
+        rows = values[1:]
+
+        # 如果只有表頭沒有資料列
+        if not rows:
+            return pd.DataFrame(columns=header)
+
+        normalized_rows = []
+        for row in rows:
+            row = list(row)
+            if len(row) < len(header):
+                row = row + [""] * (len(header) - len(row))
+            else:
+                row = row[:len(header)]
+            normalized_rows.append(row)
+
+        df = pd.DataFrame(normalized_rows, columns=header)
+
         if not df.empty:
-            df.columns = [_norm(c) for c in df.columns]
+            df = df[
+                df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
+            ].reset_index(drop=True)
+
         return df
+
     except Exception as e:
         st.warning(f"{sheet_name} 讀取失敗：{e}")
         return pd.DataFrame()
@@ -1176,6 +1201,7 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
 
 
 
