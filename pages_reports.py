@@ -533,6 +533,7 @@ def page_analysis():
                 else:
                     show_cols = [
                         "品項",
+                        "日期顯示",
                         "上次庫存",
                         "期間進貨",
                         "庫存合計",
@@ -547,14 +548,15 @@ def page_analysis():
                         hide_index=True,
                         height=700,
                         column_config={
-                            "品項": st.column_config.TextColumn(width="medium"),
-                            "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                            "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        },
+                        "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                        "品項": st.column_config.TextColumn(width="medium"),
+                        "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                        "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                        "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                        "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                        "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                        "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    },
                     )
             else:
                 st.caption("選擇單一廠商後，才顯示該廠商品項明細")
@@ -753,5 +755,6 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
