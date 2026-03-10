@@ -13,7 +13,6 @@ from oms_core import (
     _build_inventory_history_summary_df,
     _build_purchase_detail_df,
     _build_purchase_summary_df,
-    _build_stock_detail_df,
     _clean_option_list,
     _get_active_df,
     _item_display_name,
@@ -37,16 +36,9 @@ except Exception:
 # [B1] 歷史頁資料補強
 # 這一區放：把歷史摘要補上廠商欄位
 # 說明：
-# 目前 _build_inventory_history_summary_df() 主要回傳進銷存摘要，
-# 但未必含有廠商欄位，所以這裡額外從 stock detail 補回來。
+# 直接依照 item_id -> items.default_vendor_id -> vendors.vendor_name 來補
 # ============================================================
 def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
-    """
-    把歷史摘要補上廠商欄位。
-    這裡不用 stocktake 去猜廠商，
-    直接依照 item_id -> items.default_vendor_id -> vendors.vendor_name 來補，
-    因為目前系統規則就是「品項與廠商綁定」。
-    """
     hist_df = _build_inventory_history_summary_df(
         store_id=store_id,
         start_date=start_date,
@@ -66,7 +58,6 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
         hist_df["廠商"] = "-"
         return hist_df
 
-    # 整理 items：item_id -> default_vendor_id
     items_map = items_df.copy()
     if "item_id" not in items_map.columns or "default_vendor_id" not in items_map.columns:
         hist_df["廠商"] = "-"
@@ -74,10 +65,8 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
 
     items_map["item_id"] = items_map["item_id"].astype(str).str.strip()
     items_map["default_vendor_id"] = items_map["default_vendor_id"].astype(str).str.strip()
-
     items_map = items_map[["item_id", "default_vendor_id"]].drop_duplicates()
 
-    # 整理 vendors：vendor_id -> vendor_name
     vendors_map = vendors_df.copy()
     if "vendor_id" not in vendors_map.columns:
         hist_df["廠商"] = "-"
@@ -88,17 +77,14 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
         lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
         axis=1,
     )
-
     vendors_map = vendors_map[["vendor_id", "廠商"]].drop_duplicates()
 
-    # item_id -> vendor_id
     merged = hist_df.merge(
         items_map,
         on="item_id",
         how="left",
     )
 
-    # vendor_id -> vendor_name
     merged = merged.merge(
         vendors_map,
         left_on="default_vendor_id",
@@ -108,7 +94,73 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
 
     merged["廠商"] = merged["廠商"].fillna("-")
 
-    # 清掉中間欄位
+    for col in ["default_vendor_id", "vendor_id"]:
+        if col in merged.columns:
+            merged = merged.drop(columns=[col])
+
+    return merged
+
+
+# ============================================================
+# [B2] 分析頁資料補強
+# 這一區放：把進銷存分析摘要補上廠商欄位
+# ============================================================
+def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date):
+    hist_df = _build_inventory_history_summary_df(
+        store_id=store_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    if hist_df.empty:
+        return hist_df
+
+    if "廠商" in hist_df.columns:
+        return hist_df
+
+    items_df = read_table("items")
+    vendors_df = read_table("vendors")
+
+    if items_df.empty or vendors_df.empty:
+        hist_df["廠商"] = "-"
+        return hist_df
+
+    items_map = items_df.copy()
+    vendors_map = vendors_df.copy()
+
+    if "item_id" not in items_map.columns or "default_vendor_id" not in items_map.columns:
+        hist_df["廠商"] = "-"
+        return hist_df
+
+    if "vendor_id" not in vendors_map.columns:
+        hist_df["廠商"] = "-"
+        return hist_df
+
+    items_map["item_id"] = items_map["item_id"].astype(str).str.strip()
+    items_map["default_vendor_id"] = items_map["default_vendor_id"].astype(str).str.strip()
+    items_map = items_map[["item_id", "default_vendor_id"]].drop_duplicates()
+
+    vendors_map["vendor_id"] = vendors_map["vendor_id"].astype(str).str.strip()
+    vendors_map["廠商"] = vendors_map.apply(
+        lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
+        axis=1,
+    )
+    vendors_map = vendors_map[["vendor_id", "廠商"]].drop_duplicates()
+
+    merged = hist_df.merge(
+        items_map,
+        on="item_id",
+        how="left",
+    )
+    merged = merged.merge(
+        vendors_map,
+        left_on="default_vendor_id",
+        right_on="vendor_id",
+        how="left",
+    )
+
+    merged["廠商"] = merged["廠商"].fillna("-")
+
     for col in ["default_vendor_id", "vendor_id"]:
         if col in merged.columns:
             merged = merged.drop(columns=[col])
@@ -119,10 +171,6 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
 # ============================================================
 # [E4] View History
 # 這一區放：歷史紀錄頁
-# 已補：
-# 1. 日期篩選
-# 2. 廠商篩選
-# 3. 品項篩選
 # ============================================================
 def page_view_history():
     st.markdown(
@@ -148,9 +196,6 @@ def page_view_history():
 
     st.title(f"📜 {st.session_state.store_name} 歷史紀錄")
 
-    # ============================================================
-    # 日期篩選
-    # ============================================================
     c_h_date1, c_h_date2 = st.columns(2)
     h_start = c_h_date1.date_input(
         "起始日期",
@@ -163,9 +208,6 @@ def page_view_history():
         key="hist_end_date",
     )
 
-    # ============================================================
-    # 先建立含廠商欄位的歷史資料
-    # ============================================================
     hist_df = _build_history_with_vendor(
         store_id=st.session_state.store_id,
         start_date=h_start,
@@ -178,16 +220,10 @@ def page_view_history():
         if hist_df.empty:
             st.info("💡 此區間內無紀錄。")
         else:
-            # ============================================================
-            # 廠商篩選
-            # ============================================================
             vendor_values = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
             all_v = ["全部廠商"] + vendor_values
             sel_v = st.selectbox("🏢 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
 
-            # ============================================================
-            # 品項篩選
-            # ============================================================
             item_values = _clean_option_list(hist_df["品項"].dropna().tolist())
             all_i = ["全部品項"] + item_values
             sel_i = st.selectbox("🏷️ 選擇品項", options=all_i, index=0, key="hist_item_filter")
@@ -212,7 +248,6 @@ def page_view_history():
                 "日平均",
             ]
 
-            # 只顯示有變化的列
             detail_df = filt_df.copy()
             detail_df = detail_df[
                 (detail_df["上次庫存"] != 0)
@@ -243,9 +278,6 @@ def page_view_history():
             if hist_df.empty:
                 st.info("💡 此區間內無趨勢資料。")
             else:
-                # ============================================================
-                # 趨勢頁也加入廠商篩選
-                # ============================================================
                 vendor_values2 = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
                 all_v2 = ["全部廠商"] + vendor_values2
                 sel_v2 = st.selectbox("🏢 選擇廠商", options=all_v2, index=0, key="hist_trend_vendor")
@@ -373,7 +405,7 @@ def page_analysis():
     start = c_date1.date_input("起始日期", value=date.today() - timedelta(days=14), key="ana_start")
     end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
 
-    hist_df = _build_inventory_history_summary_df(
+    hist_df = _build_analysis_with_vendor(
         store_id=st.session_state.store_id,
         start_date=start,
         end_date=end,
@@ -397,66 +429,33 @@ def page_analysis():
 
     st.markdown("---")
 
-# ============================================================
-# 廠商 / 品項 篩選
-# ============================================================
-hist_filt = hist_df.copy()
-purchase_filt = purchase_summary_df.copy()
+    # ============================================================
+    # 廠商 / 品項 篩選
+    # ============================================================
+    hist_filt = hist_df.copy()
+    purchase_filt = purchase_summary_df.copy()
 
-# 先補廠商欄位（如果 hist_df 還沒有）
-if not hist_filt.empty and "廠商" not in hist_filt.columns:
-    items_df_vendor = read_table("items")
-    vendors_df_vendor = read_table("vendors")
+    vendor_values = _clean_option_list(hist_filt["廠商"].dropna().tolist()) if (not hist_filt.empty and "廠商" in hist_filt.columns) else []
+    all_vendors = ["全部廠商"] + vendor_values
+    selected_vendor = st.selectbox("🏢 選擇廠商", options=all_vendors, index=0, key="ana_vendor_filter")
 
-    if not items_df_vendor.empty and not vendors_df_vendor.empty:
-        items_map = items_df_vendor.copy()
-        vendors_map = vendors_df_vendor.copy()
+    if selected_vendor != "全部廠商":
+        if not hist_filt.empty and "廠商" in hist_filt.columns:
+            hist_filt = hist_filt[hist_filt["廠商"] == selected_vendor].copy()
+        if not purchase_filt.empty and "廠商" in purchase_filt.columns:
+            purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
 
-        if "item_id" in items_map.columns and "default_vendor_id" in items_map.columns and "vendor_id" in vendors_map.columns:
-            items_map["item_id"] = items_map["item_id"].astype(str).str.strip()
-            items_map["default_vendor_id"] = items_map["default_vendor_id"].astype(str).str.strip()
+    all_items = ["全部品項"] + _clean_option_list(
+        hist_filt.get("品項", []).dropna().tolist() if not hist_filt.empty else []
+    )
+    selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
 
-            vendors_map["vendor_id"] = vendors_map["vendor_id"].astype(str).str.strip()
-            vendors_map["廠商"] = vendors_map.apply(
-                lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
-                axis=1,
-            )
+    if selected_item != "全部品項":
+        if not hist_filt.empty:
+            hist_filt = hist_filt[hist_filt["品項"] == selected_item].copy()
+        if not purchase_filt.empty:
+            purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
 
-            hist_filt = hist_filt.merge(
-                items_map[["item_id", "default_vendor_id"]].drop_duplicates(),
-                on="item_id",
-                how="left",
-            )
-            hist_filt = hist_filt.merge(
-                vendors_map[["vendor_id", "廠商"]].drop_duplicates(),
-                left_on="default_vendor_id",
-                right_on="vendor_id",
-                how="left",
-            )
-            hist_filt["廠商"] = hist_filt["廠商"].fillna("-")
-
-# 廠商下拉
-vendor_values = _clean_option_list(hist_filt["廠商"].dropna().tolist()) if (not hist_filt.empty and "廠商" in hist_filt.columns) else []
-all_vendors = ["全部廠商"] + vendor_values
-selected_vendor = st.selectbox("🏢 選擇廠商", options=all_vendors, index=0, key="ana_vendor_filter")
-
-if selected_vendor != "全部廠商":
-    if not hist_filt.empty and "廠商" in hist_filt.columns:
-        hist_filt = hist_filt[hist_filt["廠商"] == selected_vendor].copy()
-    if not purchase_filt.empty and "廠商" in purchase_filt.columns:
-        purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
-
-# 品項下拉
-all_items = ["全部品項"] + _clean_option_list(
-    hist_filt.get("品項", []).dropna().tolist() if not hist_filt.empty else []
-)
-selected_item = st.selectbox("🏷️ 選擇品項", options=all_items, index=0, key="ana_item_filter")
-
-if selected_item != "全部品項":
-    if not hist_filt.empty:
-        hist_filt = hist_filt[hist_filt["品項"] == selected_item].copy()
-    if not purchase_filt.empty:
-        purchase_filt = purchase_filt[purchase_filt["品項名稱"] == selected_item].copy()
     total_buy = float(purchase_filt.get("採購金額", []).sum()) if not purchase_filt.empty else 0.0
 
     total_stock_value = 0.0
@@ -510,6 +509,7 @@ if selected_item != "全部品項":
 
             show_cols = [
                 "日期顯示",
+                "廠商",
                 "品項",
                 "上次庫存",
                 "期間進貨",
@@ -519,11 +519,15 @@ if selected_item != "全部品項":
                 "日平均",
             ]
 
-            render_report_dataframe(
+            st.dataframe(
                 detail_df[show_cols],
+                use_container_width=True,
+                hide_index=True,
+                height=700,
                 column_config={
                     "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                    "品項": st.column_config.TextColumn(width="small"),
+                    "廠商": st.column_config.TextColumn(width="small"),
+                    "品項": st.column_config.TextColumn(width="medium"),
                     "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
@@ -727,6 +731,3 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
-
-
