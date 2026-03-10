@@ -41,6 +41,13 @@ except Exception:
 # 但未必含有廠商欄位，所以這裡額外從 stock detail 補回來。
 # ============================================================
 def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
+    """
+    把歷史摘要補上廠商欄位。
+    做法：
+    1. 先抓進銷存摘要 hist_df
+    2. 再從 stock detail 補 vendor_name
+    3. 用 日期 + item_id 對回去
+    """
     hist_df = _build_inventory_history_summary_df(
         store_id=store_id,
         start_date=start_date,
@@ -50,7 +57,7 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
     if hist_df.empty:
         return hist_df
 
-    # 如果原本已經有廠商欄位，就直接用
+    # 如果原本就有廠商欄位，直接返回
     if "廠商" in hist_df.columns:
         return hist_df
 
@@ -67,30 +74,39 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
         hist_df["廠商"] = "-"
         return hist_df
 
-    # 只保留需要欄位
-    need_cols = []
-    for c in ["stocktake_date_dt", "item_id", "vendor_name_disp"]:
-        if c in work.columns:
-            need_cols.append(c)
-
-    if len(need_cols) < 3:
+    # 必要欄位檢查
+    required_cols = {"stocktake_date_dt", "item_id", "vendor_name_disp"}
+    if not required_cols.issubset(set(work.columns)):
         hist_df["廠商"] = "-"
         return hist_df
 
-    work = work[need_cols].copy()
+    # 統一日期格式，避免 merge 型別衝突
+    hist_df = hist_df.copy()
+    hist_df["日期_dt"] = __import__("pandas").to_datetime(hist_df["日期_dt"], errors="coerce")
+
+    work = work.copy()
+    work["stocktake_date_dt"] = __import__("pandas").to_datetime(work["stocktake_date_dt"], errors="coerce")
+
     work["廠商"] = work["vendor_name_disp"].apply(
         lambda x: "-" if _norm(x).lower() in {"", "nan", "none", "nat"} else _norm(x)
     )
 
-    # 用 日期_dt + item_id 對回摘要表
+    # 同一天同品項若有多筆，只留最後一筆，避免 merge 爆掉
+    work = (
+        work.sort_values(["stocktake_date_dt"])
+        .dropna(subset=["stocktake_date_dt"])
+        .drop_duplicates(subset=["stocktake_date_dt", "item_id"], keep="last")
+    )
+
     merged = hist_df.merge(
-        work[["stocktake_date_dt", "item_id", "廠商"]].drop_duplicates(),
+        work[["stocktake_date_dt", "item_id", "廠商"]],
         left_on=["日期_dt", "item_id"],
         right_on=["stocktake_date_dt", "item_id"],
         how="left",
     )
 
     merged["廠商"] = merged["廠商"].fillna("-")
+
     if "stocktake_date_dt" in merged.columns:
         merged = merged.drop(columns=["stocktake_date_dt"])
 
@@ -662,3 +678,4 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
