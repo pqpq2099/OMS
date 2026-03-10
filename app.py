@@ -26,7 +26,7 @@ from pages_reports import (
     page_view_history,
 )
 
-st.set_page_config(page_title="營運管理系統", layout="centered")
+st.set_page_config(page_title=get_system_name())
 
 
 # ============================================================
@@ -403,4 +403,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
