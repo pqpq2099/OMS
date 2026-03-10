@@ -1,10 +1,16 @@
 from __future__ import annotations
+
+# ============================================================
+# [A1] 基本匯入
+# 這一區放：日期、Streamlit、核心函式
+# ============================================================
 from datetime import date
-from oms_core import read_table
 import streamlit as st
+import pandas as pd
 
 from oms_core import (
     _build_latest_item_metrics_df,
+    _build_stock_detail_df,
     _clean_option_list,
     _get_active_df,
     _get_last_po_summary,
@@ -28,7 +34,78 @@ from oms_engine import convert_to_base
 
 
 # ============================================================
+# [B1] 盤點引擎輔助函式
+# 這一區放：抓上一筆庫存、建立本次新庫存
+# 規則：
+# 1. 有輸入 → 用新值覆蓋
+# 2. 未輸入 → 沿用上一筆
+# ============================================================
+def _get_last_stock_map_for_store(store_id: str) -> dict[str, float]:
+    """
+    取得某分店每個品項最後一次盤點的庫存（顯示單位）
+    回傳格式：
+    {
+        "ITEM_001": 10.0,
+        "ITEM_002": 5.0,
+    }
+    """
+    stock_df = _build_stock_detail_df()
+    if stock_df.empty:
+        return {}
+
+    work = stock_df[
+        stock_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+    ].copy()
+
+    if work.empty or "stocktake_date_dt" not in work.columns:
+        return {}
+
+    work = work[work["stocktake_date_dt"].notna()].copy()
+    if work.empty:
+        return {}
+
+    work = work.sort_values(["stocktake_date_dt"], ascending=True)
+
+    latest = (
+        work.groupby("item_id", as_index=False)
+        .tail(1)
+        .copy()
+    )
+
+    result = {}
+    for _, row in latest.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        qty = _safe_float(row.get("display_stock_qty", 0))
+        if item_id:
+            result[item_id] = qty
+
+    return result
+
+
+def _build_new_stock_map(
+    last_stock_map: dict[str, float],
+    current_input_map: dict[str, float],
+) -> dict[str, float]:
+    """
+    規則：
+    1. 先沿用上一筆庫存
+    2. 本次有輸入的品項，用新值覆蓋
+    3. 本次沒輸入的品項，沿用舊值
+    """
+    result = dict(last_stock_map or {})
+
+    for item_id, qty in (current_input_map or {}).items():
+        item_id = _norm(item_id)
+        if not item_id:
+            continue
+        result[item_id] = _safe_float(qty, 0)
+
+    return result
+
+
+# ============================================================
 # [E1] Select Store
+# 這一區放：選擇分店頁
 # ============================================================
 def page_select_store():
     st.markdown(
@@ -59,6 +136,7 @@ def page_select_store():
 
 # ============================================================
 # [E2] Select Vendor
+# 這一區放：選擇廠商頁
 # ============================================================
 def page_select_vendor():
     st.markdown(
@@ -144,24 +222,32 @@ def page_select_vendor():
 
 # ============================================================
 # [E3] Order Entry
+# 這一區放：盤點 / 叫貨主頁
+# 說明：
+# 庫 = 盤點庫存
+# 進 = 叫貨數量
 # ============================================================
 def page_order_entry():
     # ============================================================
     # 初始化庫存判斷
+    # 若此分店還沒有任何 stocktake 紀錄，這次視為初始化
     # ============================================================
     stocktakes_df = read_table("stocktakes")
 
-    store_stocktakes = stocktakes_df[
-        stocktakes_df["store_id"] == st.session_state.store_id
-    ]
-
-    is_initial_stock = len(store_stocktakes) == 0
+    if stocktakes_df.empty or "store_id" not in stocktakes_df.columns:
+        is_initial_stock = True
+    else:
+        store_stocktakes = stocktakes_df[
+            stocktakes_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+        ]
+        is_initial_stock = len(store_stocktakes) == 0
 
     if is_initial_stock:
         st.warning(
             "⚠️ 目前尚無庫存基準資料，本次儲存將建立「初始化庫存」。"
-            "請先填寫目前實際庫存，進貨欄位先不要填。"
+            "請先填寫目前實際庫存；未來再依正常流程盤點 / 叫貨。"
         )
+
     st.markdown(
         """
         <style>
@@ -226,6 +312,7 @@ def page_order_entry():
         """,
         unsafe_allow_html=True,
     )
+
     st.title(f"📝 {st.session_state.vendor_name}")
 
     items_df = _get_active_df(read_table("items"))
@@ -256,7 +343,7 @@ def page_order_entry():
             st.rerun()
         return
 
-    vendor_items = _sort_items_for_operation(vendor_items)
+    vendor_items = vendor_items.reset_index(drop=True)
 
     latest_metrics_df = _build_latest_item_metrics_df(
         store_id=st.session_state.store_id,
@@ -365,7 +452,7 @@ def page_order_entry():
 
             item_name = meta["item_name"]
             base_unit = meta["base_unit"]
-            stock_unit = base_unit
+            stock_unit = meta["stock_unit"]
             order_unit = meta["order_unit"]
             current_stock_qty = _safe_float(meta["current_stock_qty"])
             total_stock_ref = _safe_float(meta["total_stock_ref"])
@@ -378,22 +465,21 @@ def page_order_entry():
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
                 tail = f"　{status_hint}" if status_hint else ""
                 st.markdown(
-                    f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
-                    unsafe_allow_html=True,
-                )
-
+                f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
+                unsafe_allow_html=True,
+            )
             with c2:
                 stock_input = st.number_input(
                     "庫",
-                    min_value=0.0,
-                    step=0.1,
-                    format="%g",
-                    value=0.0 if current_stock_qty <= 0 else float(current_stock_qty),
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    value=0,
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
                 st.markdown(
-                    f"<div class='order-unit-label'>{base_unit}</div>",
+                    f"<div class='order-unit-label'>{stock_unit}</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -440,6 +526,7 @@ def page_order_entry():
                 store_id=st.session_state.store_id,
                 vendor_id=st.session_state.vendor_id,
                 record_date=st.session_state.record_date,
+                is_initial_stock=is_initial_stock,
             )
 
             st.success(
@@ -461,7 +548,12 @@ def page_order_entry():
 
 
 # ============================================================
-# Save Order Entry
+# [E4] Save Order Entry
+# 這一區放：儲存盤點 / 叫貨
+# 修正重點：
+# 1. 庫存不是只存 >0，而是依照「上一筆 + 本次覆蓋」建立新盤點
+# 2. 未輸入的品項沿用上一筆
+# 3. 初始化時，這一頁的庫存就是第一筆基準庫存
 # ============================================================
 def _save_order_entry(
     submit_rows,
@@ -470,10 +562,64 @@ def _save_order_entry(
     store_id,
     vendor_id,
     record_date,
+    is_initial_stock: bool,
 ):
-    stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
-    order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+    now = _now_ts()
 
+    # ============================================================
+    # 1. 叫貨資料：只保留 > 0 的列
+    # ============================================================
+    order_rows = [r for r in submit_rows if _safe_float(r["order_qty"]) > 0]
+
+    # ============================================================
+    # 2. 盤點資料：
+    #    使用「上一筆庫存 + 本次輸入覆蓋」方式建立完整新盤點
+    # ============================================================
+    last_stock_map = _get_last_stock_map_for_store(store_id=store_id)
+
+    current_input_map = {
+        _norm(r["item_id"]): (
+            None if _safe_float(r["stock_qty"]) == 0
+            else _safe_float(r["stock_qty"])
+        )
+        for r in submit_rows
+    }
+
+    new_stock_map = _build_new_stock_map(
+        last_stock_map=last_stock_map,
+        current_input_map=current_input_map,
+    )
+
+    # 只保留本次畫面裡屬於該廠商的品項
+    vendor_item_ids = set(vendor_items["item_id"].astype(str).str.strip())
+    new_stock_map = {
+        item_id: qty
+        for item_id, qty in new_stock_map.items()
+        if item_id in vendor_item_ids
+    }
+
+    stocktake_rows = []
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        if item_id not in new_stock_map:
+            continue
+
+        meta_row = next((r for r in submit_rows if _norm(r["item_id"]) == item_id), None)
+        stock_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
+        stock_qty = _safe_float(new_stock_map.get(item_id, 0))
+
+        stocktake_rows.append(
+            {
+                "item_id": item_id,
+                "item_name": _item_display_name(row),
+                "stock_qty": stock_qty,
+                "stock_unit": meta_row["stock_unit"] if meta_row else stock_unit,
+            }
+        )
+
+    # ============================================================
+    # 3. 申請 ID
+    # ============================================================
     id_need = {
         "stocktake_id": 1 if stocktake_rows else 0,
         "stocktake_line_id": len(stocktake_rows),
@@ -481,8 +627,10 @@ def _save_order_entry(
         "po_line_id": len(order_rows),
     }
     id_map = allocate_ids(id_need)
-    now = _now_ts()
 
+    # ============================================================
+    # 4. 寫入 stocktakes / stocktake_lines
+    # ============================================================
     if stocktake_rows:
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
@@ -494,6 +642,7 @@ def _save_order_entry(
             "stocktake_id": stocktake_id,
             "store_id": store_id,
             "stocktake_date": str(record_date),
+            "stocktake_type": "initial" if is_initial_stock else "regular",
             "status": "done",
             "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
             "created_at": now,
@@ -546,6 +695,9 @@ def _save_order_entry(
 
         append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
 
+    # ============================================================
+    # 5. 寫入 purchase_orders / purchase_order_lines
+    # ============================================================
     po_id = ""
 
     if order_rows:
@@ -560,6 +712,7 @@ def _save_order_entry(
             "store_id": store_id,
             "vendor_id": vendor_id,
             "order_date": str(record_date),
+            "delivery_date": str(record_date),  # 先保守不亂加一天，避免跟你現有表頭/流程衝突
             "status": "draft",
             "created_at": now,
             "created_by": "SYSTEM",
@@ -618,4 +771,220 @@ def _save_order_entry(
 
     bust_cache()
     return po_id
+
+# ============================================================
+# [E5] Order Message Detail
+# 這一區放：叫貨明細（LINE格式顯示）
+# 功能：
+# 1. 選擇單日日期
+# 2. 顯示當天叫貨內容
+# 3. 顯示方式與LINE通知一致
+# ============================================================
+def page_order_message_detail():
+    st.title("🧾 叫貨明細")
+
+    # ========================================================
+    # 1. 先確認目前分店
+    # ========================================================
+    store_id = st.session_state.get("store_id", "")
+    store_name = st.session_state.get("store_name", "")
+
+    if not store_id:
+        st.warning("請先選擇分店")
+        return
+
+    # ========================================================
+    # 2. 選擇日期（單日）
+    # ========================================================
+    selected_date = st.date_input(
+        "日期",
+        value=date.today(),
+        key="order_message_detail_date",
+    )
+
+    # ========================================================
+    # 3. 讀取資料
+    # ========================================================
+    po_df = read_table("purchase_orders")
+    pol_df = read_table("purchase_order_lines")
+    vendors_df = read_table("vendors")
+    items_df = read_table("items")
+
+    if po_df.empty or pol_df.empty:
+        st.info("目前沒有叫貨資料")
+        return
+
+    # ========================================================
+    # 4. 日期格式整理
+    # ========================================================
+    if "order_date" not in po_df.columns:
+        st.error("purchase_orders 缺少 order_date 欄位")
+        return
+
+    po_df = po_df.copy()
+    po_df["order_date"] = pd.to_datetime(po_df["order_date"], errors="coerce").dt.date
+
+    # ========================================================
+    # 5. 篩出指定分店＋指定日期的主單
+    # ========================================================
+    if "store_id" not in po_df.columns or "po_id" not in po_df.columns:
+        st.error("purchase_orders 缺少 store_id 或 po_id 欄位")
+        return
+
+    po_today = po_df[
+        (po_df["store_id"].astype(str) == str(store_id))
+        & (po_df["order_date"] == selected_date)
+    ].copy()
+
+    if po_today.empty:
+        st.info("這一天沒有叫貨紀錄")
+        return
+
+    # ========================================================
+    # 6. 篩出明細
+    # ========================================================
+    if "po_id" not in pol_df.columns:
+        st.error("purchase_order_lines 缺少 po_id 欄位")
+        return
+
+    po_ids = po_today["po_id"].astype(str).tolist()
+
+    pol_df = pol_df.copy()
+    pol_df["po_id"] = pol_df["po_id"].astype(str)
+
+    lines_today = pol_df[pol_df["po_id"].isin(po_ids)].copy()
+
+    if lines_today.empty:
+        st.info("這一天沒有叫貨明細")
+        return
+
+    # ========================================================
+    # 7. 建立廠商名稱對照
+    #    顯示優先沿用系統既有規則
+    # ========================================================
+    vendor_map = dict(
+        zip(
+            vendors_df["vendor_id"].astype(str),
+            vendors_df["vendor_name_zh"].fillna("").astype(str),
+        )
+    )
+    # ========================================================
+    # 8. 建立品項名稱對照
+    #    顯示優先：item_name_zh > item_name > item_id
+    # ========================================================
+    item_name_col = None
+    if "item_name_zh" in items_df.columns:
+        item_name_col = "item_name_zh"
+    elif "item_name" in items_df.columns:
+        item_name_col = "item_name"
+
+    item_map = {}
+    if "item_id" in items_df.columns:
+        for _, r in items_df.iterrows():
+            iid = str(r.get("item_id", ""))
+            display_name = ""
+            if item_name_col:
+                display_name = str(r.get(item_name_col, "")).strip()
+            if not display_name:
+                display_name = iid
+            item_map[iid] = display_name
+
+    # ========================================================
+    # 9. 合併主單與明細
+    # ========================================================
+    po_today["po_id"] = po_today["po_id"].astype(str)
+
+    merged = lines_today.merge(
+        po_today[["po_id", "vendor_id"]],
+        on="po_id",
+        how="left",
+        suffixes=("", "_po"),
+    )
+
+    # 找實際可用的 vendor_id 欄位
+    vendor_id_col = None
+    if "vendor_id_po" in merged.columns:
+        vendor_id_col = "vendor_id_po"
+    elif "vendor_id_y" in merged.columns:
+        vendor_id_col = "vendor_id_y"
+    elif "vendor_id" in merged.columns:
+        vendor_id_col = "vendor_id"
+    elif "vendor_id_x" in merged.columns:
+        vendor_id_col = "vendor_id_x"
+
+    if vendor_id_col is None:
+        st.error("合併後找不到 vendor_id 欄位")
+        return
+
+    merged["vendor_name"] = (
+        merged[vendor_id_col].astype(str).str.strip().map(vendor_map).fillna("未分類廠商")
+    )
+    merged["item_name"] = (
+        merged["item_id"].astype(str).map(item_map).fillna(merged["item_id"].astype(str))
+    )
+    # ========================================================
+    # 10. 抓數量 / 單位欄位
+    # ========================================================
+    qty_col = "order_qty" if "order_qty" in merged.columns else "qty"
+    unit_col = "order_unit" if "order_unit" in merged.columns else "unit_id"
+
+    if qty_col not in merged.columns:
+        st.error("purchase_order_lines 缺少 order_qty / qty 欄位")
+        return
+
+    if unit_col not in merged.columns:
+        st.error("purchase_order_lines 缺少 order_unit / unit_id 欄位")
+        return
+
+    # ========================================================
+    # 11. 數量格式整理
+    # ========================================================
+    def _fmt_qty(v):
+        try:
+            v = float(v)
+            if v.is_integer():
+                return str(int(v))
+            return f"{v:.1f}"
+        except Exception:
+            return str(v)
+
+    # ========================================================
+    # 12. 產生 LINE 訊息內容
+    # ========================================================
+    lines = []
+    lines.append("今日進貨明細")
+
+    if store_name:
+        lines.append(store_name)
+
+    lines.append(str(selected_date))
+    lines.append("")
+
+    for vendor_name, group in merged.groupby("vendor_name", sort=False):
+        show_vendor = vendor_name.strip() if str(vendor_name).strip() else "未分類廠商"
+        lines.append(show_vendor)
+
+        for _, r in group.iterrows():
+            item_name = str(r.get("item_name", "")).strip()
+            qty = _fmt_qty(r.get(qty_col, ""))
+            unit = str(r.get(unit_col, "")).strip()
+            lines.append(f"{item_name} {qty}{unit}")
+
+        lines.append("")
+
+    line_message = "\n".join(lines).strip()
+
+    # ========================================================
+    # 13. 顯示
+    # ========================================================
+    st.markdown("### LINE 顯示內容")
+    st.code(line_message, language="text")
+
+
+
+
+
+
+
+
 

@@ -265,40 +265,10 @@ def _status_hint(total_stock: float, daily_avg: float, suggest_qty: float) -> st
     if suggest_qty > 0 and total_stock < suggest_qty:
         return "🟡"
     return ""
-
-
 # ============================================================
-# Google Sheets Client
+# [C1] Google Sheets Client
+# 這一區放：Google Sheets 連線 / Spreadsheet 取得
 # ============================================================
-@st.cache_resource(show_spinner=False)
-def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-
-    try:
-        if "gcp_service_account" in st.secrets:
-            creds = Credentials.from_service_account_info(
-                dict(st.secrets["gcp_service_account"]),
-                scopes=scopes,
-            )
-        else:
-            if not LOCAL_SERVICE_ACCOUNT.exists():
-                st.error(f"找不到本機金鑰：{LOCAL_SERVICE_ACCOUNT}")
-                return None
-    
-            creds = Credentials.from_service_account_file(
-                str(LOCAL_SERVICE_ACCOUNT),
-                scopes=scopes,
-            )
-    
-        return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"Google Sheets 連線失敗：{e}")
-        return None
-
-
 def _get_secret_sheet_id() -> str:
     try:
         if hasattr(st.secrets, "get"):
@@ -309,7 +279,46 @@ def _get_secret_sheet_id() -> str:
 
 
 @st.cache_resource(show_spinner=False)
+def get_gspread_client():
+    """
+    Google Sheets 驗證入口
+    優先順序：
+    1. st.secrets["gcp_service_account"]
+    2. st.secrets["gcp"]
+    3. 本機 service_account.json
+    """
+    try:
+        info = None
+
+        if "gcp_service_account" in st.secrets:
+            info = dict(st.secrets["gcp_service_account"])
+        elif "gcp" in st.secrets:
+            info = dict(st.secrets["gcp"])
+        elif LOCAL_SERVICE_ACCOUNT.exists():
+            import json
+            info = json.loads(LOCAL_SERVICE_ACCOUNT.read_text(encoding="utf-8"))
+
+        if not info:
+            st.error("找不到 Google Service Account 設定")
+            return None
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+        return gspread.authorize(creds)
+
+    except Exception as e:
+        st.error(f"Google Sheets 驗證失敗：{e}")
+        return None
+
+
+@st.cache_resource(show_spinner=False)
 def get_spreadsheet():
+    """
+    取得目前主資料庫 Spreadsheet
+    """
     client = get_gspread_client()
     if not client:
         return None
@@ -322,7 +331,8 @@ def get_spreadsheet():
 
 
 # ============================================================
-# Sheet Read / Write
+# [C2] Sheet Read / Write
+# 這一區放：讀表、抓表頭、寫入資料、清快取
 # ============================================================
 @st.cache_data(show_spinner=False, ttl=120)
 def read_table(sheet_name: str) -> pd.DataFrame:
@@ -371,6 +381,7 @@ def read_table(sheet_name: str) -> pd.DataFrame:
         st.warning(f"{sheet_name} 讀取失敗：{e}")
         return pd.DataFrame()
 
+
 def get_header(sheet_name: str) -> list[str]:
     sh = get_spreadsheet()
     if sh is None:
@@ -401,7 +412,8 @@ def bust_cache():
 
 
 # ============================================================
-# LINE Push
+# [D1] LINE Push
+# 這一區放：LINE 推播
 # ============================================================
 def send_line_message(message: str) -> bool:
     import json
@@ -435,7 +447,8 @@ def send_line_message(message: str) -> bool:
 
 
 # ============================================================
-# ID Sequence
+# [D2] ID Sequence
+# 這一區放：自動編號 / ID 產生
 # ============================================================
 def _make_id(prefix: str, width: int, n: int) -> str:
     return f"{prefix}{str(n).zfill(int(width))}"
@@ -500,7 +513,8 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
 
 
 # ============================================================
-# Data Helpers
+# [E1] Data Helpers
+# 這一區放：價格、最後叫貨、最後庫存等資料整理工具
 # ============================================================
 def get_base_unit_cost(item_id, target_date, items_df, prices_df, conversions_df):
     if items_df.empty or prices_df.empty:
@@ -702,6 +716,10 @@ def _get_latest_stock_qty_in_display_unit(
         return round(base_qty, 1)
 
 
+# ============================================================
+# [F1] Purchase / Stock Detail Builders
+# 這一區放：進貨明細、庫存明細
+# ============================================================
 def _build_purchase_detail_df() -> pd.DataFrame:
     po_df = read_table("purchase_orders")
     pol_df = read_table("purchase_order_lines")
@@ -1023,6 +1041,10 @@ def _sum_purchase_qty_in_display_unit(
     return round(total, 1)
 
 
+# ============================================================
+# [F2] Report Builders
+# 這一區放：進銷存摘要、最新品項指標、進貨摘要
+# ============================================================
 def _build_inventory_history_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
     stock_df = _build_stock_detail_df()
     po_df = _build_purchase_detail_df()
@@ -1090,7 +1112,6 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
         curr_qty = _safe_float(curr_row.get("display_stock_qty", 0))
 
-        
         # 第一次紀錄：不補前帳、不補前面進貨
         if prev_date is None:
             order_sum = 0.0
@@ -1122,7 +1143,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             usage = round(total_stock - curr_qty, 1)
             days = max((curr_date - prev_date).days, 1)
             daily_avg = round(usage / days, 1)
-                
+
         result_rows.append(
             {
                 "日期": curr_date,
@@ -1205,11 +1226,4 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
-
-
-
-
-
-
-
 
