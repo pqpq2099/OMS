@@ -248,28 +248,28 @@ def render_sidebar():
         st.markdown("---")
 
         # ====================================================
-        # 作業管理
+        # 作業
         # ====================================================
-        st.markdown("### 作業管理")
+        st.markdown("### 作業")
 
         if st.button("🏠 選擇分店", use_container_width=True, key="sb_select_store"):
             st.session_state.step = "select_store"
             st.rerun()
 
-        if st.button("📋 今日進貨", use_container_width=True, key="sb_export"):
-            st.session_state.step = "export"
+        if st.button("🧾 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
+            st.session_state.step = "order_message_detail"
             st.rerun()
 
         # ============================================================
-        # 報表
+        # 分析
         # ============================================================
-        st.markdown("### 報表")
+        st.markdown("### 分析")
 
         if st.button("📊 進銷存分析", use_container_width=True, key="sb_analysis"):
             st.session_state.step = "analysis"
             st.rerun()
 
-        if st.button("📜 歷史紀錄", use_container_width=True, key="sb_view_history"):
+        if st.button("📜 進貨分析", use_container_width=True, key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
             
@@ -374,6 +374,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
