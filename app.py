@@ -15,6 +15,7 @@ from oms_core import (
 
 from pages_order import (
     page_order_entry,
+    page_order_message_detail,
     page_select_store,
     page_select_vendor,
 )
@@ -271,7 +272,7 @@ def render_sidebar():
         if st.button("📜 歷史紀錄", use_container_width=True, key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
-
+            
         # ============================================================
         # 後台管理
         # ============================================================
@@ -317,7 +318,10 @@ def router():
 
     elif step == "order_entry":
         page_order_entry()
-
+    
+    elif step == "order_message_detail":
+        page_order_message_detail()
+    
     elif step == "export":
         page_export()
 
@@ -370,6 +374,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
