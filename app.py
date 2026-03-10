@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 import streamlit as st
-
+from pages_user_admin import page_user_admin
 from oms_core import apply_global_style
 
 from pages_order import (
@@ -169,19 +169,16 @@ def router():
 
     elif step == "select_vendor":
         page_select_vendor()
-
     elif step == "order_entry":
         page_order_entry()
-
     elif step == "export":
         page_export()
-
     elif step == "analysis":
         page_analysis()
-
     elif step == "view_history":
         page_view_history()
-
+    elif step == "user_admin":
+        page_user_admin()
     elif step == "cost_debug":
         page_cost_debug()
 
@@ -222,3 +219,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
