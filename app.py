@@ -255,65 +255,35 @@ def render_sidebar():
             st.session_state.step = "select_store"
             st.rerun()
 
-        if st.session_state.store_id:
-            if st.button("🏢 分店功能選單", use_container_width=True, key="sb_select_vendor"):
-                st.session_state.step = "select_vendor"
-                st.rerun()
+        if st.button("📋 今日進貨", use_container_width=True, key="sb_export"):
+            st.session_state.step = "export"
+            st.rerun()
 
-        if st.session_state.vendor_id:
-            if st.button("📝 叫貨 / 庫存", use_container_width=True, key="sb_order_entry"):
-                st.session_state.step = "order_entry"
-                st.rerun()
+        # ============================================================
+        # 報表
+        # ============================================================
+        st.markdown("### 報表")
 
-        if st.session_state.store_id:
-            if st.button("📋 今日進貨明細", use_container_width=True, key="sb_export"):
-                st.session_state.step = "export"
-                st.rerun()
+        if st.button("📊 進銷存分析", use_container_width=True, key="sb_analysis"):
+            st.session_state.step = "analysis"
+            st.rerun()
 
-        # ====================================================
-        # 報表分析
-        # ====================================================
-        if role in ["owner", "admin", "store_manager"]:
-            st.markdown("### 報表分析")
+        if st.button("📜 歷史紀錄", use_container_width=True, key="sb_view_history"):
+            st.session_state.step = "view_history"
+            st.rerun()
 
-            if st.session_state.store_id:
-                if st.button("🧾 歷史叫貨紀錄", use_container_width=True, key="sb_purchase_history"):
-                    st.session_state.step = "purchase_history"
-                    st.rerun()
-
-                if st.button("📈 進銷存分析", use_container_width=True, key="sb_analysis"):
-                    st.session_state.step = "analysis"
-                    st.rerun()
-
-                if st.button("📜 歷史紀錄", use_container_width=True, key="sb_view_history"):
-                    st.session_state.step = "view_history"
-                    st.rerun()
-
-                if st.button("📤 資料匯出", use_container_width=True, key="sb_data_export"):
-                    st.session_state.step = "data_export"
-                    st.rerun()
-
-        # ====================================================
+        # ============================================================
         # 後台管理
-        # ====================================================
-        if role in ["owner", "admin"]:
-            st.markdown("### 後台管理")
+        # ============================================================
+        st.markdown("### 後台管理")
 
-            if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
-                st.session_state.step = "user_admin"
-                st.rerun()
+        if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
+            st.session_state.step = "user_admin"
+            st.rerun()
 
-            if st.button("🛒 採購設定", use_container_width=True, key="sb_purchase_settings"):
-                st.session_state.step = "purchase_settings"
-                st.rerun()
-
-            if st.button("🧮 成本檢查", use_container_width=True, key="sb_cost_debug"):
-                st.session_state.step = "cost_debug"
-                st.rerun()
-
-            if st.button("🎨 系統外觀", use_container_width=True, key="sb_appearance_settings"):
-                st.session_state.step = "appearance_settings"
-                st.rerun()
+        if st.button("🛒 採購設定", use_container_width=True, key="sb_purchase_settings"):
+            st.session_state.step = "purchase_settings"
+            st.rerun()
 
         # ====================================================
         # 系統工具（Owner only）
@@ -400,6 +370,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
