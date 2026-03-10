@@ -1,10 +1,15 @@
 from __future__ import annotations
+
+# ============================================================
+# [A1] 基本匯入
+# 這一區放：日期、Streamlit、核心函式
+# ============================================================
 from datetime import date
-from oms_core import read_table
 import streamlit as st
 
 from oms_core import (
     _build_latest_item_metrics_df,
+    _build_stock_detail_df,
     _clean_option_list,
     _get_active_df,
     _get_last_po_summary,
@@ -28,7 +33,78 @@ from oms_engine import convert_to_base
 
 
 # ============================================================
+# [B1] 盤點引擎輔助函式
+# 這一區放：抓上一筆庫存、建立本次新庫存
+# 規則：
+# 1. 有輸入 → 用新值覆蓋
+# 2. 未輸入 → 沿用上一筆
+# ============================================================
+def _get_last_stock_map_for_store(store_id: str) -> dict[str, float]:
+    """
+    取得某分店每個品項最後一次盤點的庫存（顯示單位）
+    回傳格式：
+    {
+        "ITEM_001": 10.0,
+        "ITEM_002": 5.0,
+    }
+    """
+    stock_df = _build_stock_detail_df()
+    if stock_df.empty:
+        return {}
+
+    work = stock_df[
+        stock_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+    ].copy()
+
+    if work.empty or "stocktake_date_dt" not in work.columns:
+        return {}
+
+    work = work[work["stocktake_date_dt"].notna()].copy()
+    if work.empty:
+        return {}
+
+    work = work.sort_values(["stocktake_date_dt"], ascending=True)
+
+    latest = (
+        work.groupby("item_id", as_index=False)
+        .tail(1)
+        .copy()
+    )
+
+    result = {}
+    for _, row in latest.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        qty = _safe_float(row.get("display_stock_qty", 0))
+        if item_id:
+            result[item_id] = qty
+
+    return result
+
+
+def _build_new_stock_map(
+    last_stock_map: dict[str, float],
+    current_input_map: dict[str, float],
+) -> dict[str, float]:
+    """
+    規則：
+    1. 先沿用上一筆庫存
+    2. 本次有輸入的品項，用新值覆蓋
+    3. 本次沒輸入的品項，沿用舊值
+    """
+    result = dict(last_stock_map or {})
+
+    for item_id, qty in (current_input_map or {}).items():
+        item_id = _norm(item_id)
+        if not item_id:
+            continue
+        result[item_id] = _safe_float(qty, 0)
+
+    return result
+
+
+# ============================================================
 # [E1] Select Store
+# 這一區放：選擇分店頁
 # ============================================================
 def page_select_store():
     st.markdown(
@@ -59,6 +135,7 @@ def page_select_store():
 
 # ============================================================
 # [E2] Select Vendor
+# 這一區放：選擇廠商頁
 # ============================================================
 def page_select_vendor():
     st.markdown(
@@ -144,24 +221,32 @@ def page_select_vendor():
 
 # ============================================================
 # [E3] Order Entry
+# 這一區放：盤點 / 叫貨主頁
+# 說明：
+# 庫 = 盤點庫存
+# 進 = 叫貨數量
 # ============================================================
 def page_order_entry():
     # ============================================================
     # 初始化庫存判斷
+    # 若此分店還沒有任何 stocktake 紀錄，這次視為初始化
     # ============================================================
     stocktakes_df = read_table("stocktakes")
 
-    store_stocktakes = stocktakes_df[
-        stocktakes_df["store_id"] == st.session_state.store_id
-    ]
-
-    is_initial_stock = len(store_stocktakes) == 0
+    if stocktakes_df.empty or "store_id" not in stocktakes_df.columns:
+        is_initial_stock = True
+    else:
+        store_stocktakes = stocktakes_df[
+            stocktakes_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip()
+        ]
+        is_initial_stock = len(store_stocktakes) == 0
 
     if is_initial_stock:
         st.warning(
             "⚠️ 目前尚無庫存基準資料，本次儲存將建立「初始化庫存」。"
-            "請先填寫目前實際庫存，進貨欄位先不要填。"
+            "請先填寫目前實際庫存；未來再依正常流程盤點 / 叫貨。"
         )
+
     st.markdown(
         """
         <style>
@@ -226,6 +311,7 @@ def page_order_entry():
         """,
         unsafe_allow_html=True,
     )
+
     st.title(f"📝 {st.session_state.vendor_name}")
 
     items_df = _get_active_df(read_table("items"))
@@ -365,7 +451,7 @@ def page_order_entry():
 
             item_name = meta["item_name"]
             base_unit = meta["base_unit"]
-            stock_unit = base_unit
+            stock_unit = meta["stock_unit"]
             order_unit = meta["order_unit"]
             current_stock_qty = _safe_float(meta["current_stock_qty"])
             total_stock_ref = _safe_float(meta["total_stock_ref"])
@@ -393,7 +479,7 @@ def page_order_entry():
                     label_visibility="collapsed",
                 )
                 st.markdown(
-                    f"<div class='order-unit-label'>{base_unit}</div>",
+                    f"<div class='order-unit-label'>{stock_unit}</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -440,6 +526,7 @@ def page_order_entry():
                 store_id=st.session_state.store_id,
                 vendor_id=st.session_state.vendor_id,
                 record_date=st.session_state.record_date,
+                is_initial_stock=is_initial_stock,
             )
 
             st.success(
@@ -461,7 +548,12 @@ def page_order_entry():
 
 
 # ============================================================
-# Save Order Entry
+# [E4] Save Order Entry
+# 這一區放：儲存盤點 / 叫貨
+# 修正重點：
+# 1. 庫存不是只存 >0，而是依照「上一筆 + 本次覆蓋」建立新盤點
+# 2. 未輸入的品項沿用上一筆
+# 3. 初始化時，這一頁的庫存就是第一筆基準庫存
 # ============================================================
 def _save_order_entry(
     submit_rows,
@@ -470,10 +562,61 @@ def _save_order_entry(
     store_id,
     vendor_id,
     record_date,
+    is_initial_stock: bool,
 ):
-    stocktake_rows = [r for r in submit_rows if r["stock_qty"] > 0]
-    order_rows = [r for r in submit_rows if r["order_qty"] > 0]
+    now = _now_ts()
 
+    # ============================================================
+    # 1. 叫貨資料：只保留 > 0 的列
+    # ============================================================
+    order_rows = [r for r in submit_rows if _safe_float(r["order_qty"]) > 0]
+
+    # ============================================================
+    # 2. 盤點資料：
+    #    使用「上一筆庫存 + 本次輸入覆蓋」方式建立完整新盤點
+    # ============================================================
+    last_stock_map = _get_last_stock_map_for_store(store_id=store_id)
+
+    current_input_map = {
+        _norm(r["item_id"]): _safe_float(r["stock_qty"])
+        for r in submit_rows
+    }
+
+    new_stock_map = _build_new_stock_map(
+        last_stock_map=last_stock_map,
+        current_input_map=current_input_map,
+    )
+
+    # 只保留本次畫面裡屬於該廠商的品項
+    vendor_item_ids = set(vendor_items["item_id"].astype(str).str.strip())
+    new_stock_map = {
+        item_id: qty
+        for item_id, qty in new_stock_map.items()
+        if item_id in vendor_item_ids
+    }
+
+    stocktake_rows = []
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        if item_id not in new_stock_map:
+            continue
+
+        meta_row = next((r for r in submit_rows if _norm(r["item_id"]) == item_id), None)
+        stock_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
+        stock_qty = _safe_float(new_stock_map.get(item_id, 0))
+
+        stocktake_rows.append(
+            {
+                "item_id": item_id,
+                "item_name": _item_display_name(row),
+                "stock_qty": stock_qty,
+                "stock_unit": meta_row["stock_unit"] if meta_row else stock_unit,
+            }
+        )
+
+    # ============================================================
+    # 3. 申請 ID
+    # ============================================================
     id_need = {
         "stocktake_id": 1 if stocktake_rows else 0,
         "stocktake_line_id": len(stocktake_rows),
@@ -481,8 +624,10 @@ def _save_order_entry(
         "po_line_id": len(order_rows),
     }
     id_map = allocate_ids(id_need)
-    now = _now_ts()
 
+    # ============================================================
+    # 4. 寫入 stocktakes / stocktake_lines
+    # ============================================================
     if stocktake_rows:
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
@@ -494,6 +639,7 @@ def _save_order_entry(
             "stocktake_id": stocktake_id,
             "store_id": store_id,
             "stocktake_date": str(record_date),
+            "stocktake_type": "initial" if is_initial_stock else "regular",
             "status": "done",
             "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
             "created_at": now,
@@ -546,6 +692,9 @@ def _save_order_entry(
 
         append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
 
+    # ============================================================
+    # 5. 寫入 purchase_orders / purchase_order_lines
+    # ============================================================
     po_id = ""
 
     if order_rows:
@@ -560,6 +709,7 @@ def _save_order_entry(
             "store_id": store_id,
             "vendor_id": vendor_id,
             "order_date": str(record_date),
+            "delivery_date": str(record_date),  # 先保守不亂加一天，避免跟你現有表頭/流程衝突
             "status": "draft",
             "created_at": now,
             "created_by": "SYSTEM",
