@@ -467,11 +467,10 @@ def page_analysis():
                 .reset_index(drop=True)
             )
 
-                st.dataframe(
-                    vendor_summary,
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            st.dataframe(
+                vendor_summary,
+                use_container_width=True,
+                hide_index=True,
                 column_config={
                     "廠商": st.column_config.TextColumn(width="medium"),
                     "採購金額": st.column_config.NumberColumn("金額", format="%.1f", width="small"),
@@ -482,7 +481,6 @@ def page_analysis():
             st.session_state.step = "select_vendor"
             st.rerun()
         return
-
     # ============================================================
     # 單一廠商：只看 庫存合計 / 這次庫存 / 期間消耗 / 日平均
     # ============================================================
@@ -667,6 +665,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
