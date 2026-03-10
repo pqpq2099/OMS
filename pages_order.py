@@ -771,10 +771,132 @@ def _save_order_entry(
     bust_cache()
     return po_id
 
+# ============================================================
+# [E5] Order Message Detail
+# 這一區放：叫貨明細（LINE格式顯示）
+# 功能：
+# 1. 選擇單日日期
+# 2. 顯示當天叫貨內容
+# 3. 顯示方式與LINE通知一致
+# ============================================================
+
 def page_order_message_detail():
     st.title("🧾 叫貨明細")
-    st.info("叫貨明細頁建置中")
 
+    # ============================================================
+    # 分店確認
+    # ============================================================
+    store_id = st.session_state.get("store_id")
+
+    if not store_id:
+        st.warning("請先選擇分店")
+        return
+
+    # ============================================================
+    # 日期選擇（單日）
+    # ============================================================
+    selected_date = st.date_input(
+        "日期",
+        value=date.today(),
+        key="order_message_date",
+    )
+
+    # ============================================================
+    # 讀資料表
+    # ============================================================
+    po_df = read_table("purchase_orders")
+    pol_df = read_table("purchase_order_lines")
+    vendors_df = read_table("vendors")
+    items_df = read_table("items")
+
+    if po_df.empty or pol_df.empty:
+        st.info("目前沒有叫貨資料")
+        return
+
+    # ============================================================
+    # 日期轉換
+    # ============================================================
+    po_df["order_date"] = pd.to_datetime(po_df["order_date"]).dt.date
+
+    # ============================================================
+    # 篩出當天叫貨
+    # ============================================================
+    po_today = po_df[
+        (po_df["store_id"] == store_id)
+        & (po_df["order_date"] == selected_date)
+    ]
+
+    if po_today.empty:
+        st.info("這一天沒有叫貨紀錄")
+        return
+
+    # ============================================================
+    # 找出 PO ID
+    # ============================================================
+    po_ids = po_today["po_id"].astype(str).tolist()
+
+    lines_today = pol_df[
+        pol_df["po_id"].astype(str).isin(po_ids)
+    ]
+
+    if lines_today.empty:
+        st.info("這一天沒有叫貨明細")
+        return
+
+    # ============================================================
+    # 廠商名稱
+    # ============================================================
+    vendor_map = dict(
+        zip(vendors_df["vendor_id"].astype(str), vendors_df["vendor_name"])
+    )
+
+    # ============================================================
+    # 品項名稱
+    # ============================================================
+    item_map = dict(
+        zip(items_df["item_id"].astype(str), items_df["item_name"])
+    )
+
+    # ============================================================
+    # 合併資料
+    # ============================================================
+    merged = lines_today.merge(
+        po_today[["po_id", "vendor_id"]],
+        on="po_id",
+        how="left",
+    )
+
+    merged["vendor_name"] = merged["vendor_id"].astype(str).map(vendor_map)
+    merged["item_name"] = merged["item_id"].astype(str).map(item_map)
+
+    # ============================================================
+    # 產生 LINE 訊息
+    # ============================================================
+    lines = []
+
+    lines.append("今日進貨明細")
+    lines.append(str(selected_date))
+    lines.append("")
+
+    for vendor, group in merged.groupby("vendor_name"):
+
+        lines.append(vendor)
+
+        for _, r in group.iterrows():
+            qty = r["order_qty"]
+            unit = r["order_unit"]
+            item = r["item_name"]
+
+            lines.append(f"{item} {qty}{unit}")
+
+        lines.append("")
+
+    line_message = "\n".join(lines)
+
+    # ============================================================
+    # 顯示
+    # ============================================================
+    st.code(line_message, language="text")
 
 
 
