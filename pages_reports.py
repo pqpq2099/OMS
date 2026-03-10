@@ -455,7 +455,7 @@ def page_analysis():
     # 全部廠商：只看金額
     # ============================================================
     if selected_vendor == "全部廠商":
-        st.write("<b>📋 全部廠商金額統計</b>", unsafe_allow_html=True)
+        st.subheader("📋 全部廠商金額統計")
 
         if purchase_filt.empty or "廠商" not in purchase_filt.columns or "採購金額" not in purchase_filt.columns:
             st.info("目前沒有可顯示的金額資料")
@@ -467,11 +467,11 @@ def page_analysis():
                 .reset_index(drop=True)
             )
 
-            st.dataframe(
-                vendor_summary,
-                use_container_width=True,
-                hide_index=True,
-                height=600,
+                st.dataframe(
+                    vendor_summary,
+                    use_container_width=True,
+                    hide_index=True,
+                )
                 column_config={
                     "廠商": st.column_config.TextColumn(width="medium"),
                     "採購金額": st.column_config.NumberColumn("金額", format="%.1f", width="small"),
@@ -667,6 +667,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
