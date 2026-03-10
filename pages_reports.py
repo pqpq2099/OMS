@@ -415,12 +415,9 @@ def page_analysis():
         start_date=start,
         end_date=end,
     )
+
     if not purchase_summary_df.empty and "廠商" not in purchase_summary_df.columns:
         purchase_summary_df["廠商"] = "-"
-        
-    prices_df = read_table("prices")
-    items_df = read_table("items")
-    conversions_df = _get_active_df(read_table("unit_conversions"))
 
     if hist_df.empty and purchase_summary_df.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
@@ -432,12 +429,17 @@ def page_analysis():
     st.markdown("---")
 
     # ============================================================
-    # 廠商 / 品項 篩選
+    # 廠商篩選
     # ============================================================
     hist_filt = hist_df.copy()
     purchase_filt = purchase_summary_df.copy()
 
-    vendor_values = _clean_option_list(hist_filt["廠商"].dropna().tolist()) if (not hist_filt.empty and "廠商" in hist_filt.columns) else []
+    vendor_values = []
+    if not hist_filt.empty and "廠商" in hist_filt.columns:
+        vendor_values = _clean_option_list(hist_filt["廠商"].dropna().tolist())
+    elif not purchase_filt.empty and "廠商" in purchase_filt.columns:
+        vendor_values = _clean_option_list(purchase_filt["廠商"].dropna().tolist())
+
     all_vendors = ["全部廠商"] + vendor_values
     selected_vendor = st.selectbox("🏢 選擇廠商", options=all_vendors, index=0, key="ana_vendor_filter")
 
@@ -447,176 +449,86 @@ def page_analysis():
         if not purchase_filt.empty and "廠商" in purchase_filt.columns:
             purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
 
-    
-    total_buy = float(purchase_filt.get("採購金額", []).sum()) if not purchase_filt.empty else 0.0
+    st.markdown("---")
 
-    total_stock_value = 0.0
+    # ============================================================
+    # 全部廠商：只看金額
+    # ============================================================
+    if selected_vendor == "全部廠商":
+        st.write("<b>📋 全部廠商金額統計</b>", unsafe_allow_html=True)
 
-    if not hist_filt.empty and not items_df.empty and not prices_df.empty:
-        latest_rows = hist_filt.sort_values("日期_dt").groupby("item_id", as_index=False).tail(1).copy()
-
-        latest_rows["base_unit_cost"] = latest_rows.apply(
-            lambda r: get_base_unit_cost(
-                item_id=_norm(r.get("item_id", "")),
-                target_date=end,
-                items_df=items_df,
-                prices_df=prices_df,
-                conversions_df=conversions_df,
+        if purchase_filt.empty or "廠商" not in purchase_filt.columns or "採購金額" not in purchase_filt.columns:
+            st.info("目前沒有可顯示的金額資料")
+        else:
+            vendor_summary = (
+                purchase_filt.groupby("廠商", as_index=False)["採購金額"]
+                .sum()
+                .sort_values("採購金額", ascending=False)
+                .reset_index(drop=True)
             )
-            or 0.0,
-            axis=1,
-        )
-        latest_rows["stock_value"] = (
-            latest_rows["這次庫存"].astype(float) * latest_rows["base_unit_cost"].astype(float)
-        )
-        total_stock_value = float(latest_rows["stock_value"].sum())
 
-    st.markdown(
-        f"""
-        <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
-            <div style='flex: 1; padding: 10px; border-radius: 8px; border-left: 4px solid #50C878; background: rgba(80, 200, 120, 0.05);'>
-                <div style='font-size: 11px; font-weight: 700; opacity: 0.8;'>📦 庫存殘值估計</div>
-                <div style='font-size: 18px; font-weight: 800; color: #50C878;'>${total_stock_value:,.1f}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            st.dataframe(
+                vendor_summary,
+                use_container_width=True,
+                hide_index=True,
+                height=600,
+                column_config={
+                    "廠商": st.column_config.TextColumn(width="medium"),
+                    "採購金額": st.column_config.NumberColumn("金額", format="%.1f", width="small"),
+                },
+            )
 
-    t_detail, t_trend = st.tabs(["📋 明細", "📈 趨勢"])
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
 
-    with t_detail:
-        st.write("<b>📋 廠商採購統計</b>", unsafe_allow_html=True)
-    
-        if hist_filt.empty and purchase_filt.empty:
-            st.info("💡 尚未產生進銷存資料")
+    # ============================================================
+    # 單一廠商：只看 庫存合計 / 這次庫存 / 期間消耗 / 日平均
+    # ============================================================
+    st.write(f"<b>📦 {selected_vendor} 品項明細</b>", unsafe_allow_html=True)
+
+    if hist_filt.empty:
+        st.info("此廠商在目前條件下無資料")
+    else:
+        detail_df = hist_filt.copy()
+
+        # 隱藏完全沒變化的列
+        detail_df = detail_df[
+            (detail_df["庫存合計"] != 0)
+            | (detail_df["這次庫存"] != 0)
+            | (detail_df["期間消耗"] != 0)
+            | (detail_df["日平均"] != 0)
+        ].copy()
+
+        if detail_df.empty:
+            st.caption("此廠商在目前條件下無品項資料")
         else:
-            # ============================================================
-            # 1. 先顯示廠商統計金額
-            # ============================================================
-            if not purchase_filt.empty and "廠商" in purchase_filt.columns and "採購金額" in purchase_filt.columns:
-                vendor_summary = (
-                    purchase_filt.groupby("廠商", as_index=False)["採購金額"]
-                    .sum()
-                    .sort_values("採購金額", ascending=False)
-                    .reset_index(drop=True)
-                )
-    
-                st.dataframe(
-                    vendor_summary,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "廠商": st.column_config.TextColumn(width="medium"),
-                        "採購金額": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    },
-                )
-            else:
-                st.caption("目前沒有可顯示的廠商採購統計")
-    
-            # ============================================================
-            # 2. 只有選擇單一廠商時，才顯示該廠商品項明細
-            # ============================================================
-            if selected_vendor != "全部廠商":
-                st.write(f"<b>📦 {selected_vendor} 品項明細</b>", unsafe_allow_html=True)
-    
-                detail_df = hist_filt.copy()
-                detail_df = detail_df[
-                    (detail_df["上次庫存"] != 0)
-                    | (detail_df["期間進貨"] != 0)
-                    | (detail_df["期間消耗"] != 0)
-                    | (detail_df["這次庫存"] != 0)
-                ].copy()
-    
-                if detail_df.empty:
-                    st.caption("此廠商在目前條件下無品項資料")
-                else:
-                    show_cols = [
-                        "日期顯示",
-                        "品項",
-                        "上次庫存",
-                        "期間進貨",
-                        "庫存合計",
-                        "這次庫存",
-                        "期間消耗",
-                        "日平均",
-                    ]
-    
-                    st.dataframe(
-                        detail_df[show_cols],
-                        use_container_width=True,
-                        hide_index=True,
-                        height=700,
-                        column_config={
-                        "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                        "品項": st.column_config.TextColumn(width="medium"),
-                        "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                        "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    },
-                    )
-            else:
-                st.caption("選擇單一廠商後，才顯示該廠商品項明細")
+            show_cols = [
+                "品項",
+                "庫存合計",
+                "這次庫存",
+                "期間消耗",
+                "日平均",
+            ]
 
-    with t_trend:
-        if not HAS_PLOTLY:
-            st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
-        else:
-            if hist_filt.empty:
-                st.info("💡 此條件下尚無趨勢資料。")
-            else:
-                trend_daily = (
-                    hist_filt.groupby("日期_dt", as_index=False)["期間消耗"]
-                    .sum()
-                    .sort_values("日期_dt")
-                )
-                trend_daily["日期標記"] = trend_daily["日期_dt"].dt.strftime("%Y-%m-%d")
-
-                if not trend_daily.empty:
-                    fig1 = px.line(
-                        trend_daily,
-                        x="日期標記",
-                        y="期間消耗",
-                        markers=True,
-                        title="📈 期間消耗趨勢",
-                    )
-                    fig1.update_layout(
-                        xaxis_type="category",
-                        hovermode="x unified",
-                        xaxis_title="日期",
-                        yaxis_title="期間消耗",
-                        dragmode=False,
-                    )
-                    st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
-
-                rank_df = (
-                    hist_filt.groupby("品項", as_index=False)["期間消耗"]
-                    .sum()
-                    .sort_values("期間消耗", ascending=False)
-                    .head(20)
-                )
-
-                if not rank_df.empty:
-                    fig2 = px.bar(
-                        rank_df,
-                        x="品項",
-                        y="期間消耗",
-                        title="📊 品項期間消耗排行 (Top 20)",
-                    )
-                    fig2.update_layout(
-                        xaxis_title="品項名稱",
-                        yaxis_title="期間消耗",
-                        dragmode=False,
-                    )
-                    st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
+            st.dataframe(
+                detail_df[show_cols],
+                use_container_width=True,
+                hide_index=True,
+                height=700,
+                column_config={
+                    "品項": st.column_config.TextColumn(width="medium"),
+                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                },
+            )
 
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
 
 # ============================================================
 # [E7] Cost Debug
@@ -755,6 +667,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
