@@ -577,9 +577,12 @@ def _save_order_entry(
     # ============================================================
     last_stock_map = _get_last_stock_map_for_store(store_id=store_id)
 
+    # 一般盤點：
+    # 0 視為未輸入 → 沿用上次庫存
     current_input_map = {
         _norm(r["item_id"]): _safe_float(r["stock_qty"])
         for r in submit_rows
+        if _safe_float(r["stock_qty"]) > 0
     }
 
     new_stock_map = _build_new_stock_map(
@@ -768,4 +771,5 @@ def _save_order_entry(
 
     bust_cache()
     return po_id
+
 
