@@ -510,7 +510,7 @@ def page_analysis():
                 "日平均",
             ]
 
-              st.dataframe(
+            st.dataframe(
                 detail_df[show_cols],
                 use_container_width=True,
                 hide_index=True,
@@ -664,6 +664,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
