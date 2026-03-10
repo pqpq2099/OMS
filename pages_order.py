@@ -860,16 +860,26 @@ def page_order_message_detail():
 
     # ========================================================
     # 7. 建立廠商名稱對照
-    #    直接沿用系統既有顯示規則
+    #    顯示優先沿用系統既有規則
     # ========================================================
     vendor_map = {}
 
     if "vendor_id" in vendors_df.columns:
         for _, r in vendors_df.iterrows():
             vid = str(r.get("vendor_id", "")).strip()
-            display_name = _label_vendor(r)
+
+            # 先吃系統既有欄位
+            display_name = ""
+            for c in ["vendor_name_zh", "vendor_name", "name"]:
+                if c in vendors_df.columns:
+                    display_name = str(r.get(c, "")).strip()
+                    if display_name:
+                        break
+
+            # 如果上面都沒有，就退回 vendor_id
             if not display_name:
                 display_name = vid
+
             vendor_map[vid] = display_name
     # ========================================================
     # 8. 建立品項名稱對照
@@ -982,6 +992,7 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+
 
 
 
