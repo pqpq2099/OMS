@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date
 
 import streamlit as st
-from pages_user_admin import page_user_admin
-from oms_core import apply_global_style
+
+from oms_core import apply_global_style, read_table
 
 from pages_order import (
     page_order_entry,
@@ -45,6 +45,54 @@ def init_session():
 
 
 # ============================================================
+# Settings Helpers
+# ============================================================
+def get_system_name() -> str:
+    """
+    從 settings 表讀取 system_name。
+    若沒有資料或欄位不同，回傳預設名稱。
+    """
+    default_name = "ORIVIA 管理系統"
+
+    try:
+        settings_df = read_table("settings")
+        if settings_df.empty:
+            return default_name
+
+        work = settings_df.copy()
+        work.columns = [str(c).strip() for c in work.columns]
+
+        key_col = None
+        value_col = None
+
+        for c in ["key", "setting_key", "name", "setting_name"]:
+            if c in work.columns:
+                key_col = c
+                break
+
+        for c in ["value", "setting_value", "setting", "setting_val"]:
+            if c in work.columns:
+                value_col = c
+                break
+
+        if not key_col or not value_col:
+            return default_name
+
+        target = work[
+            work[key_col].astype(str).str.strip().str.lower() == "system_name"
+        ]
+
+        if target.empty:
+            return default_name
+
+        value = str(target.iloc[0][value_col]).strip()
+        return value if value else default_name
+
+    except Exception:
+        return default_name
+
+
+# ============================================================
 # Placeholder
 # ============================================================
 def page_placeholder(title: str, desc: str = "此功能入口已建立，功能尚未接上。"):
@@ -59,30 +107,29 @@ def page_placeholder(title: str, desc: str = "此功能入口已建立，功能�
 # ============================================================
 def render_sidebar():
     role = st.session_state.role
+    system_name = get_system_name()
 
     with st.sidebar:
-        st.markdown("## ORIVIA OMS")
-        st.caption("OMS Modular Baseline")
+        st.markdown(f"## {system_name}")
+
+        st.write(f"**目前角色：** {role}")
 
         if st.session_state.store_name:
-            st.write(f"**分店：** {st.session_state.store_name}")
+            st.write(f"**目前分店：** {st.session_state.store_name}")
+
         if st.session_state.vendor_name:
-            st.write(f"**廠商：** {st.session_state.vendor_name}")
+            st.write(f"**目前廠商：** {st.session_state.vendor_name}")
 
-        st.caption(f"目前角色：{role}")
         st.markdown("---")
-
-        # ====================================================
-        # 首頁
-        # ====================================================
-        if st.button("🏠 選擇分店", use_container_width=True, key="sb_select_store"):
-            st.session_state.step = "select_store"
-            st.rerun()
 
         # ====================================================
         # 作業管理
         # ====================================================
         st.markdown("### 作業管理")
+
+        if st.button("🏠 選擇分店", use_container_width=True, key="sb_select_store"):
+            st.session_state.step = "select_store"
+            st.rerun()
 
         if st.session_state.store_id:
             if st.button("🏢 分店功能選單", use_container_width=True, key="sb_select_vendor"):
@@ -106,6 +153,10 @@ def render_sidebar():
             st.markdown("### 報表分析")
 
             if st.session_state.store_id:
+                if st.button("🧾 歷史叫貨紀錄", use_container_width=True, key="sb_purchase_history"):
+                    st.session_state.step = "purchase_history"
+                    st.rerun()
+
                 if st.button("📈 進銷存分析", use_container_width=True, key="sb_analysis"):
                     st.session_state.step = "analysis"
                     st.rerun()
@@ -146,7 +197,7 @@ def render_sidebar():
         if role == "owner":
             st.markdown("### 系統工具")
 
-            if st.button("🛠️ 系統工具", use_container_width=True, key="sb_system_tools"):
+            if st.button("🛠️ 系統維護", use_container_width=True, key="sb_system_tools"):
                 st.session_state.step = "system_tools"
                 st.rerun()
 
@@ -169,22 +220,28 @@ def router():
 
     elif step == "select_vendor":
         page_select_vendor()
+
     elif step == "order_entry":
         page_order_entry()
+
     elif step == "export":
         page_export()
+
     elif step == "analysis":
         page_analysis()
+
     elif step == "view_history":
         page_view_history()
-    elif step == "user_admin":
-        page_user_admin()
+
     elif step == "cost_debug":
         page_cost_debug()
 
     # ---------------------------
     # 入口先建立，功能待接
     # ---------------------------
+    elif step == "purchase_history":
+        page_placeholder("🧾 歷史叫貨紀錄")
+
     elif step == "data_export":
         page_placeholder("📤 資料匯出")
 
@@ -198,7 +255,7 @@ def router():
         page_placeholder("🎨 系統外觀")
 
     elif step == "system_tools":
-        page_placeholder("🛠️ 系統工具")
+        page_placeholder("🛠️ 系統維護")
 
     elif step == "dev_test":
         page_placeholder("🧪 開發測試")
@@ -219,4 +276,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
