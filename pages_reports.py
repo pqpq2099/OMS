@@ -380,6 +380,30 @@ def page_export():
         vendor_name = _norm(v.get("vendor_name_disp", "")) or "未指定"
 
         output += f"\n{vendor_name}\n{store_name}\n"
+
+        vendor_rows = recs[recs["vendor_id"].astype(str).str.strip() == vendor_id].copy()
+        vendor_rows = vendor_rows.sort_values("item_name_disp")
+
+        for _, r in vendor_rows.iterrows():
+            qty = float(r["order_qty_num"])
+            qty_display = int(qty) if qty.is_integer() else qty
+            output += f"{r['item_name_disp']} {qty_display} {r['order_unit_disp']}\n"
+
+        output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
+
+    st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
+
+    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
+        if send_line_message(output):
+            st.success(f"✅ 已成功推送到 {store_name} 群組！")
+        else:
+            st.error("❌ 發送失敗，請檢查 LINE 設定。")
+
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+
 # ============================================================
 # [E6] Analysis
 # 這一區放：進銷存分析頁
@@ -550,30 +574,7 @@ def page_analysis():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_single"):
         st.session_state.step = "select_vendor"
         st.rerun()
-        vendor_rows = recs[recs["vendor_id"].astype(str).str.strip() == vendor_id].copy()
-        vendor_rows = vendor_rows.sort_values("item_name_disp")
 
-        for _, r in vendor_rows.iterrows():
-            qty = float(r["order_qty_num"])
-            qty_display = int(qty) if qty.is_integer() else qty
-            output += f"{r['item_name_disp']} {qty_display} {r['order_unit_disp']}\n"
-
-        output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
-
-    st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
-
-    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
-        if send_line_message(output):
-            st.success(f"✅ 已成功推送到 {store_name} 群組！")
-        else:
-            st.error("❌ 發送失敗，請檢查 LINE 設定。")
-
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
-        st.session_state.step = "select_vendor"
-        st.rerun()
-
-
-# ============================================================
 
 # ============================================================
 # [E7] Cost Debug
@@ -712,16 +713,4 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-
 
