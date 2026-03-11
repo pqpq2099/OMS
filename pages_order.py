@@ -30,7 +30,7 @@ from oms_core import (
     get_header,
     read_table,
 )
-from oms_engine import convert_to_base
+from utils.utils_units import convert_to_base
 
 # ============================================================
 # [B1] 盤點引擎輔助函式
@@ -978,6 +978,7 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+
 
 
 
