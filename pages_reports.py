@@ -214,9 +214,8 @@ def page_view_history():
         end_date=h_end,
     )
 
-    t1, t2 = st.tabs(["📋 明細", "📈 趨勢"])
 
-    with t1:
+    # 直接顯示歷史資料
         if hist_df.empty:
             st.info("💡 此區間內無紀錄。")
         else:
@@ -280,53 +279,7 @@ def page_view_history():
                     "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
             )
-
-    with t2:
-        if not HAS_PLOTLY:
-            st.info("💡 Plotly 未安裝，無法顯示趨勢圖。")
-        else:
-            if hist_df.empty:
-                st.info("💡 此區間內無趨勢資料。")
-            else:
-                vendor_values2 = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
-                all_v2 = ["全部廠商"] + vendor_values2
-                sel_v2 = st.selectbox("🏢 選擇廠商", options=all_v2, index=0, key="hist_trend_vendor")
-
-                trend_base_df = hist_df.copy()
-                if sel_v2 != "全部廠商":
-                    trend_base_df = trend_base_df[trend_base_df["廠商"] == sel_v2].copy()
-
-                item_values2 = _clean_option_list(trend_base_df["品項"].dropna().tolist())
-                if not item_values2:
-                    st.info("💡 此條件下無品項資料。")
-                else:
-                    sel_i2 = st.selectbox("🏷️ 選擇品項", options=item_values2, key="hist_trend_item")
-                    p_df = trend_base_df[trend_base_df["品項"] == sel_i2].copy()
-
-                    trend = (
-                        p_df.groupby("日期_dt", as_index=False)["期間消耗"]
-                        .sum()
-                        .sort_values("日期_dt")
-                    )
-                    trend["日期標記"] = trend["日期_dt"].dt.strftime("%Y-%m-%d")
-
-                    if not trend.empty:
-                        title_vendor = "" if sel_v2 == "全部廠商" else f"｜{sel_v2}"
-                        fig = px.line(
-                            trend,
-                            x="日期標記",
-                            y="期間消耗",
-                            markers=True,
-                            title=f"📈 【{sel_i2}】消耗趨勢{title_vendor}",
-                        )
-                        fig.update_layout(
-                            xaxis_type="category",
-                            hovermode="x unified",
-                            xaxis_title="日期",
-                            yaxis_title="期間消耗",
-                            dragmode=False,
-                        )
-                        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+=PLOTLY_CONFIG)
 
     if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
@@ -713,6 +666,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
