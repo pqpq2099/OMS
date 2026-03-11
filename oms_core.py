@@ -1227,3 +1227,25 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
     )
     return out
 
+
+# ============================================================
+# [UTIL] CSV 匯出工具
+# 用途：
+# 所有報表統一使用此函式匯出 CSV
+# ============================================================
+def export_csv_button(df, filename: str, label: str = "📥 匯出 CSV"):
+    import streamlit as st
+
+    if df is None or df.empty:
+        st.caption("沒有資料可匯出")
+        return
+
+    csv_data = df.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        label,
+        csv_data,
+        file_name=filename,
+        mime="text/csv",
+        use_container_width=False,
+    )
