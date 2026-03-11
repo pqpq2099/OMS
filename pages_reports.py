@@ -143,34 +143,13 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
     vendors_map["vendor_id"] = vendors_map["vendor_id"].astype(str).str.strip()
     vendors_map["廠商"] = vendors_map.apply(
         lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
-        axis=1,
-    )
-    vendors_map = vendors_map[["vendor_id", "廠商"]].drop_duplicates()
-
-    merged = hist_df.merge(
-        items_map,
-        on="item_id",
-        how="left",
-    )
-    merged = merged.merge(
-        vendors_map,
-        left_on="default_vendor_id",
-        right_on="vendor_id",
-        how="left",
-    )
-
-    merged["廠商"] = merged["廠商"].fillna("-")
-
-    for col in ["default_vendor_id", "vendor_id"]:
-        if col in merged.columns:
-            merged = merged.drop(columns=[col])
-
-    return merged
-
-
-# ============================================================
+        axis=# ============================================================
 # [E4] View History
 # 這一區放：歷史紀錄頁
+# 說明：
+# 1. 只保留明細，不顯示趨勢
+# 2. 提供外部 CSV 匯出按鈕
+# 3. 保留返回按鈕
 # ============================================================
 def page_view_history():
     st.markdown(
@@ -214,75 +193,105 @@ def page_view_history():
         end_date=h_end,
     )
 
+    if hist_df.empty:
+        st.info("💡 此區間內無紀錄。")
+        if st.button("⬅️ 返回", use_container_width=True, key="back_hist_empty"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
 
-    # 直接顯示歷史資料
-        if hist_df.empty:
-            st.info("💡 此區間內無紀錄。")
-        else:
-            vendor_values = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
-            all_v = ["全部廠商"] + vendor_values
-            sel_v = st.selectbox("🏢 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
+    vendor_values = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
+    all_v = ["全部廠商"] + vendor_values
+    sel_v = st.selectbox("🏢 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
 
-            item_values = _clean_option_list(hist_df["品項"].dropna().tolist())
-            all_i = ["全部品項"] + item_values
-            sel_i = st.selectbox("🏷️ 選擇品項", options=all_i, index=0, key="hist_item_filter")
+    item_values = _clean_option_list(hist_df["品項"].dropna().tolist())
+    all_i = ["全部品項"] + item_values
+    sel_i = st.selectbox("🏷️ 選擇品項", options=all_i, index=0, key="hist_item_filter")
 
-            filt_df = hist_df.copy()
+    filt_df = hist_df.copy()
 
-            if sel_v != "全部廠商":
-                filt_df = filt_df[filt_df["廠商"] == sel_v].copy()
+    if sel_v != "全部廠商":
+        filt_df = filt_df[filt_df["廠商"] == sel_v].copy()
 
-            if sel_i != "全部品項":
-                filt_df = filt_df[filt_df["品項"] == sel_i].copy()
+    if sel_i != "全部品項":
+        filt_df = filt_df[filt_df["品項"] == sel_i].copy()
 
-            show_cols = [
-                "日期顯示",
-                "廠商",
-                "品項",
-                "上次庫存",
-                "期間進貨",
-                "庫存合計",
-                "這次庫存",
-                "期間消耗",
-                "日平均",
-            ]
+    show_cols = [
+        "日期顯示",
+        "廠商",
+        "品項",
+        "上次庫存",
+        "期間進貨",
+        "庫存合計",
+        "這次庫存",
+        "期間消耗",
+        "日平均",
+    ]
 
-            detail_df = filt_df.copy()
-            detail_df = detail_df[
-                (detail_df["上次庫存"] != 0)
-                | (detail_df["期間進貨"] != 0)
-                | (detail_df["期間消耗"] != 0)
-                | (detail_df["這次庫存"] != 0)
-            ].copy()
-            export_df = detail_df[show_cols].copy()
+    detail_df = filt_df.copy()
+    detail_df = detail_df[
+        (detail_df["上次庫存"] != 0)
+        | (detail_df["期間進貨"] != 0)
+        | (detail_df["期間消耗"] != 0)
+        | (detail_df["這次庫存"] != 0)
+    ].copy()
 
-            st.download_button(
-                "📥 匯出 CSV",
+    if detail_df.empty:
+        st.caption("此條件下無歷史資料")
+    else:
+        export_df = detail_df[show_cols].copy()
+
+        st.download_button(
+            "📥 匯出 CSV",
             export_df.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"歷史紀錄_{h_start}_{h_end}.csv",
+            file_name=f"{st.session_state.store_name}_歷史紀錄_{h_start}_{h_end}.csv",
             mime="text/csv",
             use_container_width=True,
             key="download_history_csv",
-         )
+        )
 
-         render_report_dataframe(
-             export_df,
-                column_config={
-                    "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                    "廠商": st.column_config.TextColumn(width="small"),
-                    "品項": st.column_config.TextColumn(width="small"),
-                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                },
-            )
+        render_report_dataframe(
+            export_df,
+            column_config={
+                "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                "廠商": st.column_config.TextColumn(width="small"),
+                "品項": st.column_config.TextColumn(width="small"),
+                "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+            },
+        )
 
     if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
-        st.rerun()
+        st.rerun()1,
+    )
+    vendors_map = vendors_map[["vendor_id", "廠商"]].drop_duplicates()
+
+    merged = hist_df.merge(
+        items_map,
+        on="item_id",
+        how="left",
+    )
+    merged = merged.merge(
+        vendors_map,
+        left_on="default_vendor_id",
+        right_on="vendor_id",
+        how="left",
+    )
+
+    merged["廠商"] = merged["廠商"].fillna("-")
+
+    for col in ["default_vendor_id", "vendor_id"]:
+        if col in merged.columns:
+            merged = merged.drop(columns=[col])
+
+    return merged
+
+
 
 
 # ============================================================
@@ -665,6 +674,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
