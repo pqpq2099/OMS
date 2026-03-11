@@ -674,10 +674,370 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+# ============================================================
+# [E8] Purchase Settings
+# 這一區放：採購設定頁
+# 說明：
+# 1. 根據目前 DB 的 vendors / items / units / unit_conversions / prices 生成
+# 2. 先做穩定版檢視與篩選
+# 3. 不先寫入資料，避免動到目前穩定系統
+# ============================================================
+def page_purchase_settings():
+    def _is_active_flag(x):
+        return str(x).strip() in ["1", "True", "true", "YES", "yes", "是"]
 
+    def _safe_text(x):
+        if x is None:
+            return ""
+        return str(x).strip()
 
+    st.title("🛒 採購設定")
 
+    vendors_df = read_table("vendors").copy()
+    items_df = read_table("items").copy()
+    units_df = read_table("units").copy()
+    conversions_df = read_table("unit_conversions").copy()
+    prices_df = read_table("prices").copy()
 
+    # ========================================================
+    # 基本整理
+    # ========================================================
+    if not vendors_df.empty:
+        vendors_df["vendor_name_disp"] = vendors_df.apply(
+            lambda r: _safe_text(r.get("vendor_name_zh", ""))
+            or _safe_text(r.get("vendor_name", ""))
+            or _safe_text(r.get("vendor_id", "")),
+            axis=1,
+        )
+        vendors_df["is_active_disp"] = vendors_df["is_active"].apply(lambda x: "啟用" if _is_active_flag(x) else "停用")
+    else:
+        vendors_df["vendor_name_disp"] = []
+        vendors_df["is_active_disp"] = []
+
+    if not items_df.empty:
+        items_df["item_name_disp"] = items_df.apply(
+            lambda r: _safe_text(r.get("item_name_zh", ""))
+            or _safe_text(r.get("item_name", ""))
+            or _safe_text(r.get("item_id", "")),
+            axis=1,
+        )
+        items_df["is_active_disp"] = items_df["is_active"].apply(lambda x: "啟用" if _is_active_flag(x) else "停用")
+    else:
+        items_df["item_name_disp"] = []
+        items_df["is_active_disp"] = []
+
+    vendor_map = {}
+    if not vendors_df.empty and "vendor_id" in vendors_df.columns:
+        vendor_map = {
+            _safe_text(r.get("vendor_id", "")): _safe_text(r.get("vendor_name_disp", ""))
+            for _, r in vendors_df.iterrows()
+        }
+
+    if not items_df.empty and "default_vendor_id" in items_df.columns:
+        items_df["vendor_name_disp"] = items_df["default_vendor_id"].apply(
+            lambda x: vendor_map.get(_safe_text(x), _safe_text(x))
+        )
+    else:
+        items_df["vendor_name_disp"] = ""
+
+    item_map = {}
+    if not items_df.empty and "item_id" in items_df.columns:
+        item_map = {
+            _safe_text(r.get("item_id", "")): _safe_text(r.get("item_name_disp", ""))
+            for _, r in items_df.iterrows()
+        }
+
+    if not conversions_df.empty:
+        conversions_df["item_name_disp"] = conversions_df["item_id"].apply(
+            lambda x: item_map.get(_safe_text(x), _safe_text(x))
+        )
+        conversions_df["is_active_disp"] = conversions_df["is_active"].apply(
+            lambda x: "啟用" if _is_active_flag(x) else "停用"
+        )
+    else:
+        conversions_df["item_name_disp"] = []
+        conversions_df["is_active_disp"] = []
+
+    if not prices_df.empty:
+        prices_df["item_name_disp"] = prices_df["item_id"].apply(
+            lambda x: item_map.get(_safe_text(x), _safe_text(x))
+        )
+        prices_df["is_active_disp"] = prices_df["is_active"].apply(
+            lambda x: "啟用" if _is_active_flag(x) else "停用"
+        )
+    else:
+        prices_df["item_name_disp"] = []
+        prices_df["is_active_disp"] = []
+
+    # ========================================================
+    # 頁面摘要
+    # ========================================================
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("廠商數", len(vendors_df))
+    c2.metric("品項數", len(items_df))
+    c3.metric("換算規則", len(conversions_df))
+    c4.metric("價格筆數", len(prices_df))
+
+    st.markdown("---")
+
+    t_vendor, t_item, t_conv, t_price = st.tabs(
+        ["🏢 廠商管理", "📦 品項管理", "🔁 單位換算", "💰 價格管理"]
+    )
+
+    # ========================================================
+    # 廠商管理
+    # ========================================================
+    with t_vendor:
+        st.subheader("🏢 廠商管理")
+
+        v_col1, v_col2 = st.columns([2, 1])
+        vendor_kw = v_col1.text_input("搜尋廠商", key="ps_vendor_kw")
+        vendor_status = v_col2.selectbox(
+            "狀態",
+            options=["全部", "啟用", "停用"],
+            index=0,
+            key="ps_vendor_status",
+        )
+
+        vendor_view = vendors_df.copy()
+
+        if not vendor_view.empty:
+            if vendor_kw:
+                vendor_view = vendor_view[
+                    vendor_view["vendor_name_disp"].astype(str).str.contains(vendor_kw, case=False, na=False)
+                ].copy()
+
+            if vendor_status != "全部":
+                vendor_view = vendor_view[vendor_view["is_active_disp"] == vendor_status].copy()
+
+            show_cols = [
+                c for c in [
+                    "vendor_id",
+                    "vendor_name_disp",
+                    "contact_name",
+                    "phone",
+                    "line_id",
+                    "is_active_disp",
+                ] if c in vendor_view.columns
+            ]
+
+            vendor_view = vendor_view[show_cols].copy().reset_index(drop=True)
+            vendor_view = vendor_view.rename(
+                columns={
+                    "vendor_id": "廠商ID",
+                    "vendor_name_disp": "廠商名稱",
+                    "contact_name": "聯絡人",
+                    "phone": "電話",
+                    "line_id": "LINE ID",
+                    "is_active_disp": "狀態",
+                }
+            )
+
+            st.dataframe(
+                vendor_view,
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("目前沒有廠商資料。")
+
+    # ========================================================
+    # 品項管理
+    # ========================================================
+    with t_item:
+        st.subheader("📦 品項管理")
+
+        i_col1, i_col2, i_col3 = st.columns([2, 1, 1])
+
+        item_kw = i_col1.text_input("搜尋品項", key="ps_item_kw")
+
+        item_vendor_options = ["全部廠商"]
+        if not items_df.empty and "vendor_name_disp" in items_df.columns:
+            item_vendor_options += _clean_option_list(items_df["vendor_name_disp"].dropna().tolist())
+
+        item_vendor = i_col2.selectbox(
+            "廠商",
+            options=item_vendor_options,
+            index=0,
+            key="ps_item_vendor",
+        )
+
+        item_status = i_col3.selectbox(
+            "狀態",
+            options=["全部", "啟用", "停用"],
+            index=0,
+            key="ps_item_status",
+        )
+
+        item_view = items_df.copy()
+
+        if not item_view.empty:
+            if item_kw:
+                item_view = item_view[
+                    item_view["item_name_disp"].astype(str).str.contains(item_kw, case=False, na=False)
+                ].copy()
+
+            if item_vendor != "全部廠商":
+                item_view = item_view[item_view["vendor_name_disp"] == item_vendor].copy()
+
+            if item_status != "全部":
+                item_view = item_view[item_view["is_active_disp"] == item_status].copy()
+
+            show_cols = [
+                c for c in [
+                    "item_id",
+                    "item_name_disp",
+                    "vendor_name_disp",
+                    "item_type",
+                    "base_unit",
+                    "default_stock_unit",
+                    "default_order_unit",
+                    "orderable_units",
+                    "is_active_disp",
+                ] if c in item_view.columns
+            ]
+
+            item_view = item_view[show_cols].copy().reset_index(drop=True)
+            item_view = item_view.rename(
+                columns={
+                    "item_id": "品項ID",
+                    "item_name_disp": "品項名稱",
+                    "vendor_name_disp": "預設廠商",
+                    "item_type": "類型",
+                    "base_unit": "基準單位",
+                    "default_stock_unit": "庫存單位",
+                    "default_order_unit": "叫貨單位",
+                    "orderable_units": "可叫貨單位",
+                    "is_active_disp": "狀態",
+                }
+            )
+
+            st.dataframe(
+                item_view,
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("目前沒有品項資料。")
+
+    # ========================================================
+    # 單位換算
+    # ========================================================
+    with t_conv:
+        st.subheader("🔁 單位換算")
+
+        c_col1, c_col2 = st.columns([2, 1])
+        conv_kw = c_col1.text_input("搜尋品項", key="ps_conv_kw")
+        conv_status = c_col2.selectbox(
+            "狀態",
+            options=["全部", "啟用", "停用"],
+            index=0,
+            key="ps_conv_status",
+        )
+
+        conv_view = conversions_df.copy()
+
+        if not conv_view.empty:
+            if conv_kw:
+                conv_view = conv_view[
+                    conv_view["item_name_disp"].astype(str).str.contains(conv_kw, case=False, na=False)
+                ].copy()
+
+            if conv_status != "全部":
+                conv_view = conv_view[conv_view["is_active_disp"] == conv_status].copy()
+
+            show_cols = [
+                c for c in [
+                    "conversion_id",
+                    "item_name_disp",
+                    "from_unit",
+                    "to_unit",
+                    "ratio",
+                    "is_active_disp",
+                ] if c in conv_view.columns
+            ]
+
+            conv_view = conv_view[show_cols].copy().reset_index(drop=True)
+            conv_view = conv_view.rename(
+                columns={
+                    "conversion_id": "換算ID",
+                    "item_name_disp": "品項名稱",
+                    "from_unit": "來源單位",
+                    "to_unit": "目標單位",
+                    "ratio": "倍率",
+                    "is_active_disp": "狀態",
+                }
+            )
+
+            st.dataframe(
+                conv_view,
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("目前沒有單位換算資料。")
+
+    # ========================================================
+    # 價格管理
+    # ========================================================
+    with t_price:
+        st.subheader("💰 價格管理")
+
+        p_col1, p_col2 = st.columns([2, 1])
+        price_kw = p_col1.text_input("搜尋品項", key="ps_price_kw")
+        price_status = p_col2.selectbox(
+            "狀態",
+            options=["全部", "啟用", "停用"],
+            index=0,
+            key="ps_price_status",
+        )
+
+        price_view = prices_df.copy()
+
+        if not price_view.empty:
+            if price_kw:
+                price_view = price_view[
+                    price_view["item_name_disp"].astype(str).str.contains(price_kw, case=False, na=False)
+                ].copy()
+
+            if price_status != "全部":
+                price_view = price_view[price_view["is_active_disp"] == price_status].copy()
+
+            show_cols = [
+                c for c in [
+                    "price_id",
+                    "item_name_disp",
+                    "unit_price",
+                    "price_unit",
+                    "effective_date",
+                    "end_date",
+                    "is_active_disp",
+                ] if c in price_view.columns
+            ]
+
+            price_view = price_view[show_cols].copy().reset_index(drop=True)
+            price_view = price_view.rename(
+                columns={
+                    "price_id": "價格ID",
+                    "item_name_disp": "品項名稱",
+                    "unit_price": "單價",
+                    "price_unit": "價格單位",
+                    "effective_date": "生效日",
+                    "end_date": "結束日",
+                    "is_active_disp": "狀態",
+                }
+            )
+
+            st.dataframe(
+                price_view,
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("目前沒有價格資料。")
+
+    st.markdown("---")
+    st.caption("目前為穩定版 v1：先提供檢視與篩選，下一步再接新增 / 編輯 / 啟用停用。")
 
 
 
