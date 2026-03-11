@@ -507,7 +507,7 @@ def page_analysis():
                 "日平均",
             ]
 
-              export_df = detail_df[show_cols].copy().reset_index(drop=True)
+            export_df = detail_df[show_cols].copy().reset_index(drop=True)
 
             st.download_button(
                 "📥 匯出 CSV",
@@ -681,4 +681,5 @@ def page_purchase_settings():
     st.title("🛒 採購設定")
     st.info("此功能入口已建立，功能尚未接上。")
     st.write("目前先保留為入口頁，下一步再接廠商 / 品項管理。")
+
 
