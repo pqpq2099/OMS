@@ -24,7 +24,6 @@ from pages_reports import (
     page_analysis,
     page_cost_debug,
     page_export,
-    page_purchase_settings,
     page_view_history,
 )
 st.set_page_config(page_title="營運管理系統", layout="centered")
@@ -350,7 +349,7 @@ def router():
         page_placeholder("👥 使用者權限")
 
     elif step == "purchase_settings":
-        page_purchase_settings()
+        page_placeholder("🛒 採購設定")
 
     elif step == "system_tools":
         page_placeholder("🛠️ 系統維護")
@@ -374,6 +373,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
