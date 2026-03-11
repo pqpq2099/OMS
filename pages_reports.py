@@ -257,20 +257,17 @@ def page_view_history():
             ].copy()
             export_df = detail_df[show_cols].copy()
 
-            top_col1, top_col2 = st.columns([8, 2])
+            st.download_button(
+                "📥 匯出 CSV",
+            export_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"歷史紀錄_{h_start}_{h_end}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="download_history_csv",
+         )
 
-            with top_col2:
-                st.download_button(
-                    "📥 匯出 CSV",
-                    export_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name=f"歷史紀錄_{h_start}_{h_end}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    key="download_history_csv",
-                )
-
-            render_report_dataframe(
-                export_df,
+         render_report_dataframe(
+             export_df,
                 column_config={
                     "日期顯示": st.column_config.TextColumn("日期", width="small"),
                     "廠商": st.column_config.TextColumn(width="small"),
@@ -716,5 +713,6 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
