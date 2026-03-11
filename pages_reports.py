@@ -262,7 +262,7 @@ def page_view_history():
     if detail_df.empty:
         st.caption("此條件下無歷史資料")
     else:
-        export_df = detail_df[show_cols].copy()
+        export_df = detail_df[show_cols].copy().reset_index(drop=True)
 
         st.download_button(
             "📥 匯出 CSV",
@@ -508,7 +508,7 @@ def page_analysis():
                 "日平均",
             ]
 
-            export_df = detail_df[show_cols].copy()
+              export_df = detail_df[show_cols].copy().reset_index(drop=True)
 
             st.download_button(
                 "📥 匯出 CSV",
@@ -674,6 +674,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
