@@ -143,7 +143,30 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
     vendors_map["vendor_id"] = vendors_map["vendor_id"].astype(str).str.strip()
     vendors_map["廠商"] = vendors_map.apply(
         lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
-        axis=# ============================================================
+        axis=1,
+    )
+    vendors_map = vendors_map[["vendor_id", "廠商"]].drop_duplicates()
+
+    merged = hist_df.merge(
+        items_map,
+        on="item_id",
+        how="left",
+    )
+    merged = merged.merge(
+        vendors_map,
+        left_on="default_vendor_id",
+        right_on="vendor_id",
+        how="left",
+    )
+
+    merged["廠商"] = merged["廠商"].fillna("-")
+
+    for col in ["default_vendor_id", "vendor_id"]:
+        if col in merged.columns:
+            merged = merged.drop(columns=[col])
+
+    return merged
+# ============================================================
 # [E4] View History
 # 這一區放：歷史紀錄頁
 # 說明：
@@ -674,6 +697,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
