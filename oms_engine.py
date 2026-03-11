@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Optional, Tuple
 
 import pandas as pd
@@ -122,6 +122,8 @@ def convert_unit(
     from_unit = _normalize_text(from_unit)
     to_unit = _normalize_text(to_unit)
 
+    if item_id == "":
+        raise ValueError("item_id 不可為空")
     if qty is None:
         raise ValueError("qty 不可為空")
     if from_unit == "":
@@ -130,6 +132,8 @@ def convert_unit(
         raise ValueError("to_unit 不可為空")
 
     qty = float(qty)
+    if pd.isna(qty):
+        raise ValueError("qty 不可為 NaN")
 
     if from_unit == to_unit:
         return qty
@@ -168,7 +172,6 @@ def convert_unit(
         f"品項 {item_id} 無法從 {from_unit} 換算到 {to_unit}，請檢查 unit_conversions"
     )
 
-
 # ============================================================
 # Base unit helpers
 # ============================================================
@@ -176,15 +179,17 @@ def get_base_unit(items_df: pd.DataFrame, item_id: str) -> str:
     if items_df is None or items_df.empty:
         raise ValueError("items_df 為空，無法取得 base_unit")
 
+    if "item_id" not in items_df.columns:
+        raise ValueError("items 缺少 item_id 欄位")
+    if "base_unit" not in items_df.columns:
+        raise ValueError("items 缺少 base_unit 欄位")
+
     work = items_df.copy()
     work["item_id"] = work["item_id"].apply(_normalize_text)
 
     row = work.loc[work["item_id"] == _normalize_text(item_id)]
     if row.empty:
         raise ValueError(f"items 找不到 item_id: {item_id}")
-
-    if "base_unit" not in row.columns:
-        raise ValueError("items 缺少 base_unit 欄位")
 
     base_unit = _normalize_text(row.iloc[0]["base_unit"])
     if not base_unit:
@@ -232,3 +237,4 @@ def can_convert_to_base(
         return True
     except Exception:
         return False
+
