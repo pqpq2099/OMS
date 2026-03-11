@@ -290,30 +290,7 @@ def page_view_history():
 
     if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
-        st.rerun()1,
-    )
-    vendors_map = vendors_map[["vendor_id", "廠商"]].drop_duplicates()
-
-    merged = hist_df.merge(
-        items_map,
-        on="item_id",
-        how="left",
-    )
-    merged = merged.merge(
-        vendors_map,
-        left_on="default_vendor_id",
-        right_on="vendor_id",
-        how="left",
-    )
-
-    merged["廠商"] = merged["廠商"].fillna("-")
-
-    for col in ["default_vendor_id", "vendor_id"]:
-        if col in merged.columns:
-            merged = merged.drop(columns=[col])
-
-    return merged
-
+        st.rerun()
 
 
 
@@ -697,6 +674,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
