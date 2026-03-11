@@ -370,40 +370,28 @@ def page_export():
         vendor_name = _norm(v.get("vendor_name_disp", "")) or "未指定"
 
         output += f"\n{vendor_name}\n{store_name}\n"
-
-        vendor_rows = recs[recs["vendor_id"].astype(str).str.strip() == vendor_id].copy()
-        vendor_rows = vendor_rows.sort_values("item_name_disp")
-
-        for _, r in vendor_rows.iterrows():
-            qty = float(r["order_qty_num"])
-            qty_display = int(qty) if qty.is_integer() else qty
-            output += f"{r['item_name_disp']} {qty_display} {r['order_unit_disp']}\n"
-
-        output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
-
-    st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
-
-    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
-        if send_line_message(output):
-            st.success(f"✅ 已成功推送到 {store_name} 群組！")
-        else:
-            st.error("❌ 發送失敗，請檢查 LINE 設定。")
-
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
-        st.session_state.step = "select_vendor"
-        st.rerun()
-
-
 # ============================================================
 # [E6] Analysis
 # 這一區放：進銷存分析頁
+# 規則：
+# 1. 全部廠商：只看金額
+# 2. 單一廠商：只看 庫存合計 / 這次庫存 / 期間消耗 / 日平均
+# 3. 各自提供 CSV 匯出
 # ============================================================
 def page_analysis():
     st.title("📊 進銷存分析")
 
     c_date1, c_date2 = st.columns(2)
-    start = c_date1.date_input("起始日期", value=date.today() - timedelta(days=14), key="ana_start")
-    end = c_date2.date_input("結束日期", value=date.today(), key="ana_end")
+    start = c_date1.date_input(
+        "起始日期",
+        value=date.today() - timedelta(days=14),
+        key="ana_start",
+    )
+    end = c_date2.date_input(
+        "結束日期",
+        value=date.today(),
+        key="ana_end",
+    )
 
     hist_df = _build_analysis_with_vendor(
         store_id=st.session_state.store_id,
@@ -441,7 +429,12 @@ def page_analysis():
         vendor_values = _clean_option_list(purchase_filt["廠商"].dropna().tolist())
 
     all_vendors = ["全部廠商"] + vendor_values
-    selected_vendor = st.selectbox("🏢 選擇廠商", options=all_vendors, index=0, key="ana_vendor_filter")
+    selected_vendor = st.selectbox(
+        "🏢 選擇廠商",
+        options=all_vendors,
+        index=0,
+        key="ana_vendor_filter",
+    )
 
     if selected_vendor != "全部廠商":
         if not hist_filt.empty and "廠商" in hist_filt.columns:
@@ -466,6 +459,7 @@ def page_analysis():
                 .sort_values("採購金額", ascending=False)
                 .reset_index(drop=True)
             )
+
             st.download_button(
                 "📥 匯出 CSV",
                 vendor_summary.to_csv(index=False).encode("utf-8-sig"),
@@ -474,6 +468,7 @@ def page_analysis():
                 use_container_width=False,
                 key="download_analysis_all_vendors",
             )
+
             st.dataframe(
                 vendor_summary,
                 use_container_width=True,
@@ -484,14 +479,15 @@ def page_analysis():
                 },
             )
 
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_all"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
+
     # ============================================================
-    # 單一廠商：只看 庫存合計 / 這次庫存 / 期間消耗 / 日平均
+    # 單一廠商：只看 品項明細
     # ============================================================
-    st.write(f"<b>📦 {selected_vendor} 品項明細</b>", unsafe_allow_html=True)
+    st.subheader(f"📦 {selected_vendor} 品項明細")
 
     if hist_filt.empty:
         st.info("此廠商在目前條件下無資料")
@@ -516,6 +512,7 @@ def page_analysis():
                 "期間消耗",
                 "日平均",
             ]
+
             export_df = detail_df[show_cols].copy()
 
             st.download_button(
@@ -526,9 +523,9 @@ def page_analysis():
                 use_container_width=False,
                 key="download_analysis_single_vendor",
             )
-            
+
             st.dataframe(
-                detail_df[show_cols],
+                export_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
@@ -540,9 +537,33 @@ def page_analysis():
                 },
             )
 
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis"):
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_single"):
         st.session_state.step = "select_vendor"
         st.rerun()
+        vendor_rows = recs[recs["vendor_id"].astype(str).str.strip() == vendor_id].copy()
+        vendor_rows = vendor_rows.sort_values("item_name_disp")
+
+        for _, r in vendor_rows.iterrows():
+            qty = float(r["order_qty_num"])
+            qty_display = int(qty) if qty.is_integer() else qty
+            output += f"{r['item_name_disp']} {qty_display} {r['order_unit_disp']}\n"
+
+        output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
+
+    st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
+
+    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
+        if send_line_message(output):
+            st.success(f"✅ 已成功推送到 {store_name} 群組！")
+        else:
+            st.error("❌ 發送失敗，請檢查 LINE 設定。")
+
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
+
+# ============================================================
 
 # ============================================================
 # [E7] Cost Debug
@@ -681,6 +702,7 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
 
 
 
