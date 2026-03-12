@@ -325,11 +325,7 @@ def render_sidebar():
         if st.button("📜 進貨分析", use_container_width=True, key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
-
-        if st.button("🧾 叫貨歷史", use_container_width=True, key="sb_purchase_history"):
-            st.session_state.step = "purchase_history"
-            st.rerun()
-
+            
         st.markdown("---")
 
         # ====================================================
