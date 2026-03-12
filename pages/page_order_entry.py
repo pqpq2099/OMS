@@ -499,8 +499,8 @@ def page_order_entry():
                     "庫",
                     min_value=0.0,
                     step=0.1,
-                    format="%g",
-                    value=0.0,
+                    format="%.1f",
+                    value=float(current_stock_qty),
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
