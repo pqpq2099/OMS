@@ -1381,5 +1381,55 @@ def _overwrite_local_sheet(sheet_name: str, df: pd.DataFrame):
             ws.append(row)
 
     wb.save(path)
+# ============================================================
+# 覆蓋整張資料表
+# ============================================================
+def overwrite_table(table_name: str, df: pd.DataFrame):
+    """
+    直接覆蓋整張資料表
+    支援：
+    1. Google Sheet
+    2. 本機 Excel（若有啟用）
+    """
+    # Google Sheet 模式
+    try:
+        sh = get_spreadsheet()
+        ws = sh.worksheet(table_name)
+        ws.clear()
 
+        clean_df = df.copy() if df is not None else pd.DataFrame()
+
+        if clean_df.empty:
+            ws.update([[]])
+        else:
+            ws.update(
+                [clean_df.columns.tolist()] +
+                clean_df.fillna("").astype(str).values.tolist()
+            )
+
+        bust_cache()
+        return
+    except Exception:
+        pass
+
+    # 本機 Excel 模式（如果有保留）
+    if "load_workbook" in globals() and load_workbook is not None:
+        path = get_local_db_path()
+        wb = load_workbook(path)
+
+        if table_name in wb.sheetnames:
+            ws = wb[table_name]
+            ws.delete_rows(1, ws.max_row)
+        else:
+            ws = wb.create_sheet(table_name)
+
+        clean_df = df.copy() if df is not None else pd.DataFrame()
+
+        if not clean_df.empty:
+            ws.append([str(c) for c in clean_df.columns.tolist()])
+            for row in clean_df.fillna("").astype(str).values.tolist():
+                ws.append(row)
+
+        wb.save(path)
+        bust_cache()
 
