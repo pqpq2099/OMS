@@ -1379,5 +1379,30 @@ def _overwrite_local_sheet(sheet_name: str, df: pd.DataFrame):
             ws.append(row)
 
     wb.save(path)
+def _overwrite_local_sheet(sheet_name: str, df: pd.DataFrame):
+    ...
+    wb.save(path)
 
+
+# ============================================================
+# 對外使用：覆蓋資料表
+# app.py / admin 頁面會用到
+# ============================================================
+def overwrite_table(table_name: str, df: pd.DataFrame):
+    """
+    覆蓋整張資料表
+    支援：
+    - 本機 Excel
+    - Google Sheet
+    """
+
+    if DATA_SOURCE == "local":
+        _overwrite_local_sheet(table_name, df)
+
+    elif DATA_SOURCE == "sheet":
+        ws = get_worksheet(table_name)
+        ws.clear()
+        ws.update([df.columns.values.tolist()] + df.values.tolist())
+
+    bust_cache()
 
