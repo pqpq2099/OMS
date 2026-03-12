@@ -4,6 +4,7 @@
 1. 庫存歷史
 2. 匯出頁
 3. 進銷存分析
+4. 成本檢查
 
 如果之後要調整報表畫面或分析邏輯入口，優先看這個檔案。
 """
@@ -571,3 +572,149 @@ def page_analysis():
         st.session_state.step = "select_vendor"
         st.rerun()
 
+
+# ============================================================
+# [E7] Cost Debug
+# 這一區放：成本檢查頁
+# ============================================================
+
+# ============================================================
+# [R4] 成本檢查頁
+# 這頁主要用來驗證單價 / base unit cost / 換算是否正確。
+# ============================================================
+def page_cost_debug():
+    st.title("🧮 成本檢查")
+
+    items_df = _get_active_df(read_table("items"))
+    prices_df = read_table("prices")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
+
+    if items_df.empty:
+        st.warning("⚠️ items 資料讀取失敗")
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug_empty"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
+
+    work = items_df.copy()
+    work["item_label"] = work.apply(
+        lambda r: f"{_item_display_name(r)} ({_norm(r.get('item_id', ''))})",
+        axis=1,
+    )
+    work = work.sort_values("item_label")
+
+    item_options = work["item_id"].astype(str).tolist()
+
+    selected_item_id = st.selectbox(
+        "選擇品項",
+        options=item_options,
+        format_func=lambda x: work.loc[work["item_id"] == x, "item_label"].iloc[0],
+        key="cost_debug_item_id",
+    )
+
+    target_date = st.date_input(
+        "查詢日期",
+        value=st.session_state.record_date,
+        key="cost_debug_date",
+    )
+
+    item_row = work[
+        work["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
+    ].iloc[0]
+
+    base_unit = _norm(item_row.get("base_unit", ""))
+    default_stock_unit = _norm(item_row.get("default_stock_unit", ""))
+    default_order_unit = _norm(item_row.get("default_order_unit", ""))
+
+    price_rows = prices_df.copy()
+    if not price_rows.empty and "item_id" in price_rows.columns:
+        price_rows = price_rows[
+            price_rows["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
+        ].copy()
+
+        if "is_active" in price_rows.columns:
+            price_rows = price_rows[
+                price_rows["is_active"].apply(
+                    lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"]
+                )
+            ].copy()
+
+        if "effective_date" in price_rows.columns:
+            price_rows["__eff"] = price_rows["effective_date"].apply(
+                lambda x: None if str(x).strip() == "" else __import__("pandas").to_datetime(x).date()
+            )
+        else:
+            price_rows["__eff"] = None
+
+        if "end_date" in price_rows.columns:
+            price_rows["__end"] = price_rows["end_date"].apply(
+                lambda x: None if str(x).strip() == "" else __import__("pandas").to_datetime(x).date()
+            )
+        else:
+            price_rows["__end"] = None
+
+        price_rows = price_rows[
+            (price_rows["__eff"].isna() | (price_rows["__eff"] <= target_date))
+            & (price_rows["__end"].isna() | (price_rows["__end"] >= target_date))
+        ].copy()
+
+        if not price_rows.empty:
+            price_rows = price_rows.sort_values("__eff", ascending=True)
+            latest_price = price_rows.iloc[-1]
+            unit_price = float(latest_price.get("unit_price", 0) or 0)
+            price_unit = _norm(latest_price.get("price_unit", ""))
+            effective_date = latest_price.get("effective_date", "")
+        else:
+            unit_price = 0.0
+            price_unit = ""
+            effective_date = ""
+    else:
+        unit_price = 0.0
+        price_unit = ""
+        effective_date = ""
+
+    base_unit_cost = get_base_unit_cost(
+        item_id=selected_item_id,
+        target_date=target_date,
+        items_df=items_df,
+        prices_df=prices_df,
+        conversions_df=conversions_df,
+    )
+
+    st.markdown("---")
+    st.subheader("檢查結果")
+    st.write(f"**品項名稱：** {_item_display_name(item_row)}")
+    st.write(f"**item_id：** {selected_item_id}")
+    st.write(f"**base_unit：** {base_unit or '未設定'}")
+    st.write(f"**default_stock_unit：** {default_stock_unit or '未設定'}")
+    st.write(f"**default_order_unit：** {default_order_unit or '未設定'}")
+    st.write(f"**價格：** {unit_price}")
+    st.write(f"**價格單位：** {price_unit or '未設定'}")
+    st.write(f"**價格生效日：** {effective_date or '未設定'}")
+    st.write(f"**base_unit_cost：** {base_unit_cost if base_unit_cost is not None else '無法計算'}")
+
+    st.markdown("---")
+    st.subheader("換算規則")
+
+    conv_show = conversions_df.copy()
+    if not conv_show.empty and "item_id" in conv_show.columns:
+        conv_show = conv_show[
+            conv_show["item_id"].astype(str).str.strip() == str(selected_item_id).strip()
+        ].copy()
+
+    if conv_show.empty:
+        st.caption("此品項目前沒有換算規則")
+    else:
+        show_cols = [
+            c
+            for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"]
+            if c in conv_show.columns
+        ]
+        render_report_dataframe(conv_show[show_cols])
+
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+# ============================================================
+# [E8] Purchase Settings
+# 這一區放：採購設定頁

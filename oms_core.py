@@ -15,16 +15,12 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
-import os
 
 import gspread
 import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
-try:
-    from openpyxl import load_workbook
-except ImportError:
-    load_workbook = None
+
 from utils.utils_units import convert_to_base, convert_unit, get_base_unit
 
 
@@ -51,48 +47,8 @@ PLOTLY_CONFIG = {
 }
 
 DEFAULT_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
-LOCAL_SERVICE_ACCOUNT = Path("service_account.json")
-DEFAULT_LOCAL_DB_PATH = Path("ORIVIA_OMS_DB_TEST.xlsx")
-
-
-# ============================================================
-# [A0] 資料來源模式
-# 說明：
-# 1. google / sheet  = 走 Google 試算表
-# 2. local / xlsx    = 走本機 Excel 檔
-#
-# 優先順序：
-# 環境變數 ORIVIA_DATA_SOURCE > st.secrets["DATA_SOURCE"] > 預設 google
-# ============================================================
-def get_data_source_mode() -> str:
-    try:
-        mode = os.getenv("ORIVIA_DATA_SOURCE", "").strip().lower()
-        if not mode:
-            mode = str(st.secrets.get("DATA_SOURCE", "google")).strip().lower()
-    except Exception:
-        mode = os.getenv("ORIVIA_DATA_SOURCE", "google").strip().lower()
-
-    if mode in {"sheet", "gsheet", "google", "google_sheet", "google_sheets"}:
-        return "google"
-    if mode in {"local", "xlsx", "excel"}:
-        return "local"
-    return "google"
-
-
-def get_local_db_path() -> Path:
-    env_path = os.getenv("ORIVIA_LOCAL_DB_PATH", "").strip()
-    if env_path:
-        return Path(env_path)
-
-    try:
-        secret_path = str(st.secrets.get("LOCAL_DB_PATH", "")).strip()
-        if secret_path:
-            return Path(secret_path)
-    except Exception:
-        pass
-
-    return DEFAULT_LOCAL_DB_PATH
-
+BASE_DIR = Path(__file__).resolve().parent
+LOCAL_SERVICE_ACCOUNT = BASE_DIR / "service_account.json"
 
 # ============================================================
 # Global UI Style
@@ -517,12 +473,18 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
     if not request_counts:
         return result
 
-    df = read_table("id_sequences")
-    if df.empty:
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet("id_sequences")
+    values = ws.get_all_values()
+    if not values or len(values) < 2:
         raise ValueError("id_sequences 為空")
 
-    header = [_norm(x) for x in df.columns.tolist()]
-    df = df.copy()
+    header = [_norm(x) for x in values[0]]
+    rows = values[1:]
+    df = pd.DataFrame(rows, columns=header)
 
     required = ["key", "env", "prefix", "width", "next_value"]
     for col in required:
@@ -1301,135 +1263,4 @@ def export_csv_button(df, filename: str, label: str = "📥 匯出 CSV"):
     )
 
 
-# ============================================================
-# [A0-2] 本機 Excel 輔助函式
-# 說明：
-# local 模式下，所有資料都直接讀寫 .xlsx 檔案。
-# ============================================================
-def _trim_trailing_blank_columns(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
-
-    work = df.copy()
-    drop_cols = []
-    for col in work.columns[::-1]:
-        col_text = _norm(col)
-        series = work[col].fillna("").astype(str).str.strip()
-        if col_text == "" and (series == "").all():
-            drop_cols.append(col)
-        else:
-            break
-
-    if drop_cols:
-        work = work.drop(columns=drop_cols)
-    return work
-
-
-def _read_local_sheet(sheet_name: str) -> pd.DataFrame:
-    path = get_local_db_path()
-    if not path.exists():
-        st.warning(f"找不到本機資料檔：{path}")
-        return pd.DataFrame()
-
-    wb = load_workbook(path, data_only=False)
-    if sheet_name not in wb.sheetnames:
-        st.warning(f"本機資料檔找不到工作表：{sheet_name}")
-        return pd.DataFrame()
-
-    ws = wb[sheet_name]
-    values = list(ws.iter_rows(values_only=True))
-    if not values:
-        return pd.DataFrame()
-
-    header = [_norm(c) for c in values[0]]
-    if not any(header):
-        return pd.DataFrame()
-
-    rows = []
-    for row in values[1:]:
-        row = list(row)
-        if len(row) < len(header):
-            row += [""] * (len(header) - len(row))
-        else:
-            row = row[:len(header)]
-        rows.append(["" if v is None else v for v in row])
-
-    df = pd.DataFrame(rows, columns=header)
-    df = _trim_trailing_blank_columns(df)
-    if not df.empty:
-        df = df[df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)].reset_index(drop=True)
-    return df
-
-
-def _overwrite_local_sheet(sheet_name: str, df: pd.DataFrame):
-    path = get_local_db_path()
-    if not path.exists():
-        raise FileNotFoundError(f"找不到本機資料檔：{path}")
-
-    wb = load_workbook(path)
-    if sheet_name not in wb.sheetnames:
-        ws = wb.create_sheet(sheet_name)
-    else:
-        ws = wb[sheet_name]
-        ws.delete_rows(1, ws.max_row)
-
-    clean_df = (df.copy() if df is not None else pd.DataFrame()).fillna("")
-    header = [str(c) for c in clean_df.columns.tolist()]
-    if header:
-        ws.append(header)
-        for row in clean_df.astype(str).values.tolist():
-            ws.append(row)
-
-    wb.save(path)
-# ============================================================
-# 覆蓋整張資料表
-# ============================================================
-def overwrite_table(table_name: str, df: pd.DataFrame):
-    """
-    直接覆蓋整張資料表
-    支援：
-    1. Google Sheet
-    2. 本機 Excel（若有啟用）
-    """
-    # Google Sheet 模式
-    try:
-        sh = get_spreadsheet()
-        ws = sh.worksheet(table_name)
-        ws.clear()
-
-        clean_df = df.copy() if df is not None else pd.DataFrame()
-
-        if clean_df.empty:
-            ws.update([[]])
-        else:
-            ws.update(
-                [clean_df.columns.tolist()] +
-                clean_df.fillna("").astype(str).values.tolist()
-            )
-
-        bust_cache()
-        return
-    except Exception:
-        pass
-
-    # 本機 Excel 模式（如果有保留）
-    if "load_workbook" in globals() and load_workbook is not None:
-        path = get_local_db_path()
-        wb = load_workbook(path)
-
-        if table_name in wb.sheetnames:
-            ws = wb[table_name]
-            ws.delete_rows(1, ws.max_row)
-        else:
-            ws = wb.create_sheet(table_name)
-
-        clean_df = df.copy() if df is not None else pd.DataFrame()
-
-        if not clean_df.empty:
-            ws.append([str(c) for c in clean_df.columns.tolist()])
-            for row in clean_df.fillna("").astype(str).values.tolist():
-                ws.append(row)
-
-        wb.save(path)
-        bust_cache()
 
