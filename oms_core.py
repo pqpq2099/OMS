@@ -21,7 +21,10 @@ import gspread
 import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
-
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    load_workbook = None
 from utils.utils_units import convert_to_base, convert_unit, get_base_unit
 
 
