@@ -77,7 +77,19 @@ def _render_section_title(title: str, help_text: str = ""):
     st.subheader(title)
     if help_text:
         st.caption(help_text)
+        
+def _fmt_price_1(v) -> str:
+    try:
+        return f"{float(v):.1f}"
+    except Exception:
+        return str(v)
 
+
+def _fmt_ratio_int(v) -> str:
+    try:
+        return str(int(round(float(v))))
+    except Exception:
+        return str(v)
 
 def _filter_items_by_vendor(items_df: pd.DataFrame, vendor_id: str) -> pd.DataFrame:
     if items_df.empty:
@@ -218,7 +230,6 @@ def _tab_vendors():
                     "電話": view_df.get("phone", ""),
                     "LINE": view_df.get("line_id", ""),
                     "狀態": view_df.get("is_active", "").apply(_bool_text),
-                    "ID": view_df.get("vendor_id", ""),
                 }
             )
             st.dataframe(display, use_container_width=True, hide_index=True)
@@ -412,7 +423,6 @@ def _tab_items():
                     "叫貨單位": view_df.get("default_order_unit", ""),
                     "可叫貨單位": view_df.get("orderable_units", ""),
                     "狀態": view_df.get("is_active", "").apply(_bool_text),
-                    "ID": view_df.get("item_id", ""),
                 }
             )
             st.dataframe(display, use_container_width=True, hide_index=True)
@@ -466,7 +476,7 @@ def _tab_prices():
 
         if mode == "新增價格":
             with st.form("form_create_price", clear_on_submit=True):
-                unit_price = st.number_input("單價 *", min_value=0.0, step=1.0, format="%.2f")
+                unit_price = st.number_input("單價 *", min_value=0.0, step=0.1, format="%.1f")
                 price_unit_label = st.selectbox("價格單位 *", options=list(unit_options.keys()), index=None, placeholder="請選擇")
                 effective_date = st.date_input("生效日期 *")
                 is_active = st.toggle("啟用", value=True)
@@ -490,7 +500,7 @@ def _tab_prices():
                 st.info("目前沒有可編輯的價格資料")
             else:
                 price_options = {
-                    f"{_norm(r.get('effective_date'))}｜{_norm(r.get('unit_price'))}/{_norm(r.get('price_unit'))}｜{_norm(r.get('price_id'))}": _norm(r.get("price_id"))
+                    f"{_norm(r.get('effective_date'))}｜{_fmt_price_1(r.get('unit_price'))}/{_norm(r.get('price_unit'))}": _norm(r.get("price_id"))
                     for _, r in prices_df.iterrows()
                 }
                 selected_price_label = st.selectbox(
@@ -514,8 +524,8 @@ def _tab_prices():
                     unit_price = st.number_input(
                         "單價 *",
                         min_value=0.0,
-                        step=1.0,
-                        format="%.2f",
+                        step=0.1,
+                        format="%.1f",
                         value=float(_norm(row.get("unit_price")) or 0),
                     )
                     price_unit_label = st.selectbox(
@@ -556,7 +566,6 @@ def _tab_prices():
                     "單位": prices_df.get("price_unit", ""),
                     "結束日期": prices_df.get("end_date", ""),
                     "狀態": prices_df.get("is_active", "").apply(_bool_text),
-                    "ID": prices_df.get("price_id", ""),
                 }
             )
             st.dataframe(display, use_container_width=True, hide_index=True)
@@ -669,7 +678,6 @@ def _tab_units():
                     "符號": view_df.get("unit_symbol", ""),
                     "類型": view_df.get("unit_type", ""),
                     "狀態": view_df.get("is_active", "").apply(_bool_text),
-                    "ID": view_df.get("unit_id", ""),
                 }
             )
             st.dataframe(display, use_container_width=True, hide_index=True)
@@ -730,7 +738,7 @@ def _tab_unit_conversions():
                     index=None,
                     placeholder="請選擇",
                 )
-                ratio = st.number_input("比例 *（例如：1箱 = 8包，就填 8）", min_value=0.0, step=1.0, format="%.4f")
+                ratio = st.number_input("比例 *（例如：1箱 = 8包，就填 8）", min_value=1, step=1, format="%d")
                 to_unit_label = st.selectbox(
                     "目標單位 *（通常填較小的單位，例如：包）",
                     options=list(unit_options.keys()),
@@ -786,10 +794,10 @@ def _tab_unit_conversions():
                     )
                     ratio = st.number_input(
                         "比例 *（例如：1箱 = 8包，就填 8）",
-                        min_value=0.0,
-                        step=1.0,
-                        format="%.4f",
-                        value=float(_norm(row.get("ratio")) or 0),
+                        min_value=1,
+                        step=1,
+                        format="%d",
+                        value=int(round(float(_norm(row.get("ratio")) or 0))),
                     )
                     to_unit_label = st.selectbox(
                         "目標單位 *（通常填較小的單位，例如：包）",
@@ -825,7 +833,6 @@ def _tab_unit_conversions():
                         axis=1,
                     ),
                     "狀態": conv_df.get("is_active", "").apply(_bool_text),
-                    "ID": conv_df.get("conversion_id", ""),
                 }
             )
             st.dataframe(display, use_container_width=True, hide_index=True)
