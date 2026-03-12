@@ -80,7 +80,9 @@ def _render_section_title(title: str, help_text: str = ""):
 
 
 def _filter_items_by_vendor(items_df: pd.DataFrame, vendor_id: str) -> pd.DataFrame:
-    if items_df.empty or not _norm(vendor_id):
+    if items_df.empty:
+        return items_df.copy()
+    if not _norm(vendor_id):
         return items_df.copy()
     if "default_vendor_id" not in items_df.columns:
         return items_df.copy()
@@ -506,7 +508,7 @@ def _tab_prices():
                     for i, label in enumerate(unit_keys):
                         if unit_options[label] == target:
                             return i
-                    return 0
+                        return 0
 
                 with st.form("form_update_price"):
                     unit_price = st.number_input(
