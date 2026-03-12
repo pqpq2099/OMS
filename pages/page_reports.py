@@ -271,6 +271,10 @@ def page_view_history():
 
     if sel_v != "全部廠商":
         item_source_df = item_source_df[item_source_df["廠商"] == sel_v].copy()
+    st.write("目前選到的廠商：", sel_v)
+    st.write("篩選後資料筆數：", len(item_source_df))
+    st.write("篩選後廠商唯一值：", item_source_df["廠商"].dropna().unique().tolist())
+    st.write("篩選後前20個品項：", item_source_df["品項"].dropna().unique().tolist()[:20])   
 
     # ========================================================
     # 品項篩選
