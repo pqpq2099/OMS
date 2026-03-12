@@ -79,6 +79,14 @@ def _render_section_title(title: str, help_text: str = ""):
         st.caption(help_text)
 
 
+def _filter_items_by_vendor(items_df: pd.DataFrame, vendor_id: str) -> pd.DataFrame:
+    if items_df.empty or not _norm(vendor_id):
+        return items_df.copy()
+    if "default_vendor_id" not in items_df.columns:
+        return items_df.copy()
+    return items_df[items_df["default_vendor_id"].astype(str) == _norm(vendor_id)].copy()
+
+
 # ============================================================
 # [P2] 廠商管理
 # ============================================================
@@ -215,20 +223,34 @@ def _tab_vendors():
 
 
 # ============================================================
-# [P3] 品項管理
+# [P3] 品項管理（先選廠商）
 # ============================================================
 def _tab_items():
-    _render_section_title("品項管理", "目前一個 item 代表一個實際採購規格，品名請直接寫完整。")
+    _render_section_title("品項管理", "先選供應商，再管理該供應商底下的品項。")
 
     items_df = list_items()
     vendors_df = list_active_vendors()
     units_df = list_active_units()
     brand_options = get_brand_options()
 
+    if vendors_df.empty:
+        st.info("請先建立啟用中的廠商")
+        return
+
     vendor_options = {_vendor_label(r): _norm(r.get("vendor_id")) for _, r in vendors_df.iterrows()}
     unit_options = {_unit_label(r): _norm(r.get("unit_name_zh") or r.get("unit_name") or r.get("unit_id")) for _, r in units_df.iterrows()}
-    item_options = {_item_label(r): _norm(r.get("item_id")) for _, r in items_df.iterrows()}
     brand_map = {label: brand_id for label, brand_id in brand_options}
+
+    selected_vendor_label = st.selectbox(
+        "選擇供應商",
+        options=list(vendor_options.keys()),
+        index=0 if vendor_options else None,
+        key="item_vendor_select",
+    )
+    selected_vendor_id = vendor_options.get(selected_vendor_label, "")
+
+    filtered_items_df = _filter_items_by_vendor(items_df, selected_vendor_id)
+    item_options = {_item_label(r): _norm(r.get("item_id")) for _, r in filtered_items_df.iterrows()}
 
     col_left, col_right = st.columns([1.25, 1.75], gap="large")
 
@@ -242,17 +264,12 @@ def _tab_items():
 
         if mode == "新增品項":
             with st.form("form_create_item", clear_on_submit=True):
+                st.text_input("目前供應商", value=selected_vendor_label, disabled=True)
                 item_name_zh = st.text_input("品項名稱 *", help="請直接寫完整採購規格，例如：青醬(1kg×8包/箱)")
                 item_name = st.text_input("系統名稱（英文/內部）")
                 category = st.text_input("分類")
                 spec = st.text_area("規格說明 / 備註", height=70)
 
-                vendor_label = st.selectbox(
-                    "預設供應商 *",
-                    options=list(vendor_options.keys()),
-                    index=None,
-                    placeholder="請選擇供應商",
-                )
                 brand_label = st.selectbox(
                     "品牌",
                     options=list(brand_map.keys()),
@@ -274,7 +291,7 @@ def _tab_items():
                             item_name=item_name,
                             category=category,
                             spec=spec,
-                            default_vendor_id=vendor_options.get(vendor_label, ""),
+                            default_vendor_id=selected_vendor_id,
                             base_unit=unit_options.get(base_unit_label, ""),
                             default_stock_unit=unit_options.get(stock_unit_label, ""),
                             default_order_unit=unit_options.get(order_unit_label, ""),
@@ -286,101 +303,91 @@ def _tab_items():
                         st.rerun()
                     except PurchaseServiceError as e:
                         st.error(str(e))
+
         else:
-            item_label = st.selectbox(
-                "選擇要編輯的品項",
-                options=list(item_options.keys()),
-                index=None,
-                placeholder="請選擇品項",
-                key="edit_item_select",
-            )
+            if not item_options:
+                st.info("此供應商目前沒有品項可編輯")
+            else:
+                item_label = st.selectbox(
+                    "選擇要編輯的品項",
+                    options=list(item_options.keys()),
+                    index=None,
+                    placeholder="請選擇品項",
+                    key="edit_item_select",
+                )
 
-            if item_label:
-                item_id = item_options[item_label]
-                row = items_df[items_df["item_id"].astype(str) == item_id].iloc[0]
+                if item_label:
+                    item_id = item_options[item_label]
+                    row = filtered_items_df[filtered_items_df["item_id"].astype(str) == item_id].iloc[0]
 
-                current_vendor = _norm(row.get("default_vendor_id"))
-                current_brand = _norm(row.get("brand_id"))
+                    current_brand = _norm(row.get("brand_id"))
+                    current_base_unit = _norm(row.get("base_unit"))
+                    current_stock_unit = _norm(row.get("default_stock_unit"))
+                    current_order_unit = _norm(row.get("default_order_unit"))
+                    current_orderable = [x.strip() for x in _norm(row.get("orderable_units")).split(",") if x.strip()]
 
-                current_base_unit = _norm(row.get("base_unit"))
-                current_stock_unit = _norm(row.get("default_stock_unit"))
-                current_order_unit = _norm(row.get("default_order_unit"))
-                current_orderable = [x.strip() for x in _norm(row.get("orderable_units")).split(",") if x.strip()]
+                    unit_keys = list(unit_options.keys())
 
-                vendor_keys = list(vendor_options.keys())
-                vendor_idx = 0
-                for i, label in enumerate(vendor_keys):
-                    if vendor_options[label] == current_vendor:
-                        vendor_idx = i
-                        break
+                    def _find_unit_idx(target: str) -> int:
+                        for i, label in enumerate(unit_keys):
+                            if unit_options[label] == target:
+                                return i
+                        return 0
 
-                unit_keys = list(unit_options.keys())
+                    brand_keys = list(brand_map.keys())
+                    brand_idx = 0
+                    for i, label in enumerate(brand_keys):
+                        if brand_map[label] == current_brand:
+                            brand_idx = i
+                            break
 
-                def _find_unit_idx(target: str) -> int:
-                    for i, label in enumerate(unit_keys):
-                        if unit_options[label] == target:
-                            return i
-                    return 0
+                    default_orderable = [label for label in unit_keys if unit_options[label] in current_orderable]
 
-                brand_keys = list(brand_map.keys())
-                brand_idx = 0
-                for i, label in enumerate(brand_keys):
-                    if brand_map[label] == current_brand:
-                        brand_idx = i
-                        break
+                    with st.form("form_update_item"):
+                        st.text_input("目前供應商", value=selected_vendor_label, disabled=True)
+                        item_name_zh = st.text_input("品項名稱 *", value=_norm(row.get("item_name_zh")))
+                        item_name = st.text_input("系統名稱（英文/內部）", value=_norm(row.get("item_name")))
+                        category = st.text_input("分類", value=_norm(row.get("category")))
+                        spec = st.text_area("規格說明 / 備註", value=_norm(row.get("spec")), height=70)
 
-                default_orderable = [label for label in unit_keys if unit_options[label] in current_orderable]
+                        brand_label = st.selectbox("品牌", options=brand_keys, index=brand_idx if brand_keys else None)
 
-                with st.form("form_update_item"):
-                    item_name_zh = st.text_input("品項名稱 *", value=_norm(row.get("item_name_zh")))
-                    item_name = st.text_input("系統名稱（英文/內部）", value=_norm(row.get("item_name")))
-                    category = st.text_input("分類", value=_norm(row.get("category")))
-                    spec = st.text_area("規格說明 / 備註", value=_norm(row.get("spec")), height=70)
+                        st.markdown("**單位設定**")
+                        base_unit_label = st.selectbox("基準單位 *", options=unit_keys, index=_find_unit_idx(current_base_unit))
+                        stock_unit_label = st.selectbox("庫存單位 *", options=unit_keys, index=_find_unit_idx(current_stock_unit))
+                        order_unit_label = st.selectbox("預設叫貨單位 *", options=unit_keys, index=_find_unit_idx(current_order_unit))
+                        orderable_unit_labels = st.multiselect("可叫貨單位 *", options=unit_keys, default=default_orderable)
+                        is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
 
-                    vendor_label = st.selectbox("預設供應商 *", options=vendor_keys, index=vendor_idx if vendor_keys else None)
-                    brand_label = st.selectbox("品牌", options=brand_keys, index=brand_idx if brand_keys else None)
-
-                    st.markdown("**單位設定**")
-                    base_unit_label = st.selectbox("基準單位 *", options=unit_keys, index=_find_unit_idx(current_base_unit))
-                    stock_unit_label = st.selectbox("庫存單位 *", options=unit_keys, index=_find_unit_idx(current_stock_unit))
-                    order_unit_label = st.selectbox("預設叫貨單位 *", options=unit_keys, index=_find_unit_idx(current_order_unit))
-                    orderable_unit_labels = st.multiselect("可叫貨單位 *", options=unit_keys, default=default_orderable)
-                    is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
-
-                    submitted = st.form_submit_button("更新品項", use_container_width=True)
-                    if submitted:
-                        try:
-                            update_item(
-                                item_id=item_id,
-                                item_name_zh=item_name_zh,
-                                item_name=item_name,
-                                category=category,
-                                spec=spec,
-                                default_vendor_id=vendor_options.get(vendor_label, ""),
-                                base_unit=unit_options.get(base_unit_label, ""),
-                                default_stock_unit=unit_options.get(stock_unit_label, ""),
-                                default_order_unit=unit_options.get(order_unit_label, ""),
-                                orderable_units=[unit_options[x] for x in orderable_unit_labels],
-                                is_active=is_active,
-                                brand_id=brand_map.get(brand_label, ""),
-                            )
-                            st.success("品項已更新")
-                            st.rerun()
-                        except PurchaseServiceError as e:
-                            st.error(str(e))
+                        submitted = st.form_submit_button("更新品項", use_container_width=True)
+                        if submitted:
+                            try:
+                                update_item(
+                                    item_id=item_id,
+                                    item_name_zh=item_name_zh,
+                                    item_name=item_name,
+                                    category=category,
+                                    spec=spec,
+                                    default_vendor_id=selected_vendor_id,
+                                    base_unit=unit_options.get(base_unit_label, ""),
+                                    default_stock_unit=unit_options.get(stock_unit_label, ""),
+                                    default_order_unit=unit_options.get(order_unit_label, ""),
+                                    orderable_units=[unit_options[x] for x in orderable_unit_labels],
+                                    is_active=is_active,
+                                    brand_id=brand_map.get(brand_label, ""),
+                                )
+                                st.success("品項已更新")
+                                st.rerun()
+                            except PurchaseServiceError as e:
+                                st.error(str(e))
 
     with col_right:
-        st.markdown("**品項列表**")
+        st.markdown("**該供應商品項列表**")
 
         search_text = st.text_input("搜尋品項", key="item_search")
-        filter_vendor = st.selectbox(
-            "供應商篩選",
-            options=["全部"] + list(vendor_options.keys()),
-            index=0,
-        )
         show_inactive = st.checkbox("顯示停用品項", value=False, key="show_inactive_items")
 
-        view_df = items_df.copy()
+        view_df = filtered_items_df.copy()
         if search_text.strip():
             keyword = search_text.strip().lower()
             view_df = view_df[
@@ -388,25 +395,15 @@ def _tab_items():
                 | view_df["item_name"].astype(str).str.lower().str.contains(keyword, na=False)
             ]
 
-        if filter_vendor != "全部":
-            vendor_id = vendor_options.get(filter_vendor, "")
-            view_df = view_df[view_df["default_vendor_id"].astype(str) == vendor_id]
-
         if not show_inactive and "is_active" in view_df.columns:
             view_df = view_df[view_df["is_active"].astype(str).str.lower().isin(["true", "1", "yes", "y"])]
 
         if view_df.empty:
             st.info("目前沒有符合條件的品項")
         else:
-            vendor_name_map = {
-                _norm(r.get("vendor_id")): _norm(r.get("vendor_name_zh")) or _norm(r.get("vendor_name"))
-                for _, r in vendors_df.iterrows()
-            }
-
             display = pd.DataFrame(
                 {
                     "品項名稱": view_df["item_name_zh"].replace("", pd.NA).fillna(view_df["item_name"]),
-                    "供應商": view_df["default_vendor_id"].map(vendor_name_map).fillna(view_df["default_vendor_id"]),
                     "分類": view_df.get("category", ""),
                     "基準單位": view_df.get("base_unit", ""),
                     "庫存單位": view_df.get("default_stock_unit", ""),
@@ -420,19 +417,35 @@ def _tab_items():
 
 
 # ============================================================
-# [P4] 價格管理
+# [P4] 價格管理（先選廠商）
 # ============================================================
 def _tab_prices():
-    _render_section_title("價格管理", "價格只新增，不覆蓋舊資料。系統會依生效日期抓現行價格。")
+    _render_section_title("價格管理", "先選供應商，再選該供應商底下的品項。")
 
+    vendors_df = list_active_vendors()
     items_df = list_active_items()
     units_df = list_active_units()
 
-    item_options = {_item_label(r): _norm(r.get("item_id")) for _, r in items_df.iterrows()}
+    if vendors_df.empty:
+        st.info("請先建立啟用中的廠商")
+        return
+
+    vendor_options = {_vendor_label(r): _norm(r.get("vendor_id")) for _, r in vendors_df.iterrows()}
     unit_options = {_unit_label(r): _norm(r.get("unit_name_zh") or r.get("unit_name") or r.get("unit_id")) for _, r in units_df.iterrows()}
 
+    selected_vendor_label = st.selectbox(
+        "選擇供應商",
+        options=list(vendor_options.keys()),
+        index=0 if vendor_options else None,
+        key="price_vendor_select",
+    )
+    selected_vendor_id = vendor_options.get(selected_vendor_label, "")
+
+    filtered_items_df = _filter_items_by_vendor(items_df, selected_vendor_id)
+    item_options = {_item_label(r): _norm(r.get("item_id")) for _, r in filtered_items_df.iterrows()}
+
     if not item_options:
-        st.info("請先建立啟用品項")
+        st.info("此供應商目前沒有啟用品項")
         return
 
     selected_label = st.selectbox(
@@ -548,10 +561,10 @@ def _tab_prices():
 
 
 # ============================================================
-# [P5] 單位管理
+# [P5] 單位管理（全系統共用）
 # ============================================================
 def _tab_units():
-    _render_section_title("單位管理", "先建立單位字典，品項與價格、換算都會使用。")
+    _render_section_title("單位管理", "單位是全系統共用字典，不需先選供應商。")
 
     units_df = list_units()
     brand_options = get_brand_options()
@@ -661,19 +674,35 @@ def _tab_units():
 
 
 # ============================================================
-# [P6] 單位換算
+# [P6] 單位換算（先選廠商）
 # ============================================================
 def _tab_unit_conversions():
-    _render_section_title("單位換算", "換算填錯會直接影響庫存、消耗與成本，請確認比例正確。")
+    _render_section_title("單位換算", "先選供應商，再選品項。填寫方式：請填大單位 → 小單位，例如：1箱 = 8包。")
 
+    vendors_df = list_active_vendors()
     items_df = list_active_items()
     units_df = list_active_units()
 
-    item_options = {_item_label(r): _norm(r.get("item_id")) for _, r in items_df.iterrows()}
+    if vendors_df.empty:
+        st.info("請先建立啟用中的廠商")
+        return
+
+    vendor_options = {_vendor_label(r): _norm(r.get("vendor_id")) for _, r in vendors_df.iterrows()}
     unit_options = {_unit_label(r): _norm(r.get("unit_name_zh") or r.get("unit_name") or r.get("unit_id")) for _, r in units_df.iterrows()}
 
+    selected_vendor_label = st.selectbox(
+        "選擇供應商",
+        options=list(vendor_options.keys()),
+        index=0 if vendor_options else None,
+        key="conv_vendor_select",
+    )
+    selected_vendor_id = vendor_options.get(selected_vendor_label, "")
+
+    filtered_items_df = _filter_items_by_vendor(items_df, selected_vendor_id)
+    item_options = {_item_label(r): _norm(r.get("item_id")) for _, r in filtered_items_df.iterrows()}
+
     if not item_options:
-        st.info("請先建立啟用品項")
+        st.info("此供應商目前沒有啟用品項")
         return
 
     selected_item_label = st.selectbox(
@@ -689,12 +718,23 @@ def _tab_unit_conversions():
 
     with col_left:
         mode = st.radio("操作模式", ["新增換算", "編輯換算"], horizontal=True, key="conv_mode")
+        st.caption("請填「大單位 → 小單位」，例如：來源填箱、目標填包、比例填 8。")
 
         if mode == "新增換算":
             with st.form("form_create_conversion", clear_on_submit=True):
-                from_unit_label = st.selectbox("來源單位 *", options=list(unit_options.keys()), index=None, placeholder="請選擇")
-                ratio = st.number_input("比例 *", min_value=0.0, step=1.0, format="%.4f")
-                to_unit_label = st.selectbox("目標單位 *", options=list(unit_options.keys()), index=None, placeholder="請選擇")
+                from_unit_label = st.selectbox(
+                    "來源單位 *（通常填較大的單位，例如：箱）",
+                    options=list(unit_options.keys()),
+                    index=None,
+                    placeholder="請選擇",
+                )
+                ratio = st.number_input("比例 *（例如：1箱 = 8包，就填 8）", min_value=0.0, step=1.0, format="%.4f")
+                to_unit_label = st.selectbox(
+                    "目標單位 *（通常填較小的單位，例如：包）",
+                    options=list(unit_options.keys()),
+                    index=None,
+                    placeholder="請選擇",
+                )
                 is_active = st.toggle("啟用", value=True)
 
                 submitted = st.form_submit_button("新增換算", use_container_width=True)
@@ -738,19 +778,19 @@ def _tab_unit_conversions():
 
                 with st.form("form_update_conversion"):
                     from_unit_label = st.selectbox(
-                        "來源單位 *",
+                        "來源單位 *（通常填較大的單位，例如：箱）",
                         options=unit_keys,
                         index=_find_unit_idx(_norm(row.get("from_unit"))),
                     )
                     ratio = st.number_input(
-                        "比例 *",
+                        "比例 *（例如：1箱 = 8包，就填 8）",
                         min_value=0.0,
                         step=1.0,
                         format="%.4f",
                         value=float(_norm(row.get("ratio")) or 0),
                     )
                     to_unit_label = st.selectbox(
-                        "目標單位 *",
+                        "目標單位 *（通常填較小的單位，例如：包）",
                         options=unit_keys,
                         index=_find_unit_idx(_norm(row.get("to_unit"))),
                     )
