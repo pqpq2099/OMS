@@ -18,9 +18,8 @@ import streamlit as st
 
 from oms_core import (
     apply_global_style,
-    append_rows_by_header,
     bust_cache,
-    get_header,
+    overwrite_table,
     read_table,
 )
 
@@ -33,14 +32,13 @@ from pages.page_order_entry import (
 
 from pages.page_reports import (
     page_analysis,
-    page_cost_debug,
     page_export,
     page_view_history,
 )
 
 from pages.page_purchase_settings import page_purchase_settings
 from pages.page_user_admin import page_user_admin
-st.set_page_config(page_title="營運管理系統", layout="centered")
+st.set_page_config(page_title="營運管理系統", layout="centered", initial_sidebar_state="expanded")
 
 
 
@@ -179,29 +177,10 @@ def save_setting(setting_key: str, setting_value: str):
             )
 
     # ------------------------------------------------
-    # 覆寫整張 settings 表
+    # 直接覆寫整張 settings 表
+    # local 模式寫回 Excel，google 模式寫回 Google Sheet
     # ------------------------------------------------
-    import gspread
-    from google.oauth2.service_account import Credentials
-    
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=scope,
-    )
-    
-    gc = gspread.authorize(creds)
-    sheet = gc.open_by_key(st.secrets["SHEET_ID"]).worksheet("settings")
-    
-    rows = [settings_df.columns.tolist()] + settings_df.astype(str).values.tolist()
-    
-    sheet.clear()
-    sheet.update(rows)
-    
+    overwrite_table("settings", settings_df)
     bust_cache()
 
 
@@ -380,9 +359,6 @@ def router():
 
     elif step == "view_history":
         page_view_history()
-
-    elif step == "cost_debug":
-        page_cost_debug()
 
     elif step == "appearance_settings":
         page_appearance_settings()
