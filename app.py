@@ -306,7 +306,7 @@ def render_sidebar():
             st.session_state.step = "order_entry"
             st.rerun()
 
-        if st.button("📩 今日明細", use_container_width=True, key="sb_order_message_detail"):
+        if st.button("📩 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
             st.session_state.step = "order_message_detail"
             st.rerun()
 
