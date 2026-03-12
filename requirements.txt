@@ -1,6 +1,8 @@
 streamlit
+openpyxl
 pandas
 gspread
 oauth2client
 google-auth
 plotly
+
