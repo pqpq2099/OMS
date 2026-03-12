@@ -262,6 +262,17 @@ def page_view_history():
     )
 
     # ========================================================
+    # 當廠商改變時，重置品項選擇
+    # 避免下拉選單仍停留在上一個廠商的品項
+    # ========================================================
+    if "hist_vendor_filter_prev" not in st.session_state:
+        st.session_state.hist_vendor_filter_prev = sel_v
+
+    if st.session_state.hist_vendor_filter_prev != sel_v:
+        st.session_state.hist_item_filter = "全部品項"
+        st.session_state.hist_vendor_filter_prev = sel_v
+
+    # ========================================================
     # 品項選單來源
     # 規則：
     # 1. 若廠商為「全部廠商」→ 顯示全部品項
@@ -270,28 +281,29 @@ def page_view_history():
     item_source_df = hist_df.copy()
 
     if sel_v != "全部廠商":
-        item_source_df = item_source_df[item_source_df["廠商"] == sel_v].copy()
-    st.write("目前選到的廠商：", sel_v)
-    st.write("篩選後資料筆數：", len(item_source_df))
-    st.write("篩選後廠商唯一值：", item_source_df["廠商"].dropna().unique().tolist())
-    st.write("篩選後前20個品項：", item_source_df["品項"].dropna().unique().tolist()[:20])   
+        item_source_df = item_source_df[
+            item_source_df["廠商"].astype(str).str.strip() == str(sel_v).strip()
+        ].copy()
 
-    # ========================================================
-    # 品項篩選
-    # 品項下拉要跟著廠商走
-    # ========================================================
     item_values = (
         _clean_option_list(item_source_df["品項"].dropna().tolist())
         if "品項" in item_source_df.columns else []
     )
     all_i = ["全部品項"] + item_values
+
+    # 如果目前選到的品項已不在新的選單裡，強制回到全部品項
+    if st.session_state.get("hist_item_filter", "全部品項") not in all_i:
+        st.session_state.hist_item_filter = "全部品項"
+
+    # ========================================================
+    # 品項篩選
+    # 品項下拉要跟著廠商走
+    # ========================================================
     sel_i = st.selectbox(
         "🏷️ 選擇品項",
         options=all_i,
-        index=0,
         key="hist_item_filter",
     )
-
     # ========================================================
     # 套用篩選
     # 先依廠商，再依品項
