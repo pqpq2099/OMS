@@ -262,8 +262,65 @@ def page_view_history():
     )
 
     # ========================================================
+    # 品項選單改成依 items 主檔綁定廠商
+    # 規則：
+    # 1. 全部廠商 → 顯示全部品項
+    # 2. 指定廠商 → 只顯示 items.default_vendor_id 對應該廠商的品項
+    # ========================================================
+    items_df = read_table("items").copy()
+    vendors_df = read_table("vendors").copy()
+
+    item_values = []
+
+    if not items_df.empty:
+        items_df.columns = [str(c).strip() for c in items_df.columns]
+        items_df["item_id"] = items_df.get("item_id", "").astype(str).str.strip()
+        items_df["default_vendor_id"] = items_df.get("default_vendor_id", "").astype(str).str.strip()
+
+        # 品項顯示名稱：優先中文，其次英文，再次 item_id
+        def _hist_item_label(r):
+            return (
+                _norm(r.get("item_name_zh", ""))
+                or _norm(r.get("item_name", ""))
+                or _norm(r.get("item_id", ""))
+            )
+
+        items_df["品項顯示"] = items_df.apply(_hist_item_label, axis=1)
+
+        # 只取啟用品項（若有 is_active 欄位）
+        if "is_active" in items_df.columns:
+            items_df = items_df[
+                items_df["is_active"].astype(str).str.strip().isin(["1", "True", "true", "YES", "yes", "是"])
+            ].copy()
+
+        # 若有指定廠商，先找出該廠商 vendor_id，再依 default_vendor_id 篩品項
+        if sel_v != "全部廠商" and not vendors_df.empty:
+            vendors_df.columns = [str(c).strip() for c in vendors_df.columns]
+            vendors_df["vendor_id"] = vendors_df.get("vendor_id", "").astype(str).str.strip()
+            vendors_df["vendor_name_norm"] = vendors_df.apply(
+                lambda r: _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")),
+                axis=1,
+            )
+
+            target_vendor = vendors_df[
+                vendors_df["vendor_name_norm"].astype(str).str.strip() == str(sel_v).strip()
+            ].copy()
+
+            if not target_vendor.empty:
+                target_vendor_id = str(target_vendor.iloc[0]["vendor_id"]).strip()
+                items_df = items_df[
+                    items_df["default_vendor_id"].astype(str).str.strip() == target_vendor_id
+                ].copy()
+            else:
+                items_df = items_df.iloc[0:0].copy()
+
+        item_values = _clean_option_list(items_df["品項顯示"].dropna().tolist())
+
+    all_i = ["全部品項"] + item_values
+
+    # ========================================================
     # 當廠商改變時，重置品項選擇
-    # 避免下拉選單仍停留在上一個廠商的品項
+    # 避免還停留在上一個廠商的品項
     # ========================================================
     if "hist_vendor_filter_prev" not in st.session_state:
         st.session_state.hist_vendor_filter_prev = sel_v
@@ -272,32 +329,11 @@ def page_view_history():
         st.session_state.hist_item_filter = "全部品項"
         st.session_state.hist_vendor_filter_prev = sel_v
 
-    # ========================================================
-    # 品項選單來源
-    # 規則：
-    # 1. 若廠商為「全部廠商」→ 顯示全部品項
-    # 2. 若已選特定廠商 → 只顯示該廠商的品項
-    # ========================================================
-    item_source_df = hist_df.copy()
-
-    if sel_v != "全部廠商":
-        item_source_df = item_source_df[
-            item_source_df["廠商"].astype(str).str.strip() == str(sel_v).strip()
-        ].copy()
-
-    item_values = (
-        _clean_option_list(item_source_df["品項"].dropna().tolist())
-        if "品項" in item_source_df.columns else []
-    )
-    all_i = ["全部品項"] + item_values
-
-    # 如果目前選到的品項已不在新的選單裡，強制回到全部品項
     if st.session_state.get("hist_item_filter", "全部品項") not in all_i:
         st.session_state.hist_item_filter = "全部品項"
 
     # ========================================================
-    # 品項篩選
-    # 品項下拉要跟著廠商走
+    # 品項下拉
     # ========================================================
     sel_i = st.selectbox(
         "🏷️ 選擇品項",
@@ -314,7 +350,9 @@ def page_view_history():
         filt_df = filt_df[filt_df["廠商"] == sel_v].copy()
 
     if sel_i != "全部品項":
-        filt_df = filt_df[filt_df["品項"] == sel_i].copy()
+        filt_df = filt_df[
+            filt_df["品項"].astype(str).str.strip() == str(sel_i).strip()
+        ].copy()
     show_cols = [
         "日期顯示",
         "廠商",
