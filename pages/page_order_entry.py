@@ -497,10 +497,10 @@ def page_order_entry():
             with c2:
                 stock_input = st.number_input(
                     "庫",
-                    min_value=0,
-                    step=1,
-                    format="%d",
-                    value=0,
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    value=0.0,
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
                 )
@@ -514,7 +514,7 @@ def page_order_entry():
                     "進",
                     min_value=0.0,
                     step=0.1,
-                    format="%g",
+                    format="%.1f",
                     value=0.0,
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
