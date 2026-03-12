@@ -499,7 +499,7 @@ def page_order_entry():
                     "庫",
                     min_value=0.0,
                     step=0.1,
-                    format="%.1f",
+                    format="%g",
                     value=0.0,
                     key=f"stock_{item_id}",
                     label_visibility="collapsed",
@@ -508,13 +508,13 @@ def page_order_entry():
                     f"<div class='order-unit-label'>{stock_unit}</div>",
                     unsafe_allow_html=True,
                 )
-
+            
             with c3:
                 order_input = st.number_input(
                     "進",
                     min_value=0.0,
                     step=0.1,
-                    format="%.1f",
+                    format="%g",
                     value=0.0,
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
@@ -528,7 +528,6 @@ def page_order_entry():
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
-
             submit_rows.append(
                 {
                     "item_id": item_id,
