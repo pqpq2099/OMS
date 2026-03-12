@@ -302,14 +302,14 @@ def render_sidebar():
             st.session_state.step = "select_store"
             st.rerun()
 
-        if st.button("🧾 叫貨作業", use_container_width=True, key="sb_order_entry"):
-            st.session_state.step = "order_entry"
-            st.rerun()
-
+        # ====================================================
+        # 叫貨明細
+        # 顯示今日叫貨整理與 LINE 訊息格式
+        # ====================================================
         if st.button("📩 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
             st.session_state.step = "order_message_detail"
             st.rerun()
-
+                
         st.markdown("---")
 
         # ====================================================
