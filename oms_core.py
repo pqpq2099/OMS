@@ -111,3 +111,33 @@ def append_rows_by_header(name: str, rows: list[dict]):
 def bust_cache():
     st.cache_data.clear()
     st.cache_resource.clear()
+# ============================================================
+# 全域樣式
+# ============================================================
+def apply_global_style():
+    """
+    Streamlit 全域 UI 樣式
+    """
+    import streamlit as st
+
+    st.markdown(
+        """
+        <style>
+
+        .block-container{
+            padding-top: 1.2rem;
+            padding-bottom: 2rem;
+        }
+
+        h1, h2, h3 {
+            font-weight: 600;
+        }
+
+        .stButton>button {
+            border-radius: 8px;
+        }
+
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
