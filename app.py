@@ -294,6 +294,7 @@ def render_sidebar():
 
         # ====================================================
         # 作業
+        # 這一區放日常操作頁
         # ====================================================
         st.markdown("### 作業")
 
@@ -301,13 +302,20 @@ def render_sidebar():
             st.session_state.step = "select_store"
             st.rerun()
 
-        if st.button("🧾 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
+        if st.button("🧾 叫貨作業", use_container_width=True, key="sb_order_entry"):
+            st.session_state.step = "order_entry"
+            st.rerun()
+
+        if st.button("📩 今日明細", use_container_width=True, key="sb_order_message_detail"):
             st.session_state.step = "order_message_detail"
             st.rerun()
 
-        # ============================================================
+        st.markdown("---")
+
+        # ====================================================
         # 分析
-        # ============================================================
+        # 這一區放報表 / 歷史 / 分析
+        # ====================================================
         st.markdown("### 分析")
 
         if st.button("📊 進銷存分析", use_container_width=True, key="sb_analysis"):
@@ -317,25 +325,48 @@ def render_sidebar():
         if st.button("📜 進貨分析", use_container_width=True, key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
-            
-        # ============================================================
-        # 後台管理
-        # ============================================================
-        st.markdown("### 後台管理")
 
-        if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
-            st.session_state.step = "user_admin"
+        if st.button("🧾 叫貨歷史", use_container_width=True, key="sb_purchase_history"):
+            st.session_state.step = "purchase_history"
             st.rerun()
+
+        st.markdown("---")
+
+        # ====================================================
+        # 資料管理
+        # 這一區放主資料維護
+        # 目前先統一進同一頁，之後再拆成廠商 / 品項 / 價格
+        # ====================================================
+        st.markdown("### 資料管理")
 
         if st.button("🛒 資料管理", use_container_width=True, key="sb_purchase_settings"):
             st.session_state.step = "purchase_settings"
             st.rerun()
 
+        st.markdown("---")
+
         # ====================================================
-        # 系統工具（Owner only）
+        # 使用者與權限
+        # 這一區放帳號 / 分店指派 / 權限管理
+        # ====================================================
+        st.markdown("### 使用者與權限")
+
+        if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
+            st.session_state.step = "user_admin"
+            st.rerun()
+
+        st.markdown("---")
+
+        # ====================================================
+        # 系統
+        # 這一區放系統層級功能
         # ====================================================
         if role == "owner":
-            st.markdown("### 系統工具")
+            st.markdown("### 系統")
+
+            if st.button("🎨 外觀設定", use_container_width=True, key="sb_appearance_settings"):
+                st.session_state.step = "appearance_settings"
+                st.rerun()
 
             if st.button("🛠️ 系統維護", use_container_width=True, key="sb_system_tools"):
                 st.session_state.step = "system_tools"
@@ -344,7 +375,6 @@ def render_sidebar():
             if st.button("🧪 開發測試", use_container_width=True, key="sb_dev_test"):
                 st.session_state.step = "dev_test"
                 st.rerun()
-
 
 # ============================================================
 # Router
