@@ -245,14 +245,53 @@ def page_view_history():
             st.rerun()
         return
 
-    vendor_values = _clean_option_list(hist_df["廠商"].dropna().tolist()) if "廠商" in hist_df.columns else []
+    # ========================================================
+    # 廠商篩選
+    # 先建立廠商下拉選單
+    # ========================================================
+    vendor_values = (
+        _clean_option_list(hist_df["廠商"].dropna().tolist())
+        if "廠商" in hist_df.columns else []
+    )
     all_v = ["全部廠商"] + vendor_values
-    sel_v = st.selectbox("🏢 選擇廠商", options=all_v, index=0, key="hist_vendor_filter")
+    sel_v = st.selectbox(
+        "🏢 選擇廠商",
+        options=all_v,
+        index=0,
+        key="hist_vendor_filter",
+    )
 
-    item_values = _clean_option_list(hist_df["品項"].dropna().tolist())
+    # ========================================================
+    # 品項選單來源
+    # 規則：
+    # 1. 若廠商為「全部廠商」→ 顯示全部品項
+    # 2. 若已選特定廠商 → 只顯示該廠商的品項
+    # ========================================================
+    item_source_df = hist_df.copy()
+
+    if sel_v != "全部廠商":
+        item_source_df = item_source_df[item_source_df["廠商"] == sel_v].copy()
+
+    # ========================================================
+    # 品項篩選
+    # 品項下拉要跟著廠商走
+    # ========================================================
+    item_values = (
+        _clean_option_list(item_source_df["品項"].dropna().tolist())
+        if "品項" in item_source_df.columns else []
+    )
     all_i = ["全部品項"] + item_values
-    sel_i = st.selectbox("🏷️ 選擇品項", options=all_i, index=0, key="hist_item_filter")
+    sel_i = st.selectbox(
+        "🏷️ 選擇品項",
+        options=all_i,
+        index=0,
+        key="hist_item_filter",
+    )
 
+    # ========================================================
+    # 套用篩選
+    # 先依廠商，再依品項
+    # ========================================================
     filt_df = hist_df.copy()
 
     if sel_v != "全部廠商":
@@ -260,7 +299,6 @@ def page_view_history():
 
     if sel_i != "全部品項":
         filt_df = filt_df[filt_df["品項"] == sel_i].copy()
-
     show_cols = [
         "日期顯示",
         "廠商",
