@@ -542,7 +542,26 @@ def page_order_entry():
 
         submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
-    if submitted:
+        if submitted:
+        errors = []
+
+        has_any_order = any(_safe_float(r["order_qty"]) > 0 for r in submit_rows)
+        has_any_stock_gt_zero = any(_safe_float(r["stock_qty"]) > 0 for r in submit_rows)
+
+        # 初始化防呆：不可全部 0 且完全沒叫貨
+        if is_initial_stock and (not has_any_order) and (not has_any_stock_gt_zero):
+            errors.append("初始化庫存不可全部為 0，且不可完全沒有叫貨。")
+
+        # 有叫貨的品項，必須有有效價格
+        for r in submit_rows:
+            if _safe_float(r["order_qty"]) > 0 and _safe_float(r["unit_price"]) <= 0:
+                errors.append(f"{r['item_name']} 缺少有效價格設定，無法送出。")
+
+        if errors:
+            for msg in errors:
+                st.error(msg)
+            return
+
         try:
             po_id = _save_order_entry(
                 submit_rows=submit_rows,
@@ -608,47 +627,21 @@ def _save_order_entry(
 
     # ============================================================
     # 2. 盤點資料：
-    #    使用「上一筆庫存 + 本次輸入覆蓋」方式建立完整新盤點
+    #    現在規則改為「畫面預載上次庫存，送出值就是本次正式庫存」
+    #    所以這裡直接吃 submit_rows，不再做上一筆覆蓋邏輯
     # ============================================================
-    last_stock_map = _get_last_stock_map_for_store(store_id=store_id)
-
-    current_input_map = {
-        _norm(r["item_id"]): (
-            None if _safe_float(r["stock_qty"]) == 0
-            else _safe_float(r["stock_qty"])
-        )
-        for r in submit_rows
-    }
-
-    new_stock_map = _build_new_stock_map(
-        last_stock_map=last_stock_map,
-        current_input_map=current_input_map,
-    )
-
-    # 只保留本次畫面裡屬於該廠商的品項
-    vendor_item_ids = set(vendor_items["item_id"].astype(str).str.strip())
-    new_stock_map = {
-        item_id: qty
-        for item_id, qty in new_stock_map.items()
-        if item_id in vendor_item_ids
-    }
-
     stocktake_rows = []
-    for _, row in vendor_items.iterrows():
-        item_id = _norm(row.get("item_id", ""))
-        if item_id not in new_stock_map:
+    for r in submit_rows:
+        item_id = _norm(r.get("item_id", ""))
+        if not item_id:
             continue
-
-        meta_row = next((r for r in submit_rows if _norm(r["item_id"]) == item_id), None)
-        stock_unit = _norm(row.get("default_stock_unit", "")) or _norm(row.get("base_unit", ""))
-        stock_qty = _safe_float(new_stock_map.get(item_id, 0))
 
         stocktake_rows.append(
             {
                 "item_id": item_id,
-                "item_name": _item_display_name(row),
-                "stock_qty": stock_qty,
-                "stock_unit": meta_row["stock_unit"] if meta_row else stock_unit,
+                "item_name": r.get("item_name", ""),
+                "stock_qty": _safe_float(r.get("stock_qty", 0)),
+                "stock_unit": _norm(r.get("stock_unit", "")),
             }
         )
 
@@ -703,15 +696,17 @@ def _save_order_entry(
                     conversions_df=conversions_df,
                     as_of_date=record_date,
                 )
-            except Exception:
-                stock_base_qty = r["stock_qty"]
-                stock_base_unit = r["stock_unit"]
+            except Exception as e:
+                raise ValueError(f"{r['item_name']} 庫存單位換算失敗：{e}")
 
             row_dict = {c: "" for c in stl_header}
             defaults_line = {
                 "stocktake_line_id": stocktake_line_id,
                 "stocktake_id": stocktake_id,
+                "store_id": store_id,
+                "vendor_id": vendor_id,
                 "item_id": r["item_id"],
+                "item_name": r["item_name"],
                 "qty": str(r["stock_qty"]),
                 "stock_qty": str(r["stock_qty"]),
                 "unit_id": r["stock_unit"],
@@ -747,7 +742,7 @@ def _save_order_entry(
             "store_id": store_id,
             "vendor_id": vendor_id,
             "order_date": str(record_date),
-            "delivery_date": str(record_date),  # 先保守不亂加一天，避免跟你現有表頭/流程衝突
+            "delivery_date": str(record_date),  # 這次先不動日期規則
             "status": "draft",
             "created_at": now,
             "created_by": "SYSTEM",
@@ -772,9 +767,8 @@ def _save_order_entry(
                     conversions_df=conversions_df,
                     as_of_date=record_date,
                 )
-            except Exception:
-                order_base_qty = r["order_qty"]
-                order_base_unit = r["order_unit"]
+            except Exception as e:
+                raise ValueError(f"{r['item_name']} 叫貨單位換算失敗：{e}")
 
             line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
 
@@ -782,7 +776,10 @@ def _save_order_entry(
             defaults_pol = {
                 "po_line_id": po_line_id,
                 "po_id": po_id,
+                "store_id": store_id,
+                "vendor_id": vendor_id,
                 "item_id": r["item_id"],
+                "item_name": r["item_name"],
                 "qty": str(r["order_qty"]),
                 "order_qty": str(r["order_qty"]),
                 "unit_id": r["order_unit"],
