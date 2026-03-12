@@ -227,10 +227,6 @@ def page_select_vendor():
         st.session_state.step = "analysis"
         st.rerun()
 
-    if st.button("🧮 成本檢查", use_container_width=True):
-        st.session_state.step = "cost_debug"
-        st.rerun()
-
     if st.button("📜 查看分店歷史紀錄", use_container_width=True):
         st.session_state.step = "view_history"
         st.rerun()
