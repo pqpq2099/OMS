@@ -53,25 +53,13 @@ def _bool_text(v) -> str:
 
 
 def _vendor_label(r: pd.Series) -> str:
-    name = _norm(r.get("vendor_name_zh")) or _norm(r.get("vendor_name"))
-    vid = _norm(r.get("vendor_id"))
-    return f"{name}｜{vid}" if vid else name
-
+    return _norm(r.get("vendor_name_zh")) or _norm(r.get("vendor_name"))
 
 def _unit_label(r: pd.Series) -> str:
-    name = _norm(r.get("unit_name_zh")) or _norm(r.get("unit_name"))
-    symbol = _norm(r.get("unit_symbol"))
-    uid = _norm(r.get("unit_id"))
-    if symbol:
-        return f"{name} ({symbol})｜{uid}"
-    return f"{name}｜{uid}" if uid else name
-
+    return _norm(r.get("unit_name_zh")) or _norm(r.get("unit_name"))
 
 def _item_label(r: pd.Series) -> str:
-    name = _norm(r.get("item_name_zh")) or _norm(r.get("item_name"))
-    iid = _norm(r.get("item_id"))
-    return f"{name}｜{iid}" if iid else name
-
+    return _norm(r.get("item_name_zh")) or _norm(r.get("item_name"))
 
 def _render_section_title(title: str, help_text: str = ""):
     st.subheader(title)
