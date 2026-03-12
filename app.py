@@ -327,7 +327,7 @@ def render_sidebar():
             st.session_state.step = "user_admin"
             st.rerun()
 
-        if st.button("🛒 採購設定", use_container_width=True, key="sb_purchase_settings"):
+        if st.button("🛒 資料管理", use_container_width=True, key="sb_purchase_settings"):
             st.session_state.step = "purchase_settings"
             st.rerun()
 
