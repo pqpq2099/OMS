@@ -70,7 +70,7 @@ def page_user_admin():
 
         # 顯示主要欄位
         # ------------------------------------------------
-        # users + roles 對照
+        # users + roles 對照（角色名稱）
         # ------------------------------------------------
         role_map = roles_df[["role_id", "role_name"]].copy()
         
@@ -81,7 +81,7 @@ def page_user_admin():
         )
         
         # ------------------------------------------------
-        # users + stores 對照
+        # users + stores 對照（分店名稱）
         # ------------------------------------------------
         store_map = stores_df[["store_code", "store_name"]].copy()
         
@@ -91,6 +91,12 @@ def page_user_admin():
             right_on="store_code",
             how="left"
         )
+        
+        # ------------------------------------------------
+        # ALL 分店處理
+        # ------------------------------------------------
+        users_view.loc[users_view["store_scope"] == "ALL", "store_name"] = "全部分店"
+        users_view["store_name"] = users_view["store_name"].fillna("未設定")
         
         # ------------------------------------------------
         # 顯示欄位
