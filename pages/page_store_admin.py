@@ -243,7 +243,9 @@ def page_store_admin():
 
     brand_map = brands_df[["brand_id", brand_label_col]].copy()
     brand_map = brand_map.rename(columns={brand_label_col: "brand_display"})
-
+    brand_map["brand_display"] = brand_map["brand_display"].astype(str).str.strip()
+    brand_map["brand_display"] = brand_map["brand_display"].replace("", pd.NA)
+    
     # --------------------------------------------------------
     # 顯示用分店表
     # --------------------------------------------------------
@@ -253,7 +255,7 @@ def page_store_admin():
         how="left",
     )
 
-    stores_view["brand_display"] = stores_view["brand_display"].fillna(stores_view["brand_id"])
+    stores_view["brand_display"] = stores_view["brand_display"].fillna("未設定品牌")
     stores_view["store_display"] = stores_view["store_name_zh"].replace("", pd.NA).fillna(stores_view["store_name"])
     stores_view["status_text"] = stores_view["is_active"].map({1: "啟用", 0: "停用"}).fillna("未設定")
 
