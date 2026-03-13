@@ -116,17 +116,20 @@ def page_user_admin():
                 # ------------------------------------------------
                 # 建立新資料列
                 # ------------------------------------------------
+                from datetime import datetime
+                import uuid
+                
                 new_row = {
-                    "user_id": new_user_id,
-                    "account_code": account_code,
+                    "user_id": f"USER_{uuid.uuid4().hex[:8]}",
+                    "account_code": "",
                     "email": "",
-                    "display_name": display_name,
-                    "role_id": role_id,
-                    "store_scope": store_scope,
+                    "display_name": new_name,
+                    "role_id": new_role,
+                    "store_scope": new_store,
                     "is_active": 1,
                     "last_login_at": "",
-                    "created_at": datetime.now(),
-                    "created_by": "system",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "owner",
                     "updated_at": "",
                     "updated_by": "",
                 }
