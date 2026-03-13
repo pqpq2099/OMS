@@ -132,7 +132,7 @@ def render_report_dataframe(df: pd.DataFrame, column_config: dict | None = None)
     apply_table_report_style()
     st.dataframe(
         df,
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
         column_config=column_config or {},
     )
@@ -414,38 +414,8 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
 
-    def _coerce_cell(col: str, value):
-        col = _norm(col)
-
-        if value is None:
-            return ""
-        if isinstance(value, str) and value.strip() == "":
-            return ""
-
-        if col in {"is_active", "s_active"}:
-            return 1 if _to_bool(value) else 0
-
-        if col in {"width", "next_value", "pack_qty"}:
-            try:
-                return int(float(value))
-            except Exception:
-                return _norm(value)
-
-        if col in {"qty", "stock_qty", "order_qty", "base_qty", "suggested_order_qty", "unit_price", "amount", "line_amount", "ratio", "spec_value"}:
-            try:
-                num = float(value)
-                return int(num) if num.is_integer() else num
-            except Exception:
-                return _norm(value)
-
-        if col.endswith("_date"):
-            d = _parse_date(value)
-            return d.strftime("%Y-%m-%d") if d else _norm(value)
-
-        return value if isinstance(value, (int, float)) else _norm(value)
-
     ws = sh.worksheet(sheet_name)
-    values = [[_coerce_cell(col, row.get(col, "")) for col in header] for row in rows]
+    values = [[row.get(col, "") for col in header] for row in rows]
     ws.append_rows(values, value_input_option="USER_ENTERED")
 
 
@@ -924,21 +894,24 @@ def _build_stock_detail_df() -> pd.DataFrame:
         rename_map["stocktake_date"] = "st_stocktake_date"
     if "note" in st_keep.columns:
         rename_map["note"] = "st_note"
-
+    if "created_at" in st_keep.columns:
+        rename_map["created_at"] = "st_created_at"
+    if "updated_at" in st_keep.columns:
+        rename_map["updated_at"] = "st_updated_at"
     st_keep = st_keep.rename(columns=rename_map)
 
     keep_cols = ["stocktake_id"]
-    for c in ["st_store_id", "st_stocktake_date", "st_note"]:
+    for c in ["st_store_id", "st_stocktake_date", "st_note", "st_created_at", "st_updated_at"]:
         if c in st_keep.columns:
             keep_cols.append(c)
-
     merged = stl.merge(st_keep[keep_cols], on="stocktake_id", how="left")
 
     merged["store_id"] = _coalesce_columns(merged, ["st_store_id", "store_id"], default="")
     merged["stocktake_date"] = _coalesce_columns(merged, ["st_stocktake_date", "stocktake_date"], default="")
     merged["note_for_parse"] = _coalesce_columns(merged, ["st_note", "note"], default="")
     merged["vendor_id"] = _coalesce_columns(merged, ["vendor_id"], default="")
-
+    merged["stocktake_created_at"] = _coalesce_columns(merged, ["st_created_at"], default="")
+    merged["stocktake_updated_at"] = _coalesce_columns(merged, ["st_updated_at"], default="")
     merged["vendor_id"] = merged["vendor_id"].where(
         merged["vendor_id"].astype(str).str.strip() != "",
         merged["note_for_parse"].apply(_parse_vendor_id_from_note),
@@ -1126,6 +1099,38 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         po_work = po_work[po_work["order_date_dt"].notna()].copy()
 
     result_rows = []
+    # ========================================================
+    # 同日同廠商同品項，只保留最後一張盤點單
+    # 避免同一天重複建立 ST_000002 / ST_000003 時，報表重複顯示
+    # ========================================================
+    if "stocktake_updated_at" not in target_stock.columns:
+        target_stock["stocktake_updated_at"] = ""
+    if "stocktake_created_at" not in target_stock.columns:
+        target_stock["stocktake_created_at"] = ""
+
+    target_stock["__sort_updated"] = pd.to_datetime(
+        target_stock["stocktake_updated_at"], errors="coerce"
+    )
+    target_stock["__sort_created"] = pd.to_datetime(
+        target_stock["stocktake_created_at"], errors="coerce"
+    )
+
+    target_stock = target_stock.sort_values(
+        [
+            "stocktake_date_dt",
+            "vendor_id",
+            "item_id",
+            "__sort_updated",
+            "__sort_created",
+            "stocktake_id",
+        ],
+        ascending=[True, True, True, True, True, True],
+    ).copy()
+
+    target_stock = target_stock.drop_duplicates(
+        subset=["stocktake_date_dt", "vendor_id", "item_id"],
+        keep="last",
+    ).copy()
 
     target_stock = target_stock.sort_values(
         ["stocktake_date_dt", "display_order_num", "item_name_disp"],
@@ -1153,6 +1158,21 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             prev_date = prev_stock.iloc[-1].get("stocktake_date_dt")
 
         curr_qty = _safe_float(curr_row.get("display_stock_qty", 0))
+
+        current_order_qty = 0.0
+        if not po_work.empty:
+            item_po_same_day = po_work[
+                (po_work["item_id"].astype(str).str.strip() == item_id)
+                & (po_work["order_date_dt"] == curr_date)
+            ].copy()
+
+            current_order_qty = _sum_purchase_qty_in_display_unit(
+                item_po=item_po_same_day,
+                item_id=item_id,
+                display_unit=unit,
+                conversions_df=conversions_df,
+                curr_date=curr_date,
+            )
 
         # 第一次紀錄：不補前帳、不補前面進貨
         if prev_date is None:
@@ -1195,6 +1215,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 "庫存合計": total_stock,
                 "這次庫存": round(curr_qty, 1),
                 "期間消耗": usage,
+                "這次叫貨": round(current_order_qty, 1),
                 "日平均": daily_avg,
                 "天數": days,
                 "item_id": item_id,
