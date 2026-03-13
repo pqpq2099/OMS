@@ -579,7 +579,11 @@ def render_sidebar():
             if st.button("🎨 系統外觀", width="stretch", key="sb_appearance_settings"):
                 st.session_state.step = "appearance_settings"
                 st.rerun()
-
+            
+            if st.button("🔐 密碼工具", width="stretch", key="sb_password_tool"):
+                st.session_state.step = "password_tool"
+                st.rerun()
+                
             if st.button("ℹ️ 系統資訊", width="stretch", key="sb_system_info"):
                 st.session_state.step = "system_info"
                 st.rerun()
@@ -636,7 +640,11 @@ def router():
 
     elif step == "appearance_settings":
         page_appearance_settings()
-        
+    
+    elif step == "password_tool":
+        from pages.page_password_tool import page_password_tool
+        page_password_tool()
+    
     elif step == "system_info":
         page_system_info()
 
