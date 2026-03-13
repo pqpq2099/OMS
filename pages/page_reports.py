@@ -503,7 +503,9 @@ def page_export():
 # ============================================================
 def page_analysis():
     st.title("📊 進銷存分析")
-
+    detail_df = hist_filt.copy()
+    
+    st.write(detail_df.columns)
     c_date1, c_date2 = st.columns(2)
     start = c_date1.date_input(
         "起始日期",
