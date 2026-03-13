@@ -616,7 +616,13 @@ def page_analysis():
         st.info("此廠商在目前條件下無資料")
     else:
         detail_df = hist_filt.copy()
-
+        
+   if "日期" in detail_df.columns:
+        if pd.api.types.is_numeric_dtype(detail_df["日期"]):
+            detail_df["日期"] = pd.to_datetime(detail_df["日期"], unit="s", errors="coerce").dt.strftime("%Y/%m/%d")
+        else:
+            detail_df["日期"] = pd.to_datetime(detail_df["日期"], errors="coerce").dt.strftime("%Y/%m/%d")
+            
         # 隱藏完全沒變化的列
         detail_df = detail_df[
             (detail_df["庫存合計"] != 0)
