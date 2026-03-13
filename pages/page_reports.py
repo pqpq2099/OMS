@@ -503,9 +503,7 @@ def page_export():
 # ============================================================
 def page_analysis():
     st.title("📊 進銷存分析")
-    detail_df = hist_filt.copy()
     
-    st.write(detail_df.columns)
     c_date1, c_date2 = st.columns(2)
     start = c_date1.date_input(
         "起始日期",
@@ -631,7 +629,9 @@ def page_analysis():
             st.caption("此廠商在目前條件下無品項資料")
         else:
             show_cols = [
+                "日期",
                 "品項",
+                "期間進貨",
                 "庫存合計",
                 "這次庫存",
                 "期間消耗",
@@ -654,7 +654,9 @@ def page_analysis():
                 use_container_width=True,
                 hide_index=True,
                 column_config={
+                    "日期": st.column_config.TextColumn(width="small"),
                     "品項": st.column_config.TextColumn(width="medium"),
+                    "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
