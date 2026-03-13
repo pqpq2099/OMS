@@ -474,7 +474,7 @@ def page_analysis():
             purchase_filt["order_date_dt"], errors="coerce"
         ).dt.strftime("%Y/%m/%d")
         purchase_filt["廠商"] = purchase_filt["vendor_name_disp"].apply(lambda x: _norm(x) or "-")
-        purchase_filt["金額"] = pd.to_numeric(purchase_filt["amount_num"], errors="coerce").fillna(0)
+        purchase_filt["進貨金額"] = pd.to_numeric(purchase_filt["amount_num"], errors="coerce").fillna(0)
 
     if hist_df.empty and purchase_filt.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
@@ -571,7 +571,7 @@ def page_analysis():
             st.info("目前沒有可顯示的金額資料")
         else:
             vendor_summary = (
-                purchase_filt.groupby(["日期", "廠商"], as_index=False)["金額"]
+                purchase_filt.groupby(["日期", "廠商"], as_index=False)["進貨金額"]
                 .sum()
                 .sort_values(["日期", "廠商"], ascending=[False, True])
                 .reset_index(drop=True)
@@ -591,7 +591,7 @@ def page_analysis():
                 column_config={
                     "日期": st.column_config.TextColumn(width="small"),
                     "廠商": st.column_config.TextColumn(width="medium"),
-                    "金額": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "進貨金額": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
             )
 
