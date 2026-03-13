@@ -127,11 +127,10 @@ def page_user_admin():
                 # ------------------------------------------------
                 # 產生新的 user_id
                 # ------------------------------------------------
-                new_user_id = allocate_ids({"users": 1})["users"][0]
+                import uuid
 
-                # ------------------------------------------------
-                # 建立新資料列
-                # ------------------------------------------------
+                new_user_id = "USER_" + uuid.uuid4().hex[:6].upper()
+                
                 new_row = {
                     "user_id": new_user_id,
                     "account_code": account_code,
