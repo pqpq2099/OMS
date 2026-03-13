@@ -11,16 +11,10 @@
 
 from __future__ import annotations
 
-
-# ============================================================
-# [A1] 基本匯入
-# 報表頁常用到的資料整理函式都由 oms_core 帶進來。
-# 若之後想把報表邏輯再拆去 services/，這一區也會一起調整。
-# ============================================================
 from datetime import date, timedelta
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 from oms_core import (
     PLOTLY_CONFIG,
     _build_inventory_history_summary_df,
@@ -30,6 +24,8 @@ from oms_core import (
     _get_active_df,
     _item_display_name,
     _norm,
+    _parse_date,
+    _safe_float,
     get_base_unit_cost,
     read_table,
     render_report_dataframe,
@@ -47,9 +43,6 @@ except Exception:
 
 # ============================================================
 # [B1] 歷史頁資料補強
-# 這一區放：把歷史摘要補上廠商欄位
-# 說明：
-# 直接依照 item_id -> items.default_vendor_id -> vendors.vendor_name 來補
 # ============================================================
 def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
     hist_df = _build_inventory_history_summary_df(
@@ -116,7 +109,6 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
 
 # ============================================================
 # [B2] 分析頁資料補強
-# 這一區放：把進銷存分析摘要補上廠商欄位
 # ============================================================
 def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date):
     hist_df = _build_inventory_history_summary_df(
@@ -179,22 +171,10 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
             merged = merged.drop(columns=[col])
 
     return merged
-# ============================================================
-# [E4] View History
-# 這一區放：歷史紀錄頁
-# 說明：
-# 1. 只保留明細，不顯示趨勢
-# 2. 提供外部 CSV 匯出按鈕
-# 3. 保留返回按鈕
-# ============================================================
+
 
 # ============================================================
 # [R1] 庫存歷史頁
-# 你之後如果要改：
-# 1. 欄位順序
-# 2. 是否隱藏零變化列
-# 3. 手機版表格寬度
-# 看這一段。
 # ============================================================
 def page_view_history():
     st.markdown(
@@ -245,10 +225,6 @@ def page_view_history():
             st.rerun()
         return
 
-    # ========================================================
-    # 廠商篩選
-    # 先建立廠商下拉選單
-    # ========================================================
     vendor_values = (
         _clean_option_list(hist_df["廠商"].dropna().tolist())
         if "廠商" in hist_df.columns else []
@@ -261,12 +237,6 @@ def page_view_history():
         key="hist_vendor_filter",
     )
 
-    # ========================================================
-    # 品項選單改成依 items 主檔綁定廠商
-    # 規則：
-    # 1. 全部廠商 → 顯示全部品項
-    # 2. 指定廠商 → 只顯示 items.default_vendor_id 對應該廠商的品項
-    # ========================================================
     items_df = read_table("items").copy()
     vendors_df = read_table("vendors").copy()
 
@@ -277,7 +247,6 @@ def page_view_history():
         items_df["item_id"] = items_df.get("item_id", "").astype(str).str.strip()
         items_df["default_vendor_id"] = items_df.get("default_vendor_id", "").astype(str).str.strip()
 
-        # 品項顯示名稱：優先中文，其次英文，再次 item_id
         def _hist_item_label(r):
             return (
                 _norm(r.get("item_name_zh", ""))
@@ -287,13 +256,11 @@ def page_view_history():
 
         items_df["品項顯示"] = items_df.apply(_hist_item_label, axis=1)
 
-        # 只取啟用品項（若有 is_active 欄位）
         if "is_active" in items_df.columns:
             items_df = items_df[
                 items_df["is_active"].astype(str).str.strip().isin(["1", "True", "true", "YES", "yes", "是"])
             ].copy()
 
-        # 若有指定廠商，先找出該廠商 vendor_id，再依 default_vendor_id 篩品項
         if sel_v != "全部廠商" and not vendors_df.empty:
             vendors_df.columns = [str(c).strip() for c in vendors_df.columns]
             vendors_df["vendor_id"] = vendors_df.get("vendor_id", "").astype(str).str.strip()
@@ -318,10 +285,6 @@ def page_view_history():
 
     all_i = ["全部品項"] + item_values
 
-    # ========================================================
-    # 當廠商改變時，重置品項選擇
-    # 避免還停留在上一個廠商的品項
-    # ========================================================
     if "hist_vendor_filter_prev" not in st.session_state:
         st.session_state.hist_vendor_filter_prev = sel_v
 
@@ -332,18 +295,12 @@ def page_view_history():
     if st.session_state.get("hist_item_filter", "全部品項") not in all_i:
         st.session_state.hist_item_filter = "全部品項"
 
-    # ========================================================
-    # 品項下拉
-    # ========================================================
     sel_i = st.selectbox(
         "🏷️ 選擇品項",
         options=all_i,
         key="hist_item_filter",
     )
-    # ========================================================
-    # 套用篩選
-    # 先依廠商，再依品項
-    # ========================================================
+
     filt_df = hist_df.copy()
 
     if sel_v != "全部廠商":
@@ -353,6 +310,7 @@ def page_view_history():
         filt_df = filt_df[
             filt_df["品項"].astype(str).str.strip() == str(sel_i).strip()
         ].copy()
+
     detail_df = filt_df.copy()
     detail_df = detail_df[
         (detail_df["上次庫存"] != 0)
@@ -410,13 +368,7 @@ def page_view_history():
 
 
 # ============================================================
-# [E5] Export
-# 這一區放：今日進貨明細 / LINE 匯出
-# ============================================================
-
-# ============================================================
 # [R2] 匯出頁
-# 負責把今天的進貨資料整理成可複製/可下載格式。
 # ============================================================
 def page_export():
     st.title("📋 今日進貨明細")
@@ -486,26 +438,11 @@ def page_export():
 
 
 # ============================================================
-# [E6] Analysis
-# 這一區放：進銷存分析頁
-# 規則：
-# 1. 全部廠商：只看金額
-# 2. 單一廠商：只看 庫存合計 / 這次庫存 / 期間消耗 / 日平均
-# 3. 各自提供 CSV 匯出
-# ============================================================
-
-# ============================================================
 # [R3] 進銷存分析頁
-# 你之後如果要改：
-# 1. KPI 卡片
-# 2. 日期區間預設值
-# 3. 趨勢圖 / 排名圖
-# 4. 明細表欄位
-# 看這一段。
 # ============================================================
 def page_analysis():
     st.title("📊 進銷存分析")
-    
+
     c_date1, c_date2 = st.columns(2)
     start = c_date1.date_input(
         "起始日期",
@@ -533,7 +470,9 @@ def page_analysis():
             & (po_detail_df["order_date_dt"] >= start)
             & (po_detail_df["order_date_dt"] <= end)
         ].copy()
-        purchase_filt["日期"] = pd.to_datetime(purchase_filt["order_date_dt"], errors="coerce").dt.strftime("%Y/%m/%d")
+        purchase_filt["日期"] = pd.to_datetime(
+            purchase_filt["order_date_dt"], errors="coerce"
+        ).dt.strftime("%Y/%m/%d")
         purchase_filt["廠商"] = purchase_filt["vendor_name_disp"].apply(lambda x: _norm(x) or "-")
         purchase_filt["金額"] = pd.to_numeric(purchase_filt["amount_num"], errors="coerce").fillna(0)
 
@@ -568,24 +507,20 @@ def page_analysis():
         if not purchase_filt.empty and "廠商" in purchase_filt.columns:
             purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
 
-        st.markdown("---")
+    st.markdown("---")
 
-        # ========================================================
-        # 總額摘要
-        # 顯示位置：選擇廠商下方、表格上方
-        # ========================================================
-        total_purchase_amount = 0.0
-        if not purchase_filt.empty and "金額" in purchase_filt.columns:
-            total_purchase_amount = float(
-                pd.to_numeric(purchase_filt["金額"], errors="coerce").fillna(0).sum()
-            )
-    
-        total_stock_amount = 0.0
-        if not hist_filt.empty:
-            work_stock = hist_filt.copy()
-    
+    total_purchase_amount = 0.0
+    if not purchase_filt.empty and "金額" in purchase_filt.columns:
+        total_purchase_amount = float(
+            pd.to_numeric(purchase_filt["金額"], errors="coerce").fillna(0).sum()
+        )
+
+    total_stock_amount = 0.0
+    if not hist_filt.empty:
+        work_stock = hist_filt.copy()
+
         if "庫存合計" not in work_stock.columns:
-                work_stock["庫存合計"] = 0
+            work_stock["庫存合計"] = 0
 
         items_df = read_table("items")
         prices_df = read_table("prices")
@@ -630,6 +565,10 @@ def page_analysis():
     c_amt2.metric("庫存總金額", f"{total_stock_amount:,.1f}")
 
     if selected_vendor == "全部廠商":
+        st.subheader("📋 全部廠商金額統計")
+
+        if purchase_filt.empty:
+            st.info("目前沒有可顯示的金額資料")
         else:
             vendor_summary = (
                 purchase_filt.groupby(["日期", "廠商"], as_index=False)["金額"]
@@ -670,9 +609,13 @@ def page_analysis():
 
         if "日期" in detail_df.columns:
             if pd.api.types.is_numeric_dtype(detail_df["日期"]):
-                detail_df["日期"] = pd.to_datetime(detail_df["日期"], unit="s", errors="coerce").dt.strftime("%Y/%m/%d")
+                detail_df["日期"] = pd.to_datetime(
+                    detail_df["日期"], unit="s", errors="coerce"
+                ).dt.strftime("%Y/%m/%d")
             else:
-                detail_df["日期"] = pd.to_datetime(detail_df["日期"], errors="coerce").dt.strftime("%Y/%m/%d")
+                detail_df["日期"] = pd.to_datetime(
+                    detail_df["日期"], errors="coerce"
+                ).dt.strftime("%Y/%m/%d")
 
         detail_df = detail_df[
             (detail_df["上次庫存"] != 0)
@@ -729,13 +672,7 @@ def page_analysis():
 
 
 # ============================================================
-# [E7] Cost Debug
-# 這一區放：成本檢查頁
-# ============================================================
-
-# ============================================================
 # [R4] 成本檢查頁
-# 這頁主要用來驗證單價 / base unit cost / 換算是否正確。
 # ============================================================
 def page_cost_debug():
     st.title("🧮 成本檢查")
@@ -839,7 +776,6 @@ def page_cost_debug():
     st.markdown("---")
     st.subheader("檢查結果")
     st.write(f"**品項名稱：** {_item_display_name(item_row)}")
-    st.write(f"**item_id：** {selected_item_id}")
     st.write(f"**base_unit：** {base_unit or '未設定'}")
     st.write(f"**default_stock_unit：** {default_stock_unit or '未設定'}")
     st.write(f"**default_order_unit：** {default_order_unit or '未設定'}")
