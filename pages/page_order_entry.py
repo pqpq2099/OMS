@@ -140,7 +140,7 @@ def page_select_store():
     for _, row in stores_df.iterrows():
         label = row["store_label"]
         store_id = _norm(row.get("store_id", ""))
-        if st.button(f"📍 {label}", key=f"store_{store_id}", use_container_width=True):
+        if st.button(f"📍 {label}", key=f"store_{store_id}", width="stretch"):
             st.session_state.store_id = store_id
             st.session_state.store_name = label
             st.session_state.vendor_id = ""
@@ -197,7 +197,7 @@ def page_select_vendor():
             if st.button(
                 f"📦 {left['vendor_label']}",
                 key=f"vendor_{left.get('vendor_id', '')}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state.vendor_id = _norm(left.get("vendor_id", ""))
                 st.session_state.vendor_name = left["vendor_label"]
@@ -210,7 +210,7 @@ def page_select_vendor():
                 if st.button(
                     f"📦 {right['vendor_label']}",
                     key=f"vendor_{right.get('vendor_id', '')}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.session_state.vendor_id = _norm(right.get("vendor_id", ""))
                     st.session_state.vendor_name = right["vendor_label"]
@@ -219,19 +219,19 @@ def page_select_vendor():
 
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
-    if st.button("📋 產生今日進貨明細", type="primary", use_container_width=True):
+    if st.button("📋 產生今日進貨明細", type="primary", width="stretch"):
         st.session_state.step = "export"
         st.rerun()
 
-    if st.button("📈 期間進銷存分析", use_container_width=True):
+    if st.button("📈 期間進銷存分析", width="stretch"):
         st.session_state.step = "analysis"
         st.rerun()
 
-    if st.button("📜 查看分店歷史紀錄", use_container_width=True):
+    if st.button("📜 查看分店歷史紀錄", width="stretch"):
         st.session_state.step = "view_history"
         st.rerun()
 
-    if st.button("⬅️ 返回分店列表", use_container_width=True):
+    if st.button("⬅️ 返回分店列表", width="stretch"):
         st.session_state.step = "select_store"
         st.rerun()
 
@@ -364,7 +364,7 @@ def page_order_entry():
 
     if vendor_items.empty:
         st.info("💡 此廠商目前沒有對應品項")
-        if st.button("⬅️ 返回功能選單", use_container_width=True):
+        if st.button("⬅️ 返回功能選單", width="stretch"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -540,7 +540,7 @@ def page_order_entry():
                 }
             )
 
-        submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
+        submitted = st.form_submit_button("💾 儲存並同步", width="stretch")
 
         if submitted:
             errors = []
@@ -581,12 +581,12 @@ def page_order_entry():
     
             except Exception as e:
                 st.error(f"❌ 儲存失敗：{e}")
-                if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
+                if st.button("⬅️ 返回功能選單", width="stretch", key="back_after_save_error"):
                     st.session_state.step = "select_vendor"
                     st.rerun()
                 return
 
-    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
+    if st.button("⬅️ 返回功能選單", width="stretch", key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -707,11 +707,11 @@ def _save_order_entry(
                 "vendor_id": vendor_id,
                 "item_id": r["item_id"],
                 "item_name": r["item_name"],
-                "qty": str(r["stock_qty"]),
-                "stock_qty": str(r["stock_qty"]),
+                "qty": r["stock_qty"],
+                "stock_qty": r["stock_qty"],
                 "unit_id": r["stock_unit"],
                 "stock_unit": r["stock_unit"],
-                "base_qty": str(round(stock_base_qty, 3)),
+                "base_qty": round(stock_base_qty, 3),
                 "base_unit": stock_base_unit,
                 "created_at": now,
                 "created_by": "SYSTEM",
@@ -780,15 +780,15 @@ def _save_order_entry(
                 "vendor_id": vendor_id,
                 "item_id": r["item_id"],
                 "item_name": r["item_name"],
-                "qty": str(r["order_qty"]),
-                "order_qty": str(r["order_qty"]),
+                "qty": r["order_qty"],
+                "order_qty": r["order_qty"],
                 "unit_id": r["order_unit"],
                 "order_unit": r["order_unit"],
-                "base_qty": str(round(order_base_qty, 3)),
+                "base_qty": round(order_base_qty, 3),
                 "base_unit": order_base_unit,
-                "unit_price": str(r["unit_price"]),
-                "amount": str(line_amount),
-                "line_amount": str(line_amount),
+                "unit_price": r["unit_price"],
+                "amount": line_amount,
+                "line_amount": line_amount,
                 "created_at": now,
                 "created_by": "SYSTEM",
             }

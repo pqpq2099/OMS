@@ -226,7 +226,7 @@ def _reset_sequence_keys(target_keys: list[str], next_value: int = 1, actor: str
         if row_key not in target_key_set:
             continue
 
-        ws.update_cell(r, next_i + 1, str(int(next_value)))
+        ws.update_cell(r, next_i + 1, int(next_value))
         if updated_at_i is not None:
             ws.update_cell(r, updated_at_i + 1, now_ts)
         if updated_by_i is not None:
@@ -284,7 +284,7 @@ def page_system_maintenance():
     confirm_text = st.text_input("請輸入 RESET 才能執行初始化", key="system_reset_confirm")
     can_run = confirm_text.strip().upper() == "RESET"
 
-    if st.button("🗑️ 初始化庫存 / 叫貨 / 序號", use_container_width=True, type="primary", disabled=not can_run):
+    if st.button("🗑️ 初始化庫存 / 叫貨 / 序號", width="stretch", type="primary", disabled=not can_run):
         try:
             for sheet_name in target_tables:
                 _worksheet_clear_keep_header(sheet_name)
@@ -308,9 +308,9 @@ def page_system_maintenance():
     if seq_df.empty:
         st.info("目前讀不到 id_sequences 資料")
     else:
-        st.dataframe(seq_df, use_container_width=True, hide_index=True)
+        st.dataframe(seq_df, width="stretch", hide_index=True)
 
-    if st.button("⬅️ 返回", use_container_width=True, key="back_from_system_maintenance"):
+    if st.button("⬅️ 返回", width="stretch", key="back_from_system_maintenance"):
         st.session_state.step = "select_store"
         st.rerun()
 
@@ -324,7 +324,7 @@ def page_system_tools():
 
     st.info("這一頁保留給 Owner 放臨時測試、偵錯工具與未來的小型系統輔助功能。")
 
-    if st.button("♻️ 重新整理快取", use_container_width=True):
+    if st.button("♻️ 重新整理快取", width="stretch"):
         bust_cache()
         st.success("已清除 read_table 快取。")
 
@@ -334,7 +334,7 @@ def page_system_tools():
     st.write(f"目前分店：{st.session_state.get('store_name', '')}")
     st.write(f"目前廠商：{st.session_state.get('vendor_name', '')}")
 
-    if st.button("⬅️ 返回", use_container_width=True, key="back_from_system_tools"):
+    if st.button("⬅️ 返回", width="stretch", key="back_from_system_tools"):
         st.session_state.step = "select_store"
         st.rerun()
 
@@ -376,7 +376,7 @@ def page_appearance_settings():
 
     new_name = st.text_input("系統名稱", value=current_name)
 
-    if st.button("💾 儲存系統名稱", use_container_width=True):
+    if st.button("💾 儲存系統名稱", width="stretch"):
         try:
             value = new_name.strip()
             if not value:
@@ -390,7 +390,7 @@ def page_appearance_settings():
         except Exception as e:
             st.error(f"❌ 儲存失敗：{e}")
 
-    if st.button("⬅️ 返回", use_container_width=True, key="back_from_appearance"):
+    if st.button("⬅️ 返回", width="stretch", key="back_from_appearance"):
         st.session_state.step = "select_store"
         st.rerun()
 
@@ -429,7 +429,7 @@ def render_sidebar():
         # ====================================================
         st.markdown("### 作業")
 
-        if st.button("🏠 選擇分店", use_container_width=True, key="sb_select_store"):
+        if st.button("🏠 選擇分店", width="stretch", key="sb_select_store"):
             st.session_state.step = "select_store"
             st.rerun()
 
@@ -437,7 +437,7 @@ def render_sidebar():
         # 叫貨明細
         # 顯示今日叫貨整理與 LINE 訊息格式
         # ====================================================
-        if st.button("📩 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
+        if st.button("📩 叫貨明細", width="stretch", key="sb_order_message_detail"):
             st.session_state.step = "order_message_detail"
             st.rerun()
                 
@@ -449,11 +449,11 @@ def render_sidebar():
         # ====================================================
         st.markdown("### 分析")
 
-        if st.button("📊 進銷存分析", use_container_width=True, key="sb_analysis"):
+        if st.button("📊 進銷存分析", width="stretch", key="sb_analysis"):
             st.session_state.step = "analysis"
             st.rerun()
 
-        if st.button("📜 進貨分析", use_container_width=True, key="sb_view_history"):
+        if st.button("📜 進貨分析", width="stretch", key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
             
@@ -466,7 +466,7 @@ def render_sidebar():
         # ====================================================
         st.markdown("### 資料管理")
 
-        if st.button("🛒 資料管理", use_container_width=True, key="sb_purchase_settings"):
+        if st.button("🛒 資料管理", width="stretch", key="sb_purchase_settings"):
             st.session_state.step = "purchase_settings"
             st.rerun()
 
@@ -478,7 +478,7 @@ def render_sidebar():
         # ====================================================
         st.markdown("### 使用者與權限")
 
-        if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
+        if st.button("👥 使用者權限", width="stretch", key="sb_user_admin"):
             st.session_state.step = "user_admin"
             st.rerun()
 
@@ -491,15 +491,15 @@ def render_sidebar():
         if role == "owner":
             st.markdown("### 系統")
 
-            if st.button("🎨 外觀設定", use_container_width=True, key="sb_appearance_settings"):
+            if st.button("🎨 外觀設定", width="stretch", key="sb_appearance_settings"):
                 st.session_state.step = "appearance_settings"
                 st.rerun()
 
-            if st.button("🛠️ 系統維護", use_container_width=True, key="sb_system_maintenance"):
+            if st.button("🛠️ 系統維護", width="stretch", key="sb_system_maintenance"):
                 st.session_state.step = "system_maintenance"
                 st.rerun()
 
-            if st.button("🧰 系統工具", use_container_width=True, key="sb_system_tools"):
+            if st.button("🧰 系統工具", width="stretch", key="sb_system_tools"):
                 st.session_state.step = "system_tools"
                 st.rerun()
 

@@ -132,7 +132,7 @@ def render_report_dataframe(df: pd.DataFrame, column_config: dict | None = None)
     apply_table_report_style()
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config=column_config or {},
     )
@@ -414,8 +414,38 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
 
+    def _coerce_cell(col: str, value):
+        col = _norm(col)
+
+        if value is None:
+            return ""
+        if isinstance(value, str) and value.strip() == "":
+            return ""
+
+        if col in {"is_active", "s_active"}:
+            return 1 if _to_bool(value) else 0
+
+        if col in {"width", "next_value", "pack_qty"}:
+            try:
+                return int(float(value))
+            except Exception:
+                return _norm(value)
+
+        if col in {"qty", "stock_qty", "order_qty", "base_qty", "suggested_order_qty", "unit_price", "amount", "line_amount", "ratio", "spec_value"}:
+            try:
+                num = float(value)
+                return int(num) if num.is_integer() else num
+            except Exception:
+                return _norm(value)
+
+        if col.endswith("_date"):
+            d = _parse_date(value)
+            return d.strftime("%Y-%m-%d") if d else _norm(value)
+
+        return value if isinstance(value, (int, float)) else _norm(value)
+
     ws = sh.worksheet(sheet_name)
-    values = [[row.get(col, "") for col in header] for row in rows]
+    values = [[_coerce_cell(col, row.get(col, "")) for col in header] for row in rows]
     ws.append_rows(values, value_input_option="USER_ENTERED")
 
 

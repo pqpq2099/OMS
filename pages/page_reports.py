@@ -240,7 +240,7 @@ def page_view_history():
 
     if hist_df.empty:
         st.info("💡 此區間內無紀錄。")
-        if st.button("⬅️ 返回", use_container_width=True, key="back_hist_empty"):
+        if st.button("⬅️ 返回", width="stretch", key="back_hist_empty"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -383,7 +383,7 @@ def page_view_history():
             export_df.to_csv(index=False).encode("utf-8-sig"),
             file_name=f"{st.session_state.store_name}_歷史紀錄_{h_start}_{h_end}.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
             key="download_history_csv",
         )
 
@@ -402,7 +402,7 @@ def page_view_history():
             },
         )
 
-    if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
+    if st.button("⬅️ 返回", width="stretch", key="back_hist_final"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -427,7 +427,7 @@ def page_export():
 
     if po_df.empty:
         st.info("💡 尚無叫貨資料")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export_empty"):
+        if st.button("⬅️ 返回選單", width="stretch", key="back_to_vendor_export_empty"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -440,7 +440,7 @@ def page_export():
 
     if recs.empty:
         st.info("💡 今日尚無叫貨紀錄")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export_nodata"):
+        if st.button("⬅️ 返回選單", width="stretch", key="back_to_vendor_export_nodata"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -472,13 +472,13 @@ def page_export():
 
     st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
+    if st.button("🚀 直接發送明細至 LINE", type="primary", width="stretch"):
         if send_line_message(output):
             st.success(f"✅ 已成功推送到 {store_name} 群組！")
         else:
             st.error("❌ 發送失敗，請檢查 LINE 設定。")
 
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
+    if st.button("⬅️ 返回選單", width="stretch", key="back_to_vendor_export"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -532,7 +532,7 @@ def page_analysis():
 
     if hist_df.empty and purchase_summary_df.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_no_data"):
+        if st.button("⬅️ 返回選單", width="stretch", key="back_from_analysis_no_data"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -594,7 +594,7 @@ def page_analysis():
 
             st.dataframe(
                 vendor_summary,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "廠商": st.column_config.TextColumn(width="medium"),
@@ -602,7 +602,7 @@ def page_analysis():
                 },
             )
 
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_all"):
+        if st.button("⬅️ 返回選單", width="stretch", key="back_from_analysis_all"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -657,7 +657,7 @@ def page_analysis():
 
             st.dataframe(
                 export_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "日期": st.column_config.TextColumn(width="small"),
@@ -670,7 +670,7 @@ def page_analysis():
                 },
             )
 
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_single"):
+    if st.button("⬅️ 返回選單", width="stretch", key="back_from_analysis_single"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -693,7 +693,7 @@ def page_cost_debug():
 
     if items_df.empty:
         st.warning("⚠️ items 資料讀取失敗")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug_empty"):
+        if st.button("⬅️ 返回選單", width="stretch", key="back_from_cost_debug_empty"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -814,7 +814,7 @@ def page_cost_debug():
         ]
         render_report_dataframe(conv_show[show_cols])
 
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
+    if st.button("⬅️ 返回選單", width="stretch", key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
 # ============================================================
