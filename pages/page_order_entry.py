@@ -543,48 +543,48 @@ def page_order_entry():
         submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
         if submitted:
-        errors = []
-
-        has_any_order = any(_safe_float(r["order_qty"]) > 0 for r in submit_rows)
-        has_any_stock_gt_zero = any(_safe_float(r["stock_qty"]) > 0 for r in submit_rows)
-
-        # 初始化防呆：不可全部 0 且完全沒叫貨
-        if is_initial_stock and (not has_any_order) and (not has_any_stock_gt_zero):
-            errors.append("初始化庫存不可全部為 0，且不可完全沒有叫貨。")
-
-        # 有叫貨的品項，必須有有效價格
-        for r in submit_rows:
-            if _safe_float(r["order_qty"]) > 0 and _safe_float(r["unit_price"]) <= 0:
-                errors.append(f"{r['item_name']} 缺少有效價格設定，無法送出。")
-
-        if errors:
-            for msg in errors:
-                st.error(msg)
-            return
-
-        try:
-            po_id = _save_order_entry(
-                submit_rows=submit_rows,
-                vendor_items=vendor_items,
-                conversions_df=conversions_df,
-                store_id=st.session_state.store_id,
-                vendor_id=st.session_state.vendor_id,
-                record_date=st.session_state.record_date,
-                is_initial_stock=is_initial_stock,
-            )
-
-            st.success(
-                f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}"
-            )
-            st.session_state.step = "select_vendor"
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"❌ 儲存失敗：{e}")
-            if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
+            errors = []
+    
+            has_any_order = any(_safe_float(r["order_qty"]) > 0 for r in submit_rows)
+            has_any_stock_gt_zero = any(_safe_float(r["stock_qty"]) > 0 for r in submit_rows)
+    
+            # 初始化防呆：不可全部 0 且完全沒叫貨
+            if is_initial_stock and (not has_any_order) and (not has_any_stock_gt_zero):
+                errors.append("初始化庫存不可全部為 0，且不可完全沒有叫貨。")
+    
+            # 有叫貨的品項，必須有有效價格
+            for r in submit_rows:
+                if _safe_float(r["order_qty"]) > 0 and _safe_float(r["unit_price"]) <= 0:
+                    errors.append(f"{r['item_name']} 缺少有效價格設定，無法送出。")
+    
+            if errors:
+                for msg in errors:
+                    st.error(msg)
+                return
+    
+            try:
+                po_id = _save_order_entry(
+                    submit_rows=submit_rows,
+                    vendor_items=vendor_items,
+                    conversions_df=conversions_df,
+                    store_id=st.session_state.store_id,
+                    vendor_id=st.session_state.vendor_id,
+                    record_date=st.session_state.record_date,
+                    is_initial_stock=is_initial_stock,
+                )
+    
+                st.success(
+                    f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}"
+                )
                 st.session_state.step = "select_vendor"
                 st.rerun()
-            return
+    
+            except Exception as e:
+                st.error(f"❌ 儲存失敗：{e}")
+                if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
+                    st.session_state.step = "select_vendor"
+                    st.rerun()
+                return
 
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
