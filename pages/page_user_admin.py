@@ -47,7 +47,9 @@ def page_user_admin():
         st.warning("users 資料表沒有資料")
         return
 
+    # --------------------------------------------------------
     # 只顯示啟用帳號
+    # --------------------------------------------------------
     users_df = users_df[users_df["is_active"] == 1]
 
     # --------------------------------------------------------
@@ -89,23 +91,37 @@ def page_user_admin():
 
         with st.form("create_user_form"):
 
+            # 帳號
             account_code = st.text_input("帳號")
+
+            # 顯示名稱
             display_name = st.text_input("名稱")
 
+            # ------------------------------------------------
             # 角色選單
+            # ------------------------------------------------
             role_options = roles_df["role_id"].tolist()
             role_id = st.selectbox("角色", role_options)
 
+            # ------------------------------------------------
             # 分店選單
+            # ------------------------------------------------
             store_options = stores_df["store_code"].tolist()
             store_scope = st.selectbox("分店", ["ALL"] + store_options)
 
             submit = st.form_submit_button("建立使用者")
 
+            # =================================================
+            # 建立使用者
+            # =================================================
             if submit:
 
                 if not account_code:
                     st.error("帳號不可為空")
+                    return
+
+                if not display_name:
+                    st.error("名稱不可為空")
                     return
 
                 # ------------------------------------------------
@@ -116,20 +132,17 @@ def page_user_admin():
                 # ------------------------------------------------
                 # 建立新資料列
                 # ------------------------------------------------
-                from datetime import datetime
-                import uuid
-                
                 new_row = {
-                    "user_id": f"USER_{uuid.uuid4().hex[:8]}",
-                    "account_code": "",
+                    "user_id": new_user_id,
+                    "account_code": account_code,
                     "email": "",
-                    "display_name": new_name,
-                    "role_id": new_role,
-                    "store_scope": new_store,
+                    "display_name": display_name,
+                    "role_id": role_id,
+                    "store_scope": store_scope,
                     "is_active": 1,
                     "last_login_at": "",
                     "created_at": datetime.now().isoformat(),
-                    "created_by": "owner",
+                    "created_by": "system",
                     "updated_at": "",
                     "updated_by": "",
                 }
@@ -140,6 +153,7 @@ def page_user_admin():
                 append_rows_by_header("users", [new_row])
 
                 st.success("使用者建立成功")
+
                 st.rerun()
 
     # ========================================================
