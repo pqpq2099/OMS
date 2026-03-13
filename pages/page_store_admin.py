@@ -282,15 +282,14 @@ def page_store_admin():
             st.info("目前尚無分店資料")
         else:
             show_df = stores_view[
-                ["store_id", "store_code", "store_display", "brand_display", "status_text"]
+                ["store_display", "brand_display", "status_text"]
             ].copy()
-
-            show_df.columns = [    
+            
+            show_df.columns = [
                 "分店名稱",
                 "品牌",
                 "狀態",
             ]
-
             st.dataframe(show_df, use_container_width=True, hide_index=True)
 
     # ========================================================
