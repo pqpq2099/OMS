@@ -26,6 +26,7 @@ from oms_core import (
     _get_active_df,
     _get_last_po_summary,
     _get_latest_price_for_item,
+    get_base_unit_cost,
     _get_latest_stock_qty_in_display_unit,
     _item_display_name,
     _label_store,
@@ -140,7 +141,7 @@ def page_select_store():
     for _, row in stores_df.iterrows():
         label = row["store_label"]
         store_id = _norm(row.get("store_id", ""))
-        if st.button(f"📍 {label}", key=f"store_{store_id}", width="stretch"):
+        if st.button(f"📍 {label}", key=f"store_{store_id}", use_container_width=True):
             st.session_state.store_id = store_id
             st.session_state.store_name = label
             st.session_state.vendor_id = ""
@@ -197,7 +198,7 @@ def page_select_vendor():
             if st.button(
                 f"📦 {left['vendor_label']}",
                 key=f"vendor_{left.get('vendor_id', '')}",
-                width="stretch",
+                use_container_width=True,
             ):
                 st.session_state.vendor_id = _norm(left.get("vendor_id", ""))
                 st.session_state.vendor_name = left["vendor_label"]
@@ -210,7 +211,7 @@ def page_select_vendor():
                 if st.button(
                     f"📦 {right['vendor_label']}",
                     key=f"vendor_{right.get('vendor_id', '')}",
-                    width="stretch",
+                    use_container_width=True,
                 ):
                     st.session_state.vendor_id = _norm(right.get("vendor_id", ""))
                     st.session_state.vendor_name = right["vendor_label"]
@@ -219,19 +220,19 @@ def page_select_vendor():
 
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
-    if st.button("📋 產生今日進貨明細", type="primary", width="stretch"):
+    if st.button("📋 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.step = "export"
         st.rerun()
 
-    if st.button("📈 期間進銷存分析", width="stretch"):
+    if st.button("📈 期間進銷存分析", use_container_width=True):
         st.session_state.step = "analysis"
         st.rerun()
 
-    if st.button("📜 查看分店歷史紀錄", width="stretch"):
+    if st.button("📜 查看分店歷史紀錄", use_container_width=True):
         st.session_state.step = "view_history"
         st.rerun()
 
-    if st.button("⬅️ 返回分店列表", width="stretch"):
+    if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"
         st.rerun()
 
@@ -364,7 +365,7 @@ def page_order_entry():
 
     if vendor_items.empty:
         st.info("💡 此廠商目前沒有對應品項")
-        if st.button("⬅️ 返回功能選單", width="stretch"):
+        if st.button("⬅️ 返回功能選單", use_container_width=True):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -540,7 +541,7 @@ def page_order_entry():
                 }
             )
 
-        submitted = st.form_submit_button("💾 儲存並同步", width="stretch")
+        submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
         if submitted:
             errors = []
@@ -553,8 +554,32 @@ def page_order_entry():
                 errors.append("初始化庫存不可全部為 0，且不可完全沒有叫貨。")
     
             # 有叫貨的品項，必須有有效價格
+            prices_df_for_check = read_table("prices")
             for r in submit_rows:
-                if _safe_float(r["order_qty"]) > 0 and _safe_float(r["unit_price"]) <= 0:
+                if _safe_float(r["order_qty"]) <= 0:
+                    continue
+
+                try:
+                    order_base_qty_check, _ = convert_to_base(
+                        item_id=r["item_id"],
+                        qty=r["order_qty"],
+                        from_unit=r["order_unit"],
+                        items_df=vendor_items,
+                        conversions_df=conversions_df,
+                        as_of_date=st.session_state.record_date,
+                    )
+                    base_unit_cost_check = get_base_unit_cost(
+                        item_id=r["item_id"],
+                        target_date=st.session_state.record_date,
+                        items_df=vendor_items,
+                        prices_df=prices_df_for_check,
+                        conversions_df=conversions_df,
+                    )
+                    check_amount = round(float(order_base_qty_check) * float(base_unit_cost_check or 0), 1)
+                except Exception:
+                    check_amount = 0
+
+                if check_amount <= 0:
                     errors.append(f"{r['item_name']} 缺少有效價格設定，無法送出。")
     
             if errors:
@@ -581,12 +606,12 @@ def page_order_entry():
     
             except Exception as e:
                 st.error(f"❌ 儲存失敗：{e}")
-                if st.button("⬅️ 返回功能選單", width="stretch", key="back_after_save_error"):
+                if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
                     st.session_state.step = "select_vendor"
                     st.rerun()
                 return
 
-    if st.button("⬅️ 返回功能選單", width="stretch", key="back_from_order_entry"):
+    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -619,6 +644,7 @@ def _save_order_entry(
     is_initial_stock: bool,
 ):
     now = _now_ts()
+    prices_df = read_table("prices")
 
     # ============================================================
     # 1. 叫貨資料：只保留 > 0 的列
@@ -707,11 +733,11 @@ def _save_order_entry(
                 "vendor_id": vendor_id,
                 "item_id": r["item_id"],
                 "item_name": r["item_name"],
-                "qty": r["stock_qty"],
-                "stock_qty": r["stock_qty"],
+                "qty": str(r["stock_qty"]),
+                "stock_qty": str(r["stock_qty"]),
                 "unit_id": r["stock_unit"],
                 "stock_unit": r["stock_unit"],
-                "base_qty": round(stock_base_qty, 3),
+                "base_qty": str(round(stock_base_qty, 3)),
                 "base_unit": stock_base_unit,
                 "created_at": now,
                 "created_by": "SYSTEM",
@@ -770,7 +796,21 @@ def _save_order_entry(
             except Exception as e:
                 raise ValueError(f"{r['item_name']} 叫貨單位換算失敗：{e}")
 
-            line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
+            base_unit_cost = get_base_unit_cost(
+                item_id=r["item_id"],
+                target_date=record_date,
+                items_df=vendor_items,
+                prices_df=prices_df,
+                conversions_df=conversions_df,
+            )
+            if base_unit_cost is None or float(base_unit_cost) <= 0:
+                raise ValueError(f"{r['item_name']} 缺少有效價格設定，無法計算叫貨金額。")
+
+            line_amount = round(float(order_base_qty) * float(base_unit_cost), 1)
+            order_unit_price = round(
+                line_amount / float(r["order_qty"]),
+                4,
+            ) if float(r["order_qty"]) > 0 else 0
 
             row_dict = {c: "" for c in pol_header}
             defaults_pol = {
@@ -780,15 +820,15 @@ def _save_order_entry(
                 "vendor_id": vendor_id,
                 "item_id": r["item_id"],
                 "item_name": r["item_name"],
-                "qty": r["order_qty"],
-                "order_qty": r["order_qty"],
+                "qty": str(r["order_qty"]),
+                "order_qty": str(r["order_qty"]),
                 "unit_id": r["order_unit"],
                 "order_unit": r["order_unit"],
-                "base_qty": round(order_base_qty, 3),
+                "base_qty": str(round(order_base_qty, 3)),
                 "base_unit": order_base_unit,
-                "unit_price": r["unit_price"],
-                "amount": line_amount,
-                "line_amount": line_amount,
+                "unit_price": str(order_unit_price),
+                "amount": str(line_amount),
+                "line_amount": str(line_amount),
                 "created_at": now,
                 "created_by": "SYSTEM",
             }
