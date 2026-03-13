@@ -69,19 +69,44 @@ def page_user_admin():
         st.subheader("使用者列表")
 
         # 顯示主要欄位
-        show_df = users_df[
-            ["account_code", "display_name", "role_id", "store_scope"]
+        # ------------------------------------------------
+        # users + roles 對照
+        # ------------------------------------------------
+        role_map = roles_df[["role_id", "role_name"]].copy()
+        
+        users_view = users_df.merge(
+            role_map,
+            on="role_id",
+            how="left"
+        )
+        
+        # ------------------------------------------------
+        # users + stores 對照
+        # ------------------------------------------------
+        store_map = stores_df[["store_code", "store_name"]].copy()
+        
+        users_view = users_view.merge(
+            store_map,
+            left_on="store_scope",
+            right_on="store_code",
+            how="left"
+        )
+        
+        # ------------------------------------------------
+        # 顯示欄位
+        # ------------------------------------------------
+        show_df = users_view[
+            ["account_code", "display_name", "role_name", "store_name"]
         ].copy()
-
+        
         show_df.columns = [
             "帳號",
             "名稱",
             "角色",
             "分店"
         ]
-
+        
         st.dataframe(show_df, use_container_width=True)
-
         st.divider()
 
         # ====================================================
