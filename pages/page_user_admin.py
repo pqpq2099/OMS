@@ -260,208 +260,192 @@ def page_user_admin():
                 "分店",
             ]
 
-            260 st.dataframe(show_df, use_container_width=True, hide_index=True)
+            st.dataframe(show_df, use_container_width=True, hide_index=True)
 
-261 st.divider()
+        st.divider()
 
-# ============================================================
-# 重設使用者密碼
-# ============================================================
-st.subheader("重設使用者密碼")
+        # ============================================================
+        # 重設使用者密碼
+        # ============================================================
+        st.subheader("重設使用者密碼")
 
-users_df = read_table("users").copy()
+        reset_users_df = read_table("users").copy()
 
-if users_df.empty:
-    st.info("沒有使用者資料")
-else:
-    users_df["account_code"] = users_df["account_code"].astype(str)
-
-    account_list = users_df["account_code"].tolist()
-
-    selected_account = st.selectbox(
-        "選擇要重設密碼的帳號",
-        account_list
-    )
-
-    if st.button("重設為預設密碼 123456", use_container_width=True):
-
-        default_password = "123456"
-        new_hash = _hash_password(default_password)
-        now_ts = _now_ts()
-
-        mask = users_df["account_code"] == selected_account
-
-        users_df.loc[mask, "password_hash"] = new_hash
-        users_df.loc[mask, "must_change_password"] = 1
-        users_df.loc[mask, "updated_at"] = now_ts
-
-        append_rows_by_header("users", users_df)
-
-        st.success(f"{selected_account} 密碼已重設為 123456")
-        st.rerun()
-
-# ============================================================
-# 新增使用者
-# 固定預設密碼：123456
-# 建立後第一次登入必須修改密碼
-# ============================================================
-st.markdown("---")
-st.subheader("新增使用者")
-
-# 讀角色與分店資料
-roles_df = read_table("roles").copy()
-stores_df = read_table("stores").copy()
-users_df = read_table("users").copy()
-
-# 只取啟用中的角色
-if not roles_df.empty and "is_active" in roles_df.columns:
-    roles_df["is_active"] = pd.to_numeric(roles_df["is_active"], errors="coerce").fillna(0)
-    roles_df = roles_df[roles_df["is_active"] == 1].copy()
-
-# 只取啟用中的分店
-if not stores_df.empty and "is_active" in stores_df.columns:
-    stores_df["is_active"] = pd.to_numeric(stores_df["is_active"], errors="coerce").fillna(0)
-    stores_df = stores_df[stores_df["is_active"] == 1].copy()
-
-# 角色下拉選單：顯示中文，實際寫入 role_id
-role_options = []
-role_label_map = {}
-
-if not roles_df.empty:
-    for _, row in roles_df.iterrows():
-        role_id = str(row.get("role_id", "")).strip()
-        role_name_zh = str(row.get("role_name_zh", "")).strip()
-        role_name = str(row.get("role_name", "")).strip()
-
-        if not role_id:
-            continue
-
-        label = role_name_zh if role_name_zh else role_name if role_name else role_id
-        show_text = f"{label}（{role_id}）"
-        role_options.append(show_text)
-        role_label_map[show_text] = role_id
-else:
-    # 萬一 roles 表讀不到，至少保底
-    role_options = [
-        "系統負責人（owner）",
-        "管理員（admin）",
-        "店長（store_manager）",
-    ]
-    role_label_map = {
-        "系統負責人（owner）": "owner",
-        "管理員（admin）": "admin",
-        "店長（store_manager）": "store_manager",
-    }
-
-# 分店下拉選單
-store_options = ["ALL"]
-store_label_map = {"ALL": "ALL"}
-
-if not stores_df.empty:
-    for _, row in stores_df.iterrows():
-        store_id = str(row.get("store_id", "")).strip()
-        store_name_zh = str(row.get("store_name_zh", "")).strip()
-        store_name = str(row.get("store_name", "")).strip()
-
-        if not store_id:
-            continue
-
-        label = store_name_zh if store_name_zh else store_name if store_name else store_id
-        show_text = f"{label}（{store_id}）"
-        store_options.append(show_text)
-        store_label_map[show_text] = store_id
-
-with st.form("form_create_user", clear_on_submit=True):
-    new_account_code = st.text_input("帳號", placeholder="例如：jenny").strip()
-    new_display_name = st.text_input("名稱", placeholder="例如：Jenny").strip()
-
-    selected_role_label = st.selectbox("角色", options=role_options, index=0)
-    selected_role_id = role_label_map[selected_role_label]
-
-    # owner / admin 預設可選 ALL
-    # store_manager / leader 建議綁定特定分店
-    if selected_role_id in ["owner", "admin", "test_admin"]:
-        default_store_index = 0
-    else:
-        default_store_index = 1 if len(store_options) > 1 else 0
-
-    selected_store_label = st.selectbox("分店", options=store_options, index=default_store_index)
-    selected_store_scope = store_label_map[selected_store_label]
-
-    st.caption("預設密碼：123456")
-    st.caption("建立後，使用者第一次登入會被要求修改密碼。")
-
-    submitted = st.form_submit_button("建立使用者", use_container_width=True)
-
-if submitted:
-    # --------------------------------------------------------
-    # 基本檢查
-    # --------------------------------------------------------
-    if not new_account_code:
-        st.error("請輸入帳號。")
-    elif not new_display_name:
-        st.error("請輸入名稱。")
-    else:
-        work_users = users_df.copy()
-
-        if not work_users.empty and "account_code" in work_users.columns:
-            work_users["account_code"] = work_users["account_code"].astype(str).str.strip().str.lower()
-            account_exists = new_account_code.strip().lower() in work_users["account_code"].tolist()
+        if reset_users_df.empty:
+            st.info("沒有使用者資料")
         else:
-            account_exists = False
+            reset_users_df["account_code"] = reset_users_df["account_code"].astype(str)
 
-        if account_exists:
-            st.error("此帳號已存在，請改用其他帳號。")
-        else:
-            # store_manager / leader 不建議給 ALL
-            if selected_role_id in ["store_manager", "leader", "test_store_manager", "test_leader"] and selected_store_scope == "ALL":
-                st.error("此角色必須綁定指定分店，不可使用 ALL。")
-            else:
-                # ------------------------------------------------
-                # 產生 user_id
-                # ------------------------------------------------
-                try:
-                    new_user_id = allocate_ids("users", 1)[0]
-                except Exception:
-                    # 若你的 allocate_ids 剛好簽名不同，這裡也不會整個壞掉
-                    new_user_id = f"USER_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            account_list = reset_users_df["account_code"].tolist()
 
-                # ------------------------------------------------
-                # 固定預設密碼
-                # ------------------------------------------------
+            selected_account = st.selectbox(
+                "選擇要重設密碼的帳號",
+                account_list,
+                key="reset_account_select",
+            )
+
+            if st.button("重設為預設密碼 123456", use_container_width=True, key="btn_reset_password"):
                 default_password = "123456"
-                password_hash = _hash_password(default_password)
+                new_hash = _hash_password(default_password)
                 now_ts = _now_ts()
 
-                # ------------------------------------------------
-                # 寫入 users 表
-                # append_rows_by_header 會依表頭對齊欄位
-                # ------------------------------------------------
-                new_row = {
-                    "user_id": new_user_id,
-                    "account_code": new_account_code.strip(),
-                    "email": "",
-                    "display_name": new_display_name.strip(),
-                    "password_hash": password_hash,
-                    "must_change_password": 1,
-                    "role_id": selected_role_id,
-                    "store_scope": selected_store_scope,
-                    "is_active": 1,
-                    "last_login_at": "",
-                    "created_at": now_ts,
-                    "created_by": st.session_state.get("login_user", ""),
-                    "updated_at": now_ts,
-                    "updated_by": st.session_state.get("login_user", ""),
-                }
+                mask = reset_users_df["account_code"] == selected_account
 
-                try:
-                    append_rows_by_header("users", [new_row])
-                    st.success(
-                        f"建立成功。帳號：{new_account_code.strip()}｜預設密碼：123456｜第一次登入需修改密碼。"
+                if mask.sum() == 0:
+                    st.error("找不到該使用者")
+                else:
+                    reset_users_df.loc[mask, "password_hash"] = new_hash
+                    reset_users_df.loc[mask, "must_change_password"] = 1
+                    reset_users_df.loc[mask, "updated_at"] = now_ts
+                    reset_users_df.loc[mask, "updated_by"] = st.session_state.get("login_user", "")
+
+                    st.warning("目前這段只是記憶體內修改，若要真正寫回 users 表，需改成更新指定列的寫法。")
+
+        st.markdown("---")
+        st.subheader("新增使用者")
+
+        # 讀角色與分店資料
+        create_roles_df = read_table("roles").copy()
+        create_stores_df = read_table("stores").copy()
+        create_users_df = read_table("users").copy()
+
+        # 只取啟用中的角色
+        if not create_roles_df.empty and "is_active" in create_roles_df.columns:
+            create_roles_df["is_active"] = pd.to_numeric(
+                create_roles_df["is_active"], errors="coerce"
+            ).fillna(0)
+            create_roles_df = create_roles_df[create_roles_df["is_active"] == 1].copy()
+
+        # 只取啟用中的分店
+        if not create_stores_df.empty and "is_active" in create_stores_df.columns:
+            create_stores_df["is_active"] = pd.to_numeric(
+                create_stores_df["is_active"], errors="coerce"
+            ).fillna(0)
+            create_stores_df = create_stores_df[create_stores_df["is_active"] == 1].copy()
+
+        # 角色下拉選單：顯示中文，實際寫入 role_id
+        role_options = []
+        role_label_map = {}
+
+        if not create_roles_df.empty:
+            for _, row in create_roles_df.iterrows():
+                role_id = str(row.get("role_id", "")).strip()
+                role_name_zh = str(row.get("role_name_zh", "")).strip()
+                role_name = str(row.get("role_name", "")).strip()
+
+                if not role_id:
+                    continue
+
+                label = role_name_zh if role_name_zh else role_name if role_name else role_id
+                show_text = f"{label}（{role_id}）"
+                role_options.append(show_text)
+                role_label_map[show_text] = role_id
+        else:
+            role_options = [
+                "系統負責人（owner）",
+                "管理員（admin）",
+                "店長（store_manager）",
+            ]
+            role_label_map = {
+                "系統負責人（owner）": "owner",
+                "管理員（admin）": "admin",
+                "店長（store_manager）": "store_manager",
+            }
+
+        # 分店下拉選單
+        store_options = ["ALL"]
+        store_label_map = {"ALL": "ALL"}
+
+        if not create_stores_df.empty:
+            for _, row in create_stores_df.iterrows():
+                store_id = str(row.get("store_id", "")).strip()
+                store_name_zh = str(row.get("store_name_zh", "")).strip()
+                store_name = str(row.get("store_name", "")).strip()
+
+                if not store_id:
+                    continue
+
+                label = store_name_zh if store_name_zh else store_name if store_name else store_id
+                show_text = f"{label}（{store_id}）"
+                store_options.append(show_text)
+                store_label_map[show_text] = store_id
+
+        with st.form("form_create_user", clear_on_submit=True):
+            new_account_code = st.text_input("帳號", placeholder="例如：jenny").strip()
+            new_display_name = st.text_input("名稱", placeholder="例如：Jenny").strip()
+
+            selected_role_label = st.selectbox("角色", options=role_options, index=0)
+            selected_role_id = role_label_map[selected_role_label]
+
+            if selected_role_id in ["owner", "admin", "test_admin"]:
+                default_store_index = 0
+            else:
+                default_store_index = 1 if len(store_options) > 1 else 0
+
+            selected_store_label = st.selectbox("分店", options=store_options, index=default_store_index)
+            selected_store_scope = store_label_map[selected_store_label]
+
+            st.caption("預設密碼：123456")
+            st.caption("建立後，使用者第一次登入會被要求修改密碼。")
+
+            submitted = st.form_submit_button("建立使用者", use_container_width=True)
+
+        if submitted:
+            if not new_account_code:
+                st.error("請輸入帳號。")
+            elif not new_display_name:
+                st.error("請輸入名稱。")
+            else:
+                work_users = create_users_df.copy()
+
+                if not work_users.empty and "account_code" in work_users.columns:
+                    work_users["account_code"] = (
+                        work_users["account_code"].astype(str).str.strip().str.lower()
                     )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"建立失敗：{e}")
+                    account_exists = new_account_code.strip().lower() in work_users["account_code"].tolist()
+                else:
+                    account_exists = False
+
+                if account_exists:
+                    st.error("此帳號已存在，請改用其他帳號。")
+                else:
+                    if selected_role_id in ["store_manager", "leader", "test_store_manager", "test_leader"] and selected_store_scope == "ALL":
+                        st.error("此角色必須綁定指定分店，不可使用 ALL。")
+                    else:
+                        try:
+                            new_user_id = allocate_ids("users", 1)[0]
+                        except Exception:
+                            new_user_id = f"USER_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+                        default_password = "123456"
+                        password_hash = _hash_password(default_password)
+                        now_ts = _now_ts()
+
+                        new_row = {
+                            "user_id": new_user_id,
+                            "account_code": new_account_code.strip(),
+                            "email": "",
+                            "display_name": new_display_name.strip(),
+                            "password_hash": password_hash,
+                            "must_change_password": 1,
+                            "role_id": selected_role_id,
+                            "store_scope": selected_store_scope,
+                            "is_active": 1,
+                            "last_login_at": "",
+                            "created_at": now_ts,
+                            "created_by": st.session_state.get("login_user", ""),
+                            "updated_at": now_ts,
+                            "updated_by": st.session_state.get("login_user", ""),
+                        }
+
+                        try:
+                            append_rows_by_header("users", [new_row])
+                            st.success(
+                                f"建立成功。帳號：{new_account_code.strip()}｜預設密碼：123456｜第一次登入需修改密碼。"
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"建立失敗：{e}")
 
     # ========================================================
     # TAB 2 店長管理
@@ -507,4 +491,5 @@ if submitted:
                 "所屬分店",
             ]
 
+            st.dataframe(show_leader_df, use_container_width=True, hide_index=True)
             st.dataframe(show_leader_df, use_container_width=True, hide_index=True)
