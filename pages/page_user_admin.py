@@ -322,12 +322,18 @@ def page_user_admin():
                 st.error("角色不可為空")
                 return
 
-            # 帳號重複檢查
-            existing_codes = users_df["account_code"].astype(str).str.strip().str.lower().tolist()
-            if account_code.lower() in existing_codes:
-                st.error("帳號已存在，請換一個帳號")
-                return
-
+                # 帳號重複檢查
+                existing_accounts = (
+                    users_df["account_code"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    .tolist()
+                )
+            
+                if account_code.lower() in existing_accounts:
+                    st.error("帳號已存在，請換一個帳號")
+                    return
             # 建立新的 user_id
             new_user_id = "USER_" + uuid.uuid4().hex[:6].upper()
 
