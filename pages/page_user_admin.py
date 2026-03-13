@@ -30,6 +30,8 @@ import streamlit as st
 from oms_core import (
     read_table,
     append_rows_by_header,
+    get_header,
+    allocate_ids,
 )
 
 
@@ -345,7 +347,8 @@ def page_user_admin():
                 "updated_by": "",
             }
 
-            append_rows_by_header("users", [new_row])
+            users_header = get_header("users")
+            append_rows_by_header("users", users_header, [new_row])
             st.success("使用者建立成功")
             st.rerun()
 
