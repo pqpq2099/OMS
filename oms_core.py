@@ -1132,6 +1132,36 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         keep="last",
     ).copy()
 
+    # 同日＋同廠商＋同品項，只保留最後一張盤點單
+    if "stocktake_updated_at" not in target_stock.columns:
+        target_stock["stocktake_updated_at"] = ""
+    if "stocktake_created_at" not in target_stock.columns:
+        target_stock["stocktake_created_at"] = ""
+    
+    target_stock["__sort_updated"] = pd.to_datetime(
+        target_stock["stocktake_updated_at"], errors="coerce"
+    )
+    target_stock["__sort_created"] = pd.to_datetime(
+        target_stock["stocktake_created_at"], errors="coerce"
+    )
+    
+    target_stock = target_stock.sort_values(
+        [
+            "stocktake_date_dt",
+            "vendor_id",
+            "item_id",
+            "__sort_updated",
+            "__sort_created",
+            "stocktake_id",
+        ],
+        ascending=[True, True, True, True, True, True],
+    ).copy()
+    
+    target_stock = target_stock.drop_duplicates(
+        subset=["stocktake_date_dt", "vendor_id", "item_id"],
+        keep="last",
+    ).copy()
+    
     target_stock = target_stock.sort_values(
         ["stocktake_date_dt", "display_order_num", "item_name_disp"],
         ascending=[True, True, True]
