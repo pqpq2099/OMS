@@ -42,6 +42,16 @@ from pages.page_reports import (
 from pages.page_purchase_settings import page_purchase_settings
 from pages.page_user_admin import page_user_admin
 from pages.page_store_admin import page_store_admin
+
+# ============================================================
+# 登入檢查
+# ============================================================
+
+if "login_user" not in st.session_state:
+    from pages.page_login import page_login
+    page_login()
+    st.stop()
+
 st.set_page_config(page_title="營運管理系統", layout="centered")
 
 
