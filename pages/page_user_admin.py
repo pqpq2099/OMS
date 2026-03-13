@@ -18,8 +18,13 @@ Google Sheet
 3. 不另外建立新模組
 """
 
+"""
+頁面模組：使用者與權限管理
+"""
+
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 import pandas as pd
@@ -30,10 +35,17 @@ from oms_core import (
     append_rows_by_header,
     get_header,
     allocate_ids,
-    get_spreadsheet,
-    bust_cache,
 )
 
+ROLE_LABELS = {
+    "owner": "系統負責人",
+    "admin": "管理員",
+    "store_manager": "店長",
+    "leader": "組長",
+    "test_admin": "測試管理員",
+    "test_store_manager": "測試店長",
+    "test_leader": "測試組長",
+}
 
 # ============================================================
 # [S1] 基礎欄位安全處理
