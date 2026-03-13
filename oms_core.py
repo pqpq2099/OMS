@@ -57,6 +57,7 @@ def apply_global_style():
     st.markdown(
         """
         <style>
+
         /* 移除表格最左側序號 */
         [data-testid="stTable"] td:nth-child(1),
         [data-testid="stTable"] th:nth-child(1),
@@ -70,14 +71,7 @@ def apply_global_style():
         [data-testid="stDataFrame"] [role="gridcell"],
         [data-testid="stDataFrame"] [role="columnheader"] {
             font-size: 11px !important;
-            font-weight: 400 !important;
             padding: 4px 2px !important;
-            line-height: 1.1 !important;
-        }
-
-        [data-testid="stTable"] th,
-        [data-testid="stDataFrame"] [role="columnheader"] {
-            font-weight: 600 !important;
         }
 
         /* 隱藏 number_input +/- */
@@ -89,14 +83,12 @@ def apply_global_style():
         input[type=number] {
             -moz-appearance: textfield !important;
             -webkit-appearance: none !important;
-            margin: 0 !important;
         }
+
         </style>
         """,
         unsafe_allow_html=True,
     )
-
-
 def apply_table_report_style():
     st.markdown(
         """
@@ -1079,9 +1071,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
     if "display_order_num" not in stock_work.columns:
         if "display_order" in stock_work.columns:
-            stock_work["display_order_num"] = pd.to_numeric(
-                stock_work["display_order"], errors="coerce"
-            ).fillna(999999)
+            stock_work["display_order_num"] = pd.to_numeric(stock_work["display_order"], errors="coerce").fillna(999999)
         else:
             stock_work["display_order_num"] = 999999
 
@@ -1100,8 +1090,10 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         ].copy()
         po_work = po_work[po_work["order_date_dt"].notna()].copy()
 
+    result_rows = []
     # ========================================================
-    # 同日＋同廠商＋同品項，只保留最後一張盤點單
+    # 同日同廠商同品項，只保留最後一張盤點單
+    # 避免同一天重複建立 ST_000002 / ST_000003 時，報表重複顯示
     # ========================================================
     if "stocktake_updated_at" not in target_stock.columns:
         target_stock["stocktake_updated_at"] = ""
@@ -1132,12 +1124,40 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         keep="last",
     ).copy()
 
+    # 同日＋同廠商＋同品項，只保留最後一張盤點單
+    if "stocktake_updated_at" not in target_stock.columns:
+        target_stock["stocktake_updated_at"] = ""
+    if "stocktake_created_at" not in target_stock.columns:
+        target_stock["stocktake_created_at"] = ""
+    
+    target_stock["__sort_updated"] = pd.to_datetime(
+        target_stock["stocktake_updated_at"], errors="coerce"
+    )
+    target_stock["__sort_created"] = pd.to_datetime(
+        target_stock["stocktake_created_at"], errors="coerce"
+    )
+    
+    target_stock = target_stock.sort_values(
+        [
+            "stocktake_date_dt",
+            "vendor_id",
+            "item_id",
+            "__sort_updated",
+            "__sort_created",
+            "stocktake_id",
+        ],
+        ascending=[True, True, True, True, True, True],
+    ).copy()
+    
+    target_stock = target_stock.drop_duplicates(
+        subset=["stocktake_date_dt", "vendor_id", "item_id"],
+        keep="last",
+    ).copy()
+    
     target_stock = target_stock.sort_values(
         ["stocktake_date_dt", "display_order_num", "item_name_disp"],
         ascending=[True, True, True]
     ).copy()
-
-    result_rows = []
 
     for _, curr_row in target_stock.iterrows():
         item_id = _norm(curr_row.get("item_id", ""))
@@ -1150,9 +1170,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             stock_work["item_id"].astype(str).str.strip() == item_id
         ].copy()
 
-        prev_stock = item_stock_all[
-            item_stock_all["stocktake_date_dt"] < curr_date
-        ].sort_values("stocktake_date_dt")
+        prev_stock = item_stock_all[item_stock_all["stocktake_date_dt"] < curr_date].sort_values("stocktake_date_dt")
 
         if prev_stock.empty:
             prev_qty = 0.0
@@ -1233,11 +1251,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
     out["日期_dt"] = pd.to_datetime(out["日期"], errors="coerce")
     out["日期顯示"] = out["日期_dt"].dt.strftime("%m-%d")
-    out = out.sort_values(
-        ["日期_dt", "display_order_num", "品項"],
-        ascending=[False, True, True]
-    ).reset_index(drop=True)
-
+    out = out.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True]).reset_index(drop=True)
     return out
 
 
