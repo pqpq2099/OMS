@@ -180,6 +180,7 @@ def page_user_admin():
                 # ------------------------------------------------
                 # 寫入 users 表
                 # ------------------------------------------------
+                st.write(new_row)
                 append_rows_by_header("users", [new_row])
 
                 st.success("使用者建立成功")
