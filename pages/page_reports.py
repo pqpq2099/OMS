@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import streamlit as st
-
+import pandas as pd
 from oms_core import (
     PLOTLY_CONFIG,
     _build_inventory_history_summary_df,
