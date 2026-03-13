@@ -257,9 +257,45 @@ def page_user_admin():
                 "分店",
             ]
 
-            st.dataframe(show_df, use_container_width=True, hide_index=True)
+            260 st.dataframe(show_df, use_container_width=True, hide_index=True)
 
-        st.divider()
+261 st.divider()
+
+# ============================================================
+# 重設使用者密碼
+# ============================================================
+st.subheader("重設使用者密碼")
+
+users_df = read_table("users").copy()
+
+if users_df.empty:
+    st.info("沒有使用者資料")
+else:
+    users_df["account_code"] = users_df["account_code"].astype(str)
+
+    account_list = users_df["account_code"].tolist()
+
+    selected_account = st.selectbox(
+        "選擇要重設密碼的帳號",
+        account_list
+    )
+
+    if st.button("重設為預設密碼 123456", use_container_width=True):
+
+        default_password = "123456"
+        new_hash = _hash_password(default_password)
+        now_ts = _now_ts()
+
+        mask = users_df["account_code"] == selected_account
+
+        users_df.loc[mask, "password_hash"] = new_hash
+        users_df.loc[mask, "must_change_password"] = 1
+        users_df.loc[mask, "updated_at"] = now_ts
+
+        append_rows_by_header("users", users_df)
+
+        st.success(f"{selected_account} 密碼已重設為 123456")
+        st.rerun()
 
 # ============================================================
 # 新增使用者
