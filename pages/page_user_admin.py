@@ -8,20 +8,20 @@
 4. 組長管理
 
 資料來源：
-Google Sheet → users / roles / stores
+Google Sheet
+- users
+- roles
+- stores
 
-權限邏輯：
-role_id
-owner / admin / store_manager / leader
-
-store_scope
-ALL / S001 / S002 / S003
+設計原則：
+此頁只做帳號與角色管理，不負責登入驗證。
 """
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+# OMS 核心函式
 from oms_core import (
     read_table,
     append_rows_by_header,
@@ -30,12 +30,29 @@ from oms_core import (
 
 
 # ============================================================
-# [U1] 使用者管理頁主入口
+# [U1] 使用者權限主頁
 # ============================================================
 def page_user_admin():
 
     st.title("👥 使用者權限")
 
+    # --------------------------------------------------------
+    # 讀取資料表
+    # --------------------------------------------------------
+    users_df = read_table("users")
+    roles_df = read_table("roles")
+    stores_df = read_table("stores")
+
+    if users_df.empty:
+        st.warning("users 資料表沒有資料")
+        return
+
+    # 只顯示啟用帳號
+    users_df = users_df[users_df["is_active"] == 1]
+
+    # --------------------------------------------------------
+    # 建立三個分頁
+    # --------------------------------------------------------
     tab1, tab2, tab3 = st.tabs([
         "使用者列表",
         "店長管理",
@@ -43,48 +60,34 @@ def page_user_admin():
     ])
 
     # ========================================================
-    # 讀取資料表
-    # ========================================================
-    users_df = read_table("users")
-    roles_df = read_table("roles")
-    stores_df = read_table("stores")
-
-    if users_df.empty:
-        st.warning("users 表沒有資料")
-        return
-
-    # 只顯示啟用帳號
-    users_df = users_df[users_df["is_active"] == 1]
-
-
-    # ========================================================
-    # TAB 1：使用者列表
+    # TAB 1 使用者列表
     # ========================================================
     with tab1:
 
         st.subheader("使用者列表")
 
-        view = users_df[
+        # 顯示主要欄位
+        show_df = users_df[
             ["account_code", "display_name", "role_id", "store_scope"]
         ].copy()
 
-        view.columns = [
+        show_df.columns = [
             "帳號",
             "名稱",
             "角色",
             "分店"
         ]
 
-        st.dataframe(view, use_container_width=True)
+        st.dataframe(show_df, use_container_width=True)
 
         st.divider()
 
-        # ----------------------------------------------------
+        # ====================================================
         # 新增使用者
-        # ----------------------------------------------------
+        # ====================================================
         st.subheader("新增使用者")
 
-        with st.form("create_user"):
+        with st.form("create_user_form"):
 
             account_code = st.text_input("帳號")
             display_name = st.text_input("名稱")
@@ -105,11 +108,16 @@ def page_user_admin():
                     st.error("帳號不可為空")
                     return
 
-                # 產生 user_id
-                new_id = allocate_ids({"users": 1})["users"][0]
+                # ------------------------------------------------
+                # 產生新的 user_id
+                # ------------------------------------------------
+                new_user_id = allocate_ids({"users": 1})["users"][0]
 
+                # ------------------------------------------------
+                # 建立新資料列
+                # ------------------------------------------------
                 new_row = {
-                    "user_id": new_id,
+                    "user_id": new_user_id,
                     "account_code": account_code,
                     "email": "",
                     "display_name": display_name,
@@ -123,14 +131,16 @@ def page_user_admin():
                     "updated_by": "",
                 }
 
+                # ------------------------------------------------
+                # 寫入 users 表
+                # ------------------------------------------------
                 append_rows_by_header("users", [new_row])
 
                 st.success("使用者建立成功")
                 st.rerun()
 
-
     # ========================================================
-    # TAB 2：店長管理
+    # TAB 2 店長管理
     # ========================================================
     with tab2:
 
@@ -140,21 +150,20 @@ def page_user_admin():
             users_df["role_id"] == "store_manager"
         ]
 
-        view = manager_df[
+        show_df = manager_df[
             ["account_code", "display_name", "store_scope"]
         ].copy()
 
-        view.columns = [
+        show_df.columns = [
             "店長帳號",
             "店長名稱",
             "管理分店"
         ]
 
-        st.dataframe(view, use_container_width=True)
-
+        st.dataframe(show_df, use_container_width=True)
 
     # ========================================================
-    # TAB 3：組長管理
+    # TAB 3 組長管理
     # ========================================================
     with tab3:
 
@@ -164,14 +173,14 @@ def page_user_admin():
             users_df["role_id"] == "leader"
         ]
 
-        view = leader_df[
+        show_df = leader_df[
             ["account_code", "display_name", "store_scope"]
         ].copy()
 
-        view.columns = [
+        show_df.columns = [
             "組長帳號",
             "組長名稱",
             "所屬分店"
         ]
 
-        st.dataframe(view, use_container_width=True)
+        st.dataframe(show_df, use_container_width=True)
