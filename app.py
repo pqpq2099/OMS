@@ -41,6 +41,7 @@ from pages.page_reports import (
 
 from pages.page_purchase_settings import page_purchase_settings
 from pages.page_user_admin import page_user_admin
+from pages.page_store_admin import page_store_admin
 st.set_page_config(page_title="營運管理系統", layout="centered")
 
 
@@ -523,7 +524,11 @@ def render_sidebar():
         if st.button("🛒 資料管理", width="stretch", key="sb_purchase_settings"):
             st.session_state.step = "purchase_settings"
             st.rerun()
-
+            
+        if st.button("🏬 分店管理", width="stretch", key="sb_store_admin"):
+            st.session_state.step = "store_admin"
+            st.rerun()
+        
         st.markdown("---")
 
         # ====================================================
@@ -619,11 +624,14 @@ def router():
         page_placeholder("📤 資料匯出")
 
     elif step == "user_admin":
-        page_user_admin()
+    page_user_admin()
 
     elif step == "purchase_settings":
         page_purchase_settings()
 
+    elif step == "store_admin":
+        page_store_admin()
+    
     elif step == "system_maintenance":
         page_system_maintenance()
 
