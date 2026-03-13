@@ -617,11 +617,11 @@ def page_analysis():
     else:
         detail_df = hist_filt.copy()
         
-   if "日期" in detail_df.columns:
-        if pd.api.types.is_numeric_dtype(detail_df["日期"]):
-            detail_df["日期"] = pd.to_datetime(detail_df["日期"], unit="s", errors="coerce").dt.strftime("%Y/%m/%d")
-        else:
-            detail_df["日期"] = pd.to_datetime(detail_df["日期"], errors="coerce").dt.strftime("%Y/%m/%d")
+        if "日期" in detail_df.columns:
+            if pd.api.types.is_numeric_dtype(detail_df["日期"]):
+                detail_df["日期"] = pd.to_datetime(detail_df["日期"], unit="s", errors="coerce").dt.strftime("%Y/%m/%d")
+            else:
+                detail_df["日期"] = pd.to_datetime(detail_df["日期"], errors="coerce").dt.strftime("%Y/%m/%d")
             
         # 隱藏完全沒變化的列
         detail_df = detail_df[
