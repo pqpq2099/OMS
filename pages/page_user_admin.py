@@ -106,7 +106,7 @@ def page_user_admin():
                     return
 
                 # 產生 user_id
-                new_id = allocate_ids("users", 1)[0]
+                new_id = allocate_ids({"users": 1})["users"][0]
 
                 new_row = {
                     "user_id": new_id,
