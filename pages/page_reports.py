@@ -570,22 +570,22 @@ def page_analysis():
 
         st.markdown("---")
 
-    # ========================================================
-    # 總額摘要
-    # 顯示位置：選擇廠商下方、表格上方
-    # ========================================================
-    total_purchase_amount = 0.0
-    if not purchase_filt.empty and "金額" in purchase_filt.columns:
-        total_purchase_amount = float(
-            pd.to_numeric(purchase_filt["金額"], errors="coerce").fillna(0).sum()
-        )
-
-    total_stock_amount = 0.0
-    if not hist_filt.empty:
-        work_stock = hist_filt.copy()
-
+        # ========================================================
+        # 總額摘要
+        # 顯示位置：選擇廠商下方、表格上方
+        # ========================================================
+        total_purchase_amount = 0.0
+        if not purchase_filt.empty and "金額" in purchase_filt.columns:
+            total_purchase_amount = float(
+                pd.to_numeric(purchase_filt["金額"], errors="coerce").fillna(0).sum()
+            )
+    
+        total_stock_amount = 0.0
+        if not hist_filt.empty:
+            work_stock = hist_filt.copy()
+    
         if "庫存合計" not in work_stock.columns:
-            work_stock["庫存合計"] = 0
+                work_stock["庫存合計"] = 0
 
         items_df = read_table("items")
         prices_df = read_table("prices")
