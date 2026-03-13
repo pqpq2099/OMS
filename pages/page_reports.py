@@ -510,9 +510,9 @@ def page_analysis():
     st.markdown("---")
 
     total_purchase_amount = 0.0
-    if not purchase_filt.empty and "金額" in purchase_filt.columns:
+    if not purchase_filt.empty and "進貨金額" in purchase_filt.columns:
         total_purchase_amount = float(
-            pd.to_numeric(purchase_filt["金額"], errors="coerce").fillna(0).sum()
+            pd.to_numeric(purchase_filt["進貨金額"], errors="coerce").fillna(0).sum()
         )
 
     total_stock_amount = 0.0
@@ -806,6 +806,3 @@ def page_cost_debug():
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
-# ============================================================
-# [E8] Purchase Settings
-# 這一區放：採購設定頁
