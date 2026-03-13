@@ -34,6 +34,15 @@ from oms_core import (
     allocate_ids,
 )
 
+ROLE_LABELS = {
+    "owner": "系統負責人",
+    "admin": "管理員",
+    "store_manager": "店長",
+    "leader": "組長",
+    "test_admin": "測試管理員",
+    "test_store_manager": "測試店長",
+    "test_leader": "測試組長"
+}
 
 # ============================================================
 # [U1] 欄位安全輔助
@@ -291,7 +300,11 @@ def page_user_admin():
             display_name = st.text_input("名稱", key="user_admin_display_name")
 
             if role_options:
-                role_id = st.selectbox("角色", role_options, key="user_admin_role_id")
+                role_id = st.selectbox(
+                    "角色",
+                    roles_df["role_id"].tolist(),
+                    format_func=lambda x: ROLE_LABELS.get(x, x)
+                )
             else:
                 role_id = st.text_input("角色", value="", key="user_admin_role_id_fallback")
 
@@ -335,7 +348,7 @@ def page_user_admin():
                     st.error("帳號已存在，請換一個帳號")
                     return
             # 建立新的 user_id
-            new_user_id = "USER_" + uuid.uuid4().hex[:6].upper()
+            new_user_id = allocate_ids({"users": 1})["users"][0]
 
             # 寫入資料列
             new_row = {
