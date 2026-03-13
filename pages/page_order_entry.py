@@ -649,10 +649,10 @@ def _save_order_entry(
     # 3. 申請 ID
     # ============================================================
     id_need = {
-        "stocktake_id": 1 if stocktake_rows else 0,
-        "stocktake_line_id": len(stocktake_rows),
-        "po_id": 1 if order_rows else 0,
-        "po_line_id": len(order_rows),
+        "stocktakes": 1 if stocktake_rows else 0,
+        "stocktake_lines": len(stocktake_rows),
+        "purchase_orders": 1 if order_rows else 0,
+        "purchase_order_lines": len(order_rows),
     }
     id_map = allocate_ids(id_need)
 
@@ -663,7 +663,7 @@ def _save_order_entry(
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
 
-        stocktake_id = id_map["stocktake_id"][0]
+        stocktake_id = id_map["stocktakes"][0]
         stocktake_main_row = {c: "" for c in stocktake_header}
 
         defaults = {
@@ -685,7 +685,7 @@ def _save_order_entry(
 
         stock_line_rows = []
         for idx, r in enumerate(stocktake_rows):
-            stocktake_line_id = id_map["stocktake_line_id"][idx]
+            stocktake_line_id = id_map["stocktake_lines"][idx]
 
             try:
                 stock_base_qty, stock_base_unit = convert_to_base(
@@ -734,7 +734,7 @@ def _save_order_entry(
         po_header = get_header("purchase_orders")
         pol_header = get_header("purchase_order_lines")
 
-        po_id = id_map["po_id"][0]
+        po_id = id_map["purchase_orders"][0]
         po_row = {c: "" for c in po_header}
 
         defaults_po = {
@@ -756,7 +756,7 @@ def _save_order_entry(
 
         po_line_rows = []
         for idx, r in enumerate(order_rows):
-            po_line_id = id_map["po_line_id"][idx]
+            po_line_id = id_map["purchase_order_lines"][idx]
 
             try:
                 order_base_qty, order_base_unit = convert_to_base(
