@@ -16,6 +16,8 @@ Google Sheet
 1. 沿用目前 OMS 既有架構
 2. 統一使用 oms_core 的 read_table / append_rows_by_header / get_header / allocate_ids
 3. 不另外建立新模組
+4. 新增分店時，只輸入品牌與中文分店名稱
+5. store_id / store_code / store_name 由系統自動產生
 """
 
 from __future__ import annotations
@@ -71,15 +73,12 @@ def _write_back_stores_df(stores_df: pd.DataFrame):
     stores_header = get_header("stores")
     work = stores_df.copy()
 
-    # 若缺欄位則補空
     for col in stores_header:
         if col not in work.columns:
             work[col] = ""
 
-    # 只保留 header 順序
     work = work[stores_header].copy()
 
-    # 全部轉字串後寫回
     rows = [stores_header] + work.fillna("").astype(str).values.tolist()
 
     sh = get_spreadsheet()
@@ -123,7 +122,6 @@ def _update_store_active(store_id: str, new_active: int, actor: str = "system"):
 
     stores_df.loc[mask, "is_active"] = int(new_active)
 
-    # 若有 updated_at / updated_by 欄位就補上
     if "updated_at" in stores_df.columns:
         stores_df.loc[mask, "updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if "updated_by" in stores_df.columns:
@@ -133,7 +131,36 @@ def _update_store_active(store_id: str, new_active: int, actor: str = "system"):
 
 
 # ============================================================
-# [S4] 主頁：分店管理
+# [S4] 自動產生下一個 store_code
+# 規則：
+# 已存在 S001 ~ S999 時，取下一個可用值
+# ============================================================
+def _generate_next_store_code(stores_df: pd.DataFrame) -> str:
+    """依現有 store_code 自動產生下一個 S###。"""
+    if stores_df.empty or "store_code" not in stores_df.columns:
+        return "S001"
+
+    codes = (
+        stores_df["store_code"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .tolist()
+    )
+
+    used_numbers = []
+    for code in codes:
+        if code.startswith("S") and len(code) >= 2:
+            num_part = code[1:]
+            if num_part.isdigit():
+                used_numbers.append(int(num_part))
+
+    next_num = 1 if not used_numbers else max(used_numbers) + 1
+    return f"S{next_num:03d}"
+
+
+# ============================================================
+# [S5] 主頁：分店管理
 # ============================================================
 def page_store_admin():
     st.title("🏬 分店管理")
@@ -152,7 +179,6 @@ def page_store_admin():
     stores_df = read_table("stores")
     brands_df = read_table("brands")
 
-    # stores 若為空，建立基本欄位避免頁面壞掉
     if stores_df.empty:
         stores_df = pd.DataFrame(columns=[
             "store_id",
@@ -231,7 +257,6 @@ def page_store_admin():
     stores_view["store_display"] = stores_view["store_name_zh"].replace("", pd.NA).fillna(stores_view["store_name"])
     stores_view["status_text"] = stores_view["is_active"].map({1: "啟用", 0: "停用"}).fillna("未設定")
 
-    # 依 store_code / store_id 排序
     stores_view = stores_view.sort_values(
         by=["store_code", "store_id"],
         ascending=[True, True],
@@ -260,9 +285,7 @@ def page_store_admin():
                 ["store_id", "store_code", "store_display", "brand_display", "status_text"]
             ].copy()
 
-            show_df.columns = [
-                "分店ID",
-                "分店代碼",
+            show_df.columns = [    
                 "分店名稱",
                 "品牌",
                 "狀態",
@@ -276,7 +299,6 @@ def page_store_admin():
     with tab2:
         st.subheader("新增分店")
 
-        # 只顯示啟用品牌
         active_brands_df = brands_df[brands_df["is_active"] == 1].copy()
 
         brand_options = (
@@ -294,6 +316,9 @@ def page_store_admin():
             else {}
         )
 
+        # 先預覽下一個代碼，讓使用者知道系統會自動生成
+        preview_store_code = _generate_next_store_code(stores_df)
+
         with st.form("create_store_form"):
             if brand_options:
                 brand_id = st.selectbox(
@@ -305,58 +330,27 @@ def page_store_admin():
             else:
                 brand_id = st.text_input("品牌", key="store_admin_brand_id_fallback")
 
-            store_code = st.text_input(
-                "分店代碼",
-                key="store_admin_store_code",
-                help="例如：S001 / S002",
-            )
-
-            store_name = st.text_input(
-                "英文名稱 / 系統名稱",
-                key="store_admin_store_name",
-                help="例如：sanchong",
-            )
-
             store_name_zh = st.text_input(
                 "中文分店名稱",
                 key="store_admin_store_name_zh",
                 help="例如：三總店",
             )
 
+            st.caption(f"系統將自動產生分店代碼：{preview_store_code}")
+            st.caption("系統名稱將自動與中文分店名稱相同")
+
             submit_create = st.form_submit_button("建立分店")
 
         if submit_create:
             brand_id = str(brand_id).strip()
-            store_code = str(store_code).strip().upper()
-            store_name = str(store_name).strip()
             store_name_zh = str(store_name_zh).strip()
 
             if not brand_id:
                 st.error("品牌不可為空")
                 return
 
-            if not store_code:
-                st.error("分店代碼不可為空")
-                return
-
-            if not store_name:
-                st.error("英文名稱 / 系統名稱不可為空")
-                return
-
             if not store_name_zh:
                 st.error("中文分店名稱不可為空")
-                return
-
-            # 分店代碼唯一
-            existing_store_codes = (
-                stores_df["store_code"]
-                .astype(str)
-                .str.strip()
-                .str.upper()
-                .tolist()
-            )
-            if store_code in existing_store_codes:
-                st.error("分店代碼已存在，請換一個代碼")
                 return
 
             # 中文分店名稱避免重複
@@ -373,12 +367,18 @@ def page_store_admin():
             # 依 id_sequences 產生 store_id
             new_store_id = allocate_ids({"stores": 1})["stores"][0]
 
+            # 自動產生 store_code
+            new_store_code = _generate_next_store_code(stores_df)
+
+            # 系統名稱自動跟中文走
+            new_store_name = store_name_zh
+
             new_row = {
                 "store_id": new_store_id,
                 "brand_id": brand_id,
-                "store_name": store_name,
+                "store_name": new_store_name,
                 "store_name_zh": store_name_zh,
-                "store_code": store_code,
+                "store_code": new_store_code,
                 "is_active": 1,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "updated_at": "",
@@ -388,7 +388,7 @@ def page_store_admin():
             stores_header = get_header("stores")
             append_rows_by_header("stores", stores_header, [new_row])
 
-            st.success(f"分店建立成功：{store_name_zh}（{new_store_id}）")
+            st.success(f"分店建立成功：{store_name_zh}（{new_store_id} / {new_store_code}）")
             st.rerun()
 
     # ========================================================
