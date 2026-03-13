@@ -42,19 +42,22 @@ from pages.page_reports import (
 from pages.page_purchase_settings import page_purchase_settings
 from pages.page_user_admin import page_user_admin
 from pages.page_store_admin import page_store_admin
+from pages.page_login import page_login, render_login_sidebar
+
+st.set_page_config(page_title="營運管理系統", layout="centered")
 
 # ============================================================
 # 登入檢查
 # ============================================================
-
 if "login_user" not in st.session_state:
-    from pages.page_login import page_login
     page_login()
     st.stop()
 
+if st.session_state.get("force_change_password", False):
+    page_login()
+    st.stop()
+    
 st.set_page_config(page_title="營運管理系統", layout="centered")
-
-
 
 # ============================================================
 # [A1] Session State 初始化
@@ -476,21 +479,27 @@ def page_system_info():
 # 3. 每個按鈕按下後要切到哪個 step
 # ============================================================
 def render_sidebar():
-    role = st.session_state.role
+    role = st.session_state.get("login_role_id", "")
     system_name = get_system_name()
     logo_url = get_setting_value("logo_url", "").strip()
 
     with st.sidebar:
+        # ====================================================
+        # 系統 Logo
+        # ====================================================
         if logo_url:
             try:
                 st.image(logo_url, width=140)
             except Exception:
                 st.caption("Logo 載入失敗")
 
+        # ====================================================
+        # 系統名稱
+        # ====================================================
         st.markdown(f"## {system_name}")
+
         # ====================================================
         # 作業
-        # 這一區放日常操作頁
         # ====================================================
         st.markdown("### 作業")
 
@@ -498,19 +507,14 @@ def render_sidebar():
             st.session_state.step = "select_store"
             st.rerun()
 
-        # ====================================================
-        # 叫貨明細
-        # 顯示今日叫貨整理與 LINE 訊息格式
-        # ====================================================
-        if st.button("📩 叫貨明細", width="stretch", key="sb_order_message_detail"):
+        if st.button("🧾 叫貨明細", width="stretch", key="sb_order_message_detail"):
             st.session_state.step = "order_message_detail"
             st.rerun()
-                
+
         st.markdown("---")
 
         # ====================================================
         # 分析
-        # 這一區放報表 / 歷史 / 分析
         # ====================================================
         st.markdown("### 分析")
 
@@ -518,41 +522,53 @@ def render_sidebar():
             st.session_state.step = "analysis"
             st.rerun()
 
-        if st.button("📜 進貨分析", width="stretch", key="sb_view_history"):
+        if st.button("📦 分店歷史", width="stretch", key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
-            
+
+        if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
+            st.session_state.step = "cost_debug"
+            st.rerun()
+
+        if st.button("📤 資料匯出", width="stretch", key="sb_export"):
+            st.session_state.step = "export"
+            st.rerun()
+
         st.markdown("---")
 
         # ====================================================
         # 資料管理
-        # 這一區放主資料維護
-        # 目前先統一進同一頁，之後再拆成廠商 / 品項 / 價格
         # ====================================================
         st.markdown("### 資料管理")
 
-        if st.button("🛒 資料管理", width="stretch", key="sb_purchase_settings"):
-            st.session_state.step = "purchase_settings"
-            st.rerun()
-            
-        if st.button("🏬 分店管理", width="stretch", key="sb_store_admin"):
-            st.session_state.step = "store_admin"
-            st.rerun()
-        
+        if role in ["owner", "admin"]:
+            if st.button("🛒 採購設定", width="stretch", key="sb_purchase_settings"):
+                st.session_state.step = "purchase_settings"
+                st.rerun()
+
+            if st.button("🏬 分店管理", width="stretch", key="sb_store_admin"):
+                st.session_state.step = "store_admin"
+                st.rerun()
+
         st.markdown("---")
 
         # ====================================================
         # 使用者與權限
-        # 這一區放帳號 / 分店指派 / 權限管理
         # ====================================================
         st.markdown("### 使用者與權限")
 
-        if st.button("👥 使用者權限", width="stretch", key="sb_user_admin"):
-            st.session_state.step = "user_admin"
-            st.rerun()
+        if role in ["owner", "admin"]:
+            if st.button("👥 使用者管理", width="stretch", key="sb_user_admin"):
+                st.session_state.step = "user_admin"
+                st.rerun()
 
         st.markdown("---")
 
+        # ====================================================
+        # 登入資訊
+        # 放在側邊欄最底部
+        # ====================================================
+        render_login_sidebar()
         # ====================================================
         # 系統
         # 這一區放系統層級功能
