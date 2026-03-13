@@ -1,3 +1,15 @@
+"""
+OMS 核心共用模組。
+
+這個檔案放的是很多頁面都會用到的共用函式，包含：
+1. 讀取 Google Sheets
+2. 共用格式整理
+3. 報表計算輔助
+4. UI 共用樣式
+
+如果某個功能很多頁都會用到，通常就會放在這裡。
+"""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -9,7 +21,7 @@ import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from oms_engine import convert_to_base, convert_unit, get_base_unit
+from utils.utils_units import convert_to_base, convert_unit, get_base_unit
 
 
 # Plotly config (供 pages_reports.py 使用)
@@ -35,8 +47,8 @@ PLOTLY_CONFIG = {
 }
 
 DEFAULT_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
-LOCAL_SERVICE_ACCOUNT = Path("service_account.json")
-
+BASE_DIR = Path(__file__).resolve().parent
+LOCAL_SERVICE_ACCOUNT = BASE_DIR / "service_account.json"
 
 # ============================================================
 # Global UI Style
@@ -1226,4 +1238,29 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
         .reset_index(drop=True)
     )
     return out
+
+
+# ============================================================
+# [UTIL] CSV 匯出工具
+# 用途：
+# 所有報表統一使用此函式匯出 CSV
+# ============================================================
+def export_csv_button(df, filename: str, label: str = "📥 匯出 CSV"):
+    import streamlit as st
+
+    if df is None or df.empty:
+        st.caption("沒有資料可匯出")
+        return
+
+    csv_data = df.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        label,
+        csv_data,
+        file_name=filename,
+        mime="text/csv",
+        use_container_width=False,
+    )
+
+
 

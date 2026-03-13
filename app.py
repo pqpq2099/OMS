@@ -1,3 +1,14 @@
+"""
+ORIVIA OMS 主程式入口。
+
+你之後如果想知道：
+1. 側邊欄怎麼切頁
+2. 每個 step 會進到哪個頁面
+3. 系統首頁從哪裡開始
+
+優先先看這個檔案。
+"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -13,25 +24,32 @@ from oms_core import (
     read_table,
 )
 
-from pages_order import (
+from pages.page_order_entry import (
     page_order_entry,
     page_order_message_detail,
     page_select_store,
     page_select_vendor,
 )
 
-from pages_reports import (
+from pages.page_reports import (
     page_analysis,
     page_cost_debug,
     page_export,
     page_view_history,
 )
 
+from pages.page_purchase_settings import page_purchase_settings
+from pages.page_user_admin import page_user_admin
 st.set_page_config(page_title="營運管理系統", layout="centered")
 
 
+
 # ============================================================
-# Session State
+# [A1] Session State 初始化
+# 你最常改的地方之一：
+# 1. 新增新的 session_state 欄位
+# 2. 調整預設 step
+# 3. 之後接正式登入角色時，會在這裡改 role 預設值
 # ============================================================
 def init_session():
     if "step" not in st.session_state:
@@ -52,8 +70,14 @@ def init_session():
         st.session_state.role = "owner"  # owner / admin / store_manager / leader
 
 
+
 # ============================================================
-# Settings Helpers
+# [A2] 系統設定讀取/儲存輔助
+# 這一區主要負責：
+# 1. 從 settings 表抓 system_name 等設定
+# 2. 找到 key / value 欄位
+# 3. 存回 Google Sheets
+# 如果之後要增加更多系統設定，先看這一區。
 # ============================================================
 def _get_settings_key_value_cols(settings_df: pd.DataFrame) -> tuple[str | None, str | None]:
     work = settings_df.copy()
@@ -159,19 +183,21 @@ def save_setting(setting_key: str, setting_value: str):
     # ------------------------------------------------
     import gspread
     from google.oauth2.service_account import Credentials
-    
+
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
+
+    creds = Credentials.from_service_account_file(
+        "service_account.json",
         scopes=scope,
     )
-    
+
     gc = gspread.authorize(creds)
-    sheet = gc.open_by_key(st.secrets["SHEET_ID"]).worksheet("settings")
+
+    SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
+    sheet = gc.open_by_key(SHEET_ID).worksheet("settings")
     
     rows = [settings_df.columns.tolist()] + settings_df.astype(str).values.tolist()
     
@@ -181,18 +207,29 @@ def save_setting(setting_key: str, setting_value: str):
     bust_cache()
 
 
+
 # ============================================================
-# Placeholder
+# [A3] 暫時占位頁
+# 用途：
+# 某個功能入口先建好，但正式內容還沒完成時，先用這個占位。
 # ============================================================
 def page_placeholder(title: str, desc: str = "此功能入口已建立，功能尚未接上。"):
+
     st.title(title)
     st.info(desc)
     st.markdown("---")
     st.caption("目前為占位頁，之後會接正式功能。")
 
 
+
 # ============================================================
-# Appearance Settings Page
+# [E8] 系統外觀設定頁
+# 你之後如果想改：
+# 1. 系統名稱
+# 2. logo URL
+# 3. 主題色
+# 4. 時區等系統設定
+# 先看這頁。
 # ============================================================
 def page_appearance_settings():
     st.title("🎨 系統外觀")
@@ -230,6 +267,14 @@ def page_appearance_settings():
 # ============================================================
 # Sidebar
 # ============================================================
+
+# ============================================================
+# [S1] Sidebar 側邊欄
+# 你最常改的地方之一：
+# 1. 側邊欄分組順序
+# 2. 哪些按鈕顯示給哪些角色
+# 3. 每個按鈕按下後要切到哪個 step
+# ============================================================
 def render_sidebar():
     role = st.session_state.role
     system_name = get_system_name()
@@ -249,6 +294,7 @@ def render_sidebar():
 
         # ====================================================
         # 作業
+        # 這一區放日常操作頁
         # ====================================================
         st.markdown("### 作業")
 
@@ -256,13 +302,20 @@ def render_sidebar():
             st.session_state.step = "select_store"
             st.rerun()
 
-        if st.button("🧾 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
+        # ====================================================
+        # 叫貨明細
+        # 顯示今日叫貨整理與 LINE 訊息格式
+        # ====================================================
+        if st.button("📩 叫貨明細", use_container_width=True, key="sb_order_message_detail"):
             st.session_state.step = "order_message_detail"
             st.rerun()
+                
+        st.markdown("---")
 
-        # ============================================================
+        # ====================================================
         # 分析
-        # ============================================================
+        # 這一區放報表 / 歷史 / 分析
+        # ====================================================
         st.markdown("### 分析")
 
         if st.button("📊 進銷存分析", use_container_width=True, key="sb_analysis"):
@@ -273,24 +326,43 @@ def render_sidebar():
             st.session_state.step = "view_history"
             st.rerun()
             
-        # ============================================================
-        # 後台管理
-        # ============================================================
-        st.markdown("### 後台管理")
+        st.markdown("---")
+
+        # ====================================================
+        # 資料管理
+        # 這一區放主資料維護
+        # 目前先統一進同一頁，之後再拆成廠商 / 品項 / 價格
+        # ====================================================
+        st.markdown("### 資料管理")
+
+        if st.button("🛒 資料管理", use_container_width=True, key="sb_purchase_settings"):
+            st.session_state.step = "purchase_settings"
+            st.rerun()
+
+        st.markdown("---")
+
+        # ====================================================
+        # 使用者與權限
+        # 這一區放帳號 / 分店指派 / 權限管理
+        # ====================================================
+        st.markdown("### 使用者與權限")
 
         if st.button("👥 使用者權限", use_container_width=True, key="sb_user_admin"):
             st.session_state.step = "user_admin"
             st.rerun()
 
-        if st.button("🛒 採購設定", use_container_width=True, key="sb_purchase_settings"):
-            st.session_state.step = "purchase_settings"
-            st.rerun()
+        st.markdown("---")
 
         # ====================================================
-        # 系統工具（Owner only）
+        # 系統
+        # 這一區放系統層級功能
         # ====================================================
         if role == "owner":
-            st.markdown("### 系統工具")
+            st.markdown("### 系統")
+
+            if st.button("🎨 外觀設定", use_container_width=True, key="sb_appearance_settings"):
+                st.session_state.step = "appearance_settings"
+                st.rerun()
 
             if st.button("🛠️ 系統維護", use_container_width=True, key="sb_system_tools"):
                 st.session_state.step = "system_tools"
@@ -300,9 +372,15 @@ def render_sidebar():
                 st.session_state.step = "dev_test"
                 st.rerun()
 
-
 # ============================================================
 # Router
+# ============================================================
+
+# ============================================================
+# [S2] Router 路由中心
+# 這裡就是「step 對應哪個頁面函式」的總開關。
+# 之後只要遇到：按鈕按了跑錯頁 / 找不到頁 / 新頁面接不上，
+# 第一個先檢查這裡。
 # ============================================================
 def router():
     step = st.session_state.step
@@ -347,10 +425,10 @@ def router():
         page_placeholder("📤 資料匯出")
 
     elif step == "user_admin":
-        page_placeholder("👥 使用者權限")
+        page_user_admin()
 
     elif step == "purchase_settings":
-        page_placeholder("🛒 採購設定")
+        page_purchase_settings()
 
     elif step == "system_tools":
         page_placeholder("🛠️ 系統維護")
@@ -365,6 +443,15 @@ def router():
 # ============================================================
 # Main
 # ============================================================
+
+# ============================================================
+# [S3] main 主流程入口
+# 程式啟動後，會由這裡開始：
+# 1. 套用樣式
+# 2. 初始化 session
+# 3. 畫 sidebar
+# 4. 依 step 進 router
+# ============================================================
 def main():
     apply_global_style()
     init_session()
@@ -374,6 +461,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 
