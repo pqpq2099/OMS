@@ -518,21 +518,50 @@ def page_analysis():
     total_stock_amount = 0.0
     if not hist_filt.empty:
         work_stock = hist_filt.copy()
-
-        if "庫存合計" not in work_stock.columns:
-            work_stock["庫存合計"] = 0
-
+    
+        if "這次庫存" not in work_stock.columns:
+            work_stock["這次庫存"] = 0
+    
         items_df = read_table("items")
         prices_df = read_table("prices")
         conversions_df = _get_active_df(read_table("unit_conversions"))
-
-        work_stock["庫存合計"] = pd.to_numeric(
-            work_stock["庫存合計"], errors="coerce"
+    
+        work_stock["這次庫存"] = pd.to_numeric(
+            work_stock["這次庫存"], errors="coerce"
         ).fillna(0)
-
+    
         def _calc_stock_amount(row):
             item_id = _norm(row.get("item_id", ""))
-            qty = _safe_float(row.get("庫存合計", 0))
+            qty = _safe_float(row.get("這次庫存", 0))
+            row_date = row.get("日期")
+    
+            if not item_id or qty == 0:
+                return 0.0
+    
+            target_date = _parse_date(row_date)
+            if target_date is None:
+                return 0.0
+    
+            base_unit_cost = get_base_unit_cost(
+                item_id=item_id,
+                target_date=target_date,
+                items_df=items_df,
+                prices_df=prices_df,
+                conversions_df=conversions_df,
+            )
+    
+            if base_unit_cost is None:
+                return 0.0
+    
+            return round(qty * float(base_unit_cost), 2)
+    
+        work_stock["庫存總額"] = work_stock.apply(_calc_stock_amount, axis=1)
+        total_stock_amount = float(
+            pd.to_numeric(work_stock["庫存總額"], errors="coerce").fillna(0).sum()
+        )
+        def _calc_stock_amount(row):
+            item_id = _norm(row.get("item_id", ""))
+            qty = _safe_float(row.get("這次庫存", 0))
             row_date = row.get("日期")
 
             if not item_id or qty == 0:
