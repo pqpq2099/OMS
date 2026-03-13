@@ -1,5 +1,1 @@
-"""
-頁面模組 package。
-這個資料夾專門放 Streamlit 的 UI 頁面函式。
-之後若要找「畫面在哪裡」，先看這裡。
-"""
+# pages package
