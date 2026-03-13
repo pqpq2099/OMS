@@ -240,7 +240,7 @@ def page_view_history():
 
     if hist_df.empty:
         st.info("💡 此區間內無紀錄。")
-        if st.button("⬅️ 返回", width="stretch", key="back_hist_empty"):
+        if st.button("⬅️ 返回", use_container_width=True, key="back_hist_empty"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -353,37 +353,39 @@ def page_view_history():
         filt_df = filt_df[
             filt_df["品項"].astype(str).str.strip() == str(sel_i).strip()
         ].copy()
-    show_cols = [
-        "日期顯示",
-        "廠商",
-        "品項",
-        "上次庫存",
-        "期間進貨",
-        "庫存合計",
-        "這次庫存",
-        "期間消耗",
-        "日平均",
-    ]
-
     detail_df = filt_df.copy()
     detail_df = detail_df[
         (detail_df["上次庫存"] != 0)
         | (detail_df["期間進貨"] != 0)
         | (detail_df["期間消耗"] != 0)
         | (detail_df["這次庫存"] != 0)
+        | (detail_df.get("這次叫貨", 0) != 0)
     ].copy()
 
     if detail_df.empty:
         st.caption("此條件下無歷史資料")
+    elif sel_v == "全部廠商":
+        st.caption("全部廠商時，歷史紀錄明細預設不顯示")
     else:
+        show_cols = [
+            "日期顯示",
+            "品項",
+            "上次庫存",
+            "期間進貨",
+            "庫存合計",
+            "這次庫存",
+            "期間消耗",
+            "這次叫貨",
+            "日平均",
+        ]
         export_df = detail_df[show_cols].copy().reset_index(drop=True)
 
         st.download_button(
             "📥 匯出 CSV",
             export_df.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{st.session_state.store_name}_歷史紀錄_{h_start}_{h_end}.csv",
+            file_name=f"{st.session_state.store_name}_歷史紀錄_{sel_v}_{h_start}_{h_end}.csv",
             mime="text/csv",
-            width="stretch",
+            use_container_width=True,
             key="download_history_csv",
         )
 
@@ -391,18 +393,18 @@ def page_view_history():
             export_df,
             column_config={
                 "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                "廠商": st.column_config.TextColumn(width="small"),
                 "品項": st.column_config.TextColumn(width="small"),
                 "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
             },
         )
 
-    if st.button("⬅️ 返回", width="stretch", key="back_hist_final"):
+    if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -427,7 +429,7 @@ def page_export():
 
     if po_df.empty:
         st.info("💡 尚無叫貨資料")
-        if st.button("⬅️ 返回選單", width="stretch", key="back_to_vendor_export_empty"):
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export_empty"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -440,7 +442,7 @@ def page_export():
 
     if recs.empty:
         st.info("💡 今日尚無叫貨紀錄")
-        if st.button("⬅️ 返回選單", width="stretch", key="back_to_vendor_export_nodata"):
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export_nodata"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -472,13 +474,13 @@ def page_export():
 
     st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
 
-    if st.button("🚀 直接發送明細至 LINE", type="primary", width="stretch"):
+    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
         if send_line_message(output):
             st.success(f"✅ 已成功推送到 {store_name} 群組！")
         else:
             st.error("❌ 發送失敗，請檢查 LINE 設定。")
 
-    if st.button("⬅️ 返回選單", width="stretch", key="back_to_vendor_export"):
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -521,29 +523,30 @@ def page_analysis():
         start_date=start,
         end_date=end,
     )
-    purchase_summary_df = _build_purchase_summary_df(
-        store_id=st.session_state.store_id,
-        start_date=start,
-        end_date=end,
-    )
+    po_detail_df = _build_purchase_detail_df()
 
-    if not purchase_summary_df.empty and "廠商" not in purchase_summary_df.columns:
-        purchase_summary_df["廠商"] = "-"
+    purchase_filt = pd.DataFrame()
+    if not po_detail_df.empty:
+        purchase_filt = po_detail_df[
+            (po_detail_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip())
+            & (po_detail_df["order_date_dt"].notna())
+            & (po_detail_df["order_date_dt"] >= start)
+            & (po_detail_df["order_date_dt"] <= end)
+        ].copy()
+        purchase_filt["日期"] = pd.to_datetime(purchase_filt["order_date_dt"], errors="coerce").dt.strftime("%Y/%m/%d")
+        purchase_filt["廠商"] = purchase_filt["vendor_name_disp"].apply(lambda x: _norm(x) or "-")
+        purchase_filt["金額"] = pd.to_numeric(purchase_filt["amount_num"], errors="coerce").fillna(0)
 
-    if hist_df.empty and purchase_summary_df.empty:
+    if hist_df.empty and purchase_filt.empty:
         st.warning(f"⚠️ 在 {start} 到 {end} 之間查無紀錄。")
-        if st.button("⬅️ 返回選單", width="stretch", key="back_from_analysis_no_data"):
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_no_data"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
 
     st.markdown("---")
 
-    # ============================================================
-    # 廠商篩選
-    # ============================================================
     hist_filt = hist_df.copy()
-    purchase_filt = purchase_summary_df.copy()
 
     vendor_values = []
     if not hist_filt.empty and "廠商" in hist_filt.columns:
@@ -567,19 +570,16 @@ def page_analysis():
 
     st.markdown("---")
 
-    # ============================================================
-    # 全部廠商：只看金額
-    # ============================================================
     if selected_vendor == "全部廠商":
         st.subheader("📋 全部廠商金額統計")
 
-        if purchase_filt.empty or "廠商" not in purchase_filt.columns or "採購金額" not in purchase_filt.columns:
+        if purchase_filt.empty:
             st.info("目前沒有可顯示的金額資料")
         else:
             vendor_summary = (
-                purchase_filt.groupby("廠商", as_index=False)["採購金額"]
+                purchase_filt.groupby(["日期", "廠商"], as_index=False)["金額"]
                 .sum()
-                .sort_values("採購金額", ascending=False)
+                .sort_values(["日期", "廠商"], ascending=[False, True])
                 .reset_index(drop=True)
             )
 
@@ -592,43 +592,39 @@ def page_analysis():
                 key="download_analysis_all_vendors",
             )
 
-            st.dataframe(
+            render_report_dataframe(
                 vendor_summary,
-                width="stretch",
-                hide_index=True,
                 column_config={
+                    "日期": st.column_config.TextColumn(width="small"),
                     "廠商": st.column_config.TextColumn(width="medium"),
-                    "採購金額": st.column_config.NumberColumn("金額", format="%.1f", width="small"),
+                    "金額": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
             )
 
-        if st.button("⬅️ 返回選單", width="stretch", key="back_from_analysis_all"):
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_all"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
 
-    # ============================================================
-    # 單一廠商：只看 品項明細
-    # ============================================================
     st.subheader(f"📦 {selected_vendor} 品項明細")
 
     if hist_filt.empty:
         st.info("此廠商在目前條件下無資料")
     else:
         detail_df = hist_filt.copy()
-        
+
         if "日期" in detail_df.columns:
             if pd.api.types.is_numeric_dtype(detail_df["日期"]):
                 detail_df["日期"] = pd.to_datetime(detail_df["日期"], unit="s", errors="coerce").dt.strftime("%Y/%m/%d")
             else:
                 detail_df["日期"] = pd.to_datetime(detail_df["日期"], errors="coerce").dt.strftime("%Y/%m/%d")
-            
-        # 隱藏完全沒變化的列
+
         detail_df = detail_df[
-            (detail_df["庫存合計"] != 0)
-            | (detail_df["這次庫存"] != 0)
+            (detail_df["上次庫存"] != 0)
+            | (detail_df["期間進貨"] != 0)
             | (detail_df["期間消耗"] != 0)
-            | (detail_df["日平均"] != 0)
+            | (detail_df["這次庫存"] != 0)
+            | (detail_df["這次叫貨"] != 0)
         ].copy()
 
         if detail_df.empty:
@@ -637,10 +633,12 @@ def page_analysis():
             show_cols = [
                 "日期",
                 "品項",
+                "上次庫存",
                 "期間進貨",
                 "庫存合計",
                 "這次庫存",
                 "期間消耗",
+                "這次叫貨",
                 "日平均",
             ]
 
@@ -655,22 +653,22 @@ def page_analysis():
                 key="download_analysis_single_vendor",
             )
 
-            st.dataframe(
+            render_report_dataframe(
                 export_df,
-                width="stretch",
-                hide_index=True,
                 column_config={
                     "日期": st.column_config.TextColumn(width="small"),
                     "品項": st.column_config.TextColumn(width="medium"),
+                    "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
             )
 
-    if st.button("⬅️ 返回選單", width="stretch", key="back_from_analysis_single"):
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_single"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -693,7 +691,7 @@ def page_cost_debug():
 
     if items_df.empty:
         st.warning("⚠️ items 資料讀取失敗")
-        if st.button("⬅️ 返回選單", width="stretch", key="back_from_cost_debug_empty"):
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug_empty"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
@@ -814,7 +812,7 @@ def page_cost_debug():
         ]
         render_report_dataframe(conv_show[show_cols])
 
-    if st.button("⬅️ 返回選單", width="stretch", key="back_from_cost_debug"):
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
 # ============================================================
