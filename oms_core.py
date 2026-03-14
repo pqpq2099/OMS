@@ -125,15 +125,23 @@ def render_report_dataframe(
     column_config: dict | None = None,
     height: int | None = None,
 ):
-    """共用表格呈現：統一撐滿寬度、隱藏 index，盡量讓欄寬自動適配。"""
+    """共用報表表格呈現。
+
+    注意：部分 Streamlit 版本不接受 height=None，
+    因此只有在明確提供高度時才傳入 height。
+    """
     apply_table_report_style()
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        column_config=column_config or {},
-        height=height,
-    )
+
+    dataframe_kwargs = {
+        "use_container_width": True,
+        "hide_index": True,
+        "column_config": column_config or {},
+    }
+
+    if height is not None:
+        dataframe_kwargs["height"] = height
+
+    st.dataframe(df, **dataframe_kwargs)
 
 
 # ============================================================
