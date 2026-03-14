@@ -583,7 +583,7 @@ def page_user_admin():
                 store_name = str(row.get("store_name_zh", "")).strip() or str(row.get("store_name", "")).strip() or store_id
                 if not store_id:
                     continue
-                label = f"{store_name}（{store_id}）"
+                label = store_name
                 store_options.append(label)
                 store_option_map[label] = store_id
 
@@ -674,7 +674,7 @@ def page_user_admin():
                 store_name = str(row.get("store_name_zh", "")).strip() or str(row.get("store_name", "")).strip() or store_id
                 if not store_id:
                     continue
-                label = f"{store_name}（{store_id}）"
+                label = store_name
                 leader_store_options.append(label)
                 leader_store_option_map[label] = store_id
 
