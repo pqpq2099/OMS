@@ -173,6 +173,92 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
     return merged
 
 
+def _short_item_name(text: str, max_len: int = 14) -> str:
+    value = str(text or "").strip()
+    if len(value) <= max_len:
+        return value
+    return value[:max_len] + "…"
+
+
+def _display_mode_selector(key: str) -> str:
+    return st.radio(
+        "表格顯示模式",
+        options=["手機精簡", "完整表格"],
+        horizontal=True,
+        key=key,
+    )
+
+def _get_store_scope_options():
+    stores_df = read_table("stores")
+    if stores_df.empty or "store_id" not in stores_df.columns:
+        fallback_id = str(st.session_state.get("store_id", "")).strip()
+        fallback_name = str(st.session_state.get("store_name", fallback_id)).strip()
+        return [fallback_id] if fallback_id else [], {fallback_id: fallback_name} if fallback_id else {}
+
+    stores_df = stores_df.copy()
+    stores_df["store_id"] = stores_df["store_id"].astype(str).str.strip()
+    if "store_name_zh" not in stores_df.columns:
+        stores_df["store_name_zh"] = ""
+    if "store_name" not in stores_df.columns:
+        stores_df["store_name"] = stores_df["store_id"]
+    if "is_active" in stores_df.columns:
+        stores_df = stores_df[stores_df["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "TRUE", "true", "1.0"])].copy()
+
+    stores_df["store_display"] = stores_df["store_name_zh"].astype(str).str.strip()
+    stores_df.loc[stores_df["store_display"] == "", "store_display"] = stores_df["store_name"].astype(str).str.strip()
+
+    login_role = str(st.session_state.get("login_role_id", "")).strip()
+    current_store_id = str(st.session_state.get("store_id", "")).strip()
+
+    if login_role in ["owner", "admin"]:
+        work = stores_df.sort_values([c for c in ["store_name_zh", "store_name", "store_id"] if c in stores_df.columns]).copy()
+    else:
+        work = stores_df[stores_df["store_id"] == current_store_id].copy()
+
+    if work.empty and current_store_id:
+        return [current_store_id], {current_store_id: str(st.session_state.get("store_name", current_store_id)).strip() or current_store_id}
+
+    option_map = dict(zip(work["store_id"].tolist(), work["store_display"].tolist()))
+    return list(option_map.keys()), option_map
+
+
+def _select_export_store(key: str):
+    store_ids, store_label_map = _get_store_scope_options()
+    if not store_ids:
+        return "", ""
+
+    current_store_id = str(st.session_state.get("store_id", "")).strip()
+    default_index = 0
+    if current_store_id in store_ids:
+        default_index = store_ids.index(current_store_id)
+
+    selected_store_id = st.selectbox(
+        "選擇分店",
+        options=store_ids,
+        index=default_index,
+        format_func=lambda x: store_label_map.get(x, x),
+        key=key,
+    )
+    return selected_store_id, store_label_map.get(selected_store_id, selected_store_id)
+
+
+def _download_csv_block(preview: pd.DataFrame, filename: str):
+    if preview.empty:
+        st.info("💡 此條件下無可匯出資料")
+        return
+
+    st.download_button(
+        "📥 匯出 CSV",
+        preview.to_csv(index=False).encode("utf-8-sig"),
+        file_name=filename,
+        mime="text/csv",
+        use_container_width=True,
+        key=f"download_{filename}",
+    )
+    render_report_dataframe(preview)
+
+
+
 # ============================================================
 # [R1] 庫存歷史頁
 # ============================================================
@@ -325,7 +411,9 @@ def page_view_history():
     elif sel_v == "全部廠商":
         st.caption("全部廠商時，歷史紀錄明細預設不顯示")
     else:
-        show_cols = [
+        mode = _display_mode_selector("hist_display_mode")
+
+        full_cols = [
             "日期顯示",
             "品項",
             "上次庫存",
@@ -336,7 +424,31 @@ def page_view_history():
             "這次叫貨",
             "日平均",
         ]
-        export_df = detail_df[show_cols].copy().reset_index(drop=True)
+        export_df = detail_df[full_cols].copy().reset_index(drop=True)
+
+        if mode == "手機精簡":
+            show_df = export_df[["日期顯示", "品項", "這次庫存", "這次叫貨", "日平均"]].copy()
+            show_df["品項"] = show_df["品項"].apply(_short_item_name)
+            cfg = {
+                "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                "品項": st.column_config.TextColumn(width="medium"),
+                "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+            }
+        else:
+            show_df = export_df.copy()
+            cfg = {
+                "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                "品項": st.column_config.TextColumn(width="medium"),
+                "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+            }
 
         st.download_button(
             "📥 匯出 CSV",
@@ -347,20 +459,7 @@ def page_view_history():
             key="download_history_csv",
         )
 
-        render_report_dataframe(
-            export_df,
-            column_config={
-                "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                "品項": st.column_config.TextColumn(width="small"),
-                "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-            },
-        )
+        render_report_dataframe(show_df, column_config=cfg)
 
     if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
@@ -371,68 +470,151 @@ def page_view_history():
 # [R2] 匯出頁
 # ============================================================
 def page_export():
-    st.title("📋 今日進貨明細")
+    st.title("📤 資料匯出")
 
-    po_df = _build_purchase_detail_df()
-
-    week_map = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
-    delivery_date = st.session_state.record_date + timedelta(days=1)
-    header_date = f"{delivery_date.month}/{delivery_date.day}({week_map[delivery_date.weekday()]})"
-
-    if po_df.empty:
-        st.info("💡 尚無叫貨資料")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export_empty"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
-        return
-
-    recs = po_df[
-        (po_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip())
-        & (po_df["order_date_dt"] == st.session_state.record_date)
-        & (po_df["order_qty_num"] > 0)
-    ].copy()
-
-    if recs.empty:
-        st.info("💡 今日尚無叫貨紀錄")
-        if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export_nodata"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
-        return
-
-    store_name = st.session_state.store_name
-    output = f"{store_name}\n{header_date}\n"
-
-    vendor_order = (
-        recs.groupby(["vendor_id", "vendor_name_disp"], as_index=False)["amount_num"]
-        .sum()
-        .sort_values("vendor_name_disp")
+    export_type = st.selectbox(
+        "匯出資料類型",
+        ["今日進貨明細", "進銷存分析", "分店歷史", "目前畫面資料總覽"],
+        key="export_type",
     )
 
-    for _, v in vendor_order.iterrows():
-        vendor_id = _norm(v.get("vendor_id", ""))
-        vendor_name = _norm(v.get("vendor_name_disp", "")) or "未指定"
+    selected_store_id, selected_store_name = _select_export_store("export_store_id")
+    if not selected_store_id:
+        st.warning("⚠️ 目前沒有可匯出的分店資料")
+        if st.button("⬅️ 返回選單", use_container_width=True, key="back_export_no_store"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
 
-        output += f"\n{vendor_name}\n{store_name}\n"
+    c1, c2 = st.columns(2)
+    start = c1.date_input("起始日期", value=date.today() - timedelta(days=14), key="export_start")
+    end = c2.date_input("結束日期", value=date.today(), key="export_end")
 
-        vendor_rows = recs[recs["vendor_id"].astype(str).str.strip() == vendor_id].copy()
-        vendor_rows = vendor_rows.sort_values("item_name_disp")
+    vendor_options = ["全部廠商"]
+    item_options = ["全部品項"]
+    preview = pd.DataFrame()
+    filename = f"匯出資料_{selected_store_name}_{start}_{end}.csv"
 
-        for _, r in vendor_rows.iterrows():
-            qty = float(r["order_qty_num"])
-            qty_display = int(qty) if qty.is_integer() else qty
-            output += f"{r['item_name_disp']} {qty_display} {r['order_unit_disp']}\n"
+    if export_type == "今日進貨明細":
+        df = _build_purchase_detail_df()
+        if not df.empty:
+            df = df[df["store_id"].astype(str).str.strip() == str(selected_store_id).strip()].copy()
+            df = df[(df["order_date_dt"].notna()) & (df["order_date_dt"] >= start) & (df["order_date_dt"] <= end)].copy()
 
-        output += f"禮拜{week_map[delivery_date.weekday()]}到，謝謝\n"
+        if not df.empty and "vendor_name_disp" in df.columns:
+            vendor_options += _clean_option_list(df["vendor_name_disp"].dropna().tolist())
+        if not df.empty and "item_name_disp" in df.columns:
+            item_options += _clean_option_list(df["item_name_disp"].dropna().tolist())
 
-    st.text_area("📱 LINE 訊息內容預覽", value=output, height=350)
+        selected_vendor = st.selectbox("選擇廠商", vendor_options, key="export_vendor_po")
+        selected_item = st.selectbox("選擇品項", item_options, key="export_item_po")
 
-    if st.button("🚀 直接發送明細至 LINE", type="primary", use_container_width=True):
-        if send_line_message(output):
-            st.success(f"✅ 已成功推送到 {store_name} 群組！")
-        else:
-            st.error("❌ 發送失敗，請檢查 LINE 設定。")
+        if not df.empty and selected_vendor != "全部廠商":
+            df = df[df["vendor_name_disp"].astype(str).str.strip() == selected_vendor].copy()
+        if not df.empty and selected_item != "全部品項":
+            df = df[df["item_name_disp"].astype(str).str.strip() == selected_item].copy()
 
-    if st.button("⬅️ 返回選單", use_container_width=True, key="back_to_vendor_export"):
+        if not df.empty:
+            preview = pd.DataFrame({
+                "日期": pd.to_datetime(df["order_date_dt"], errors="coerce").dt.strftime("%Y/%m/%d"),
+                "分店": selected_store_name,
+                "廠商": df.get("vendor_name_disp", ""),
+                "品項": df.get("item_name_disp", ""),
+                "數量": pd.to_numeric(df.get("order_qty_num", 0), errors="coerce").fillna(0),
+                "單位": df.get("order_unit_disp", ""),
+                "金額": pd.to_numeric(df.get("amount_num", 0), errors="coerce").fillna(0),
+            }).reset_index(drop=True)
+        filename = f"今日進貨明細_{selected_store_name}_{start}_{end}.csv"
+
+    elif export_type == "進銷存分析":
+        df = _build_analysis_with_vendor(
+            store_id=selected_store_id,
+            start_date=start,
+            end_date=end,
+        )
+        if not df.empty and "廠商" in df.columns:
+            vendor_options += _clean_option_list(df["廠商"].dropna().tolist())
+        if not df.empty and "品項" in df.columns:
+            item_options += _clean_option_list(df["品項"].dropna().tolist())
+
+        selected_vendor = st.selectbox("選擇廠商", vendor_options, key="export_vendor_analysis")
+        selected_item = st.selectbox("選擇品項", item_options, key="export_item_analysis")
+
+        if not df.empty and selected_vendor != "全部廠商":
+            df = df[df["廠商"].astype(str).str.strip() == selected_vendor].copy()
+        if not df.empty and selected_item != "全部品項":
+            df = df[df["品項"].astype(str).str.strip() == selected_item].copy()
+
+        if not df.empty:
+            df = df[(df["上次庫存"] != 0) | (df["期間進貨"] != 0) | (df["期間消耗"] != 0) | (df["這次庫存"] != 0) | (df["這次叫貨"] != 0)].copy()
+            preview = df[[c for c in ["日期", "廠商", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"] if c in df.columns]].copy().reset_index(drop=True)
+        filename = f"進銷存分析_{selected_store_name}_{start}_{end}.csv"
+
+    elif export_type == "分店歷史":
+        df = _build_history_with_vendor(
+            store_id=selected_store_id,
+            start_date=start,
+            end_date=end,
+        )
+        if not df.empty and "廠商" in df.columns:
+            vendor_options += _clean_option_list(df["廠商"].dropna().tolist())
+        if not df.empty and "品項" in df.columns:
+            item_options += _clean_option_list(df["品項"].dropna().tolist())
+
+        selected_vendor = st.selectbox("選擇廠商", vendor_options, key="export_vendor_history")
+        selected_item = st.selectbox("選擇品項", item_options, key="export_item_history")
+
+        if not df.empty and selected_vendor != "全部廠商":
+            df = df[df["廠商"].astype(str).str.strip() == selected_vendor].copy()
+        if not df.empty and selected_item != "全部品項":
+            df = df[df["品項"].astype(str).str.strip() == selected_item].copy()
+
+        if not df.empty:
+            df = df[(df["上次庫存"] != 0) | (df["期間進貨"] != 0) | (df["期間消耗"] != 0) | (df["這次庫存"] != 0) | (df.get("這次叫貨", 0) != 0)].copy()
+            preview = df[[c for c in ["日期顯示", "廠商", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"] if c in df.columns]].copy().reset_index(drop=True)
+            if "日期顯示" in preview.columns:
+                preview = preview.rename(columns={"日期顯示": "日期"})
+        filename = f"分店歷史_{selected_store_name}_{start}_{end}.csv"
+
+    else:
+        po_df = _build_purchase_detail_df()
+        ana_df = _build_analysis_with_vendor(
+            store_id=selected_store_id,
+            start_date=start,
+            end_date=end,
+        )
+        hist_df = _build_history_with_vendor(
+            store_id=selected_store_id,
+            start_date=start,
+            end_date=end,
+        )
+
+        po_count = 0
+        ana_count = 0
+        hist_count = 0
+
+        if not po_df.empty:
+            po_df = po_df[po_df["store_id"].astype(str).str.strip() == str(selected_store_id).strip()].copy()
+            po_df = po_df[(po_df["order_date_dt"].notna()) & (po_df["order_date_dt"] >= start) & (po_df["order_date_dt"] <= end)].copy()
+            po_count = len(po_df)
+        if not ana_df.empty:
+            ana_df = ana_df[(ana_df["上次庫存"] != 0) | (ana_df["期間進貨"] != 0) | (ana_df["期間消耗"] != 0) | (ana_df["這次庫存"] != 0) | (ana_df["這次叫貨"] != 0)].copy()
+            ana_count = len(ana_df)
+        if not hist_df.empty:
+            hist_df = hist_df[(hist_df["上次庫存"] != 0) | (hist_df["期間進貨"] != 0) | (hist_df["期間消耗"] != 0) | (hist_df["這次庫存"] != 0) | (hist_df.get("這次叫貨", 0) != 0)].copy()
+            hist_count = len(hist_df)
+
+        preview = pd.DataFrame([
+            {"資料類型": "今日進貨明細", "筆數": po_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
+            {"資料類型": "進銷存分析", "筆數": ana_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
+            {"資料類型": "分店歷史", "筆數": hist_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
+        ])
+        filename = f"資料總覽_{selected_store_name}_{start}_{end}.csv"
+
+    st.markdown("---")
+    _download_csv_block(preview, filename)
+
+    if st.button("⬅️ 返回選單", use_container_width=True, key="back_export_center"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
@@ -506,6 +688,8 @@ def page_analysis():
             hist_filt = hist_filt[hist_filt["廠商"] == selected_vendor].copy()
         if not purchase_filt.empty and "廠商" in purchase_filt.columns:
             purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
+
+    display_mode = _display_mode_selector("analysis_display_mode")
 
     st.markdown("---")
 
@@ -615,8 +799,12 @@ def page_analysis():
                 key="download_analysis_all_vendors",
             )
 
+            show_vendor_summary = vendor_summary.copy()
+            if display_mode == "手機精簡":
+                show_vendor_summary["廠商"] = show_vendor_summary["廠商"].apply(lambda x: _short_item_name(x, 10))
+
             render_report_dataframe(
-                vendor_summary,
+                show_vendor_summary,
                 column_config={
                     "日期": st.column_config.TextColumn(width="small"),
                     "廠商": st.column_config.TextColumn(width="medium"),
@@ -671,18 +859,19 @@ def page_analysis():
 
             export_df = detail_df[show_cols].copy().reset_index(drop=True)
 
-            st.download_button(
-                "📥 匯出 CSV",
-                export_df.to_csv(index=False).encode("utf-8-sig"),
-                file_name=f"進銷存分析_{selected_vendor}_{start}_{end}.csv",
-                mime="text/csv",
-                use_container_width=False,
-                key="download_analysis_single_vendor",
-            )
-
-            render_report_dataframe(
-                export_df,
-                column_config={
+            if display_mode == "手機精簡":
+                show_df = export_df[["日期", "品項", "這次庫存", "這次叫貨", "日平均"]].copy()
+                show_df["品項"] = show_df["品項"].apply(_short_item_name)
+                cfg = {
+                    "日期": st.column_config.TextColumn(width="small"),
+                    "品項": st.column_config.TextColumn(width="medium"),
+                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                }
+            else:
+                show_df = export_df.copy()
+                cfg = {
                     "日期": st.column_config.TextColumn(width="small"),
                     "品項": st.column_config.TextColumn(width="medium"),
                     "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
@@ -692,8 +881,18 @@ def page_analysis():
                     "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                },
+                }
+
+            st.download_button(
+                "📥 匯出 CSV",
+                export_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"進銷存分析_{selected_vendor}_{start}_{end}.csv",
+                mime="text/csv",
+                use_container_width=False,
+                key="download_analysis_single_vendor",
             )
+
+            render_report_dataframe(show_df, column_config=cfg)
 
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_single"):
         st.session_state.step = "select_vendor"
@@ -704,10 +903,6 @@ def page_analysis():
 # [R4] 成本檢查頁
 # ============================================================
 def page_cost_debug():
-    if str(st.session_state.get("login_role_id", "")).strip().lower() not in ["owner", "admin"]:
-        st.error("你沒有權限進入此頁。")
-        return
-
     st.title("🧮 成本檢查")
 
     items_df = _get_active_df(read_table("items"))
