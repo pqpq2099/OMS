@@ -32,6 +32,9 @@ from oms_core import (
     append_rows_by_header,
     get_header,
     allocate_ids,
+    get_spreadsheet,
+    bust_cache,
+    render_report_dataframe,
 )
 
 
@@ -56,6 +59,18 @@ ROLE_LABELS = {
 }
 
 
+HIDDEN_ROLE_IDS = {"owner"}
+
+
+def _visible_users_df(df: pd.DataFrame) -> pd.DataFrame:
+    """隱藏系統負責人，避免出現在一般管理名單與表格中。"""
+    if df.empty or "role_id" not in df.columns:
+        return df.copy()
+    work = df.copy()
+    work["role_id"] = work["role_id"].astype(str).str.strip().str.lower()
+    return work[~work["role_id"].isin(HIDDEN_ROLE_IDS)].copy()
+
+
 # ============================================================
 # [U1] 欄位安全輔助
 # ============================================================
@@ -76,11 +91,100 @@ def _pick_first_existing_column(df: pd.DataFrame, candidates: list[str], fallbac
     return fallback
 
 
+def _safe_active_series(df: pd.DataFrame, col: str = "is_active") -> pd.Series:
+    """將啟用欄位統一轉成 1/0，兼容 1 / 1.0 / TRUE / true / yes。"""
+    if col not in df.columns:
+        return pd.Series([1] * len(df), index=df.index)
+
+    raw = df[col].copy()
+    raw_str = raw.astype(str).str.strip().str.lower()
+    true_mask = raw_str.isin(["1", "1.0", "true", "yes", "y"])
+    false_mask = raw_str.isin(["0", "0.0", "false", "no", "n"])
+
+    result = pd.Series(1, index=df.index, dtype="int64")
+    result.loc[false_mask] = 0
+    result.loc[true_mask] = 1
+
+    numeric_mask = ~(true_mask | false_mask)
+    if numeric_mask.any():
+        numeric_values = pd.to_numeric(raw[numeric_mask], errors="coerce")
+        result.loc[numeric_mask] = numeric_values.fillna(1).astype(int)
+
+    return result
+
+
+def _write_back_users_df(users_df: pd.DataFrame):
+    """依 users 原始 header，將整張 users 表寫回 Google Sheet。"""
+    users_header = get_header("users")
+    work = users_df.copy()
+
+    for col in users_header:
+        if col not in work.columns:
+            work[col] = ""
+
+    work = work[users_header].copy()
+    rows = [users_header] + work.fillna("").astype(str).values.tolist()
+
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet("users")
+    ws.clear()
+    ws.update(rows)
+    bust_cache()
+
+
+def _update_user_fields_by_user_id(user_id: str, updates: dict):
+    """以 user_id 為唯一鍵，直接更新 users 表指定欄位。"""
+    users_df = read_table("users").copy()
+    if users_df.empty:
+        raise ValueError("users 表沒有資料")
+
+    for col in ["user_id", "updated_at", "updated_by", "password_hash", "must_change_password", "store_scope"]:
+        if col not in users_df.columns:
+            users_df[col] = ""
+
+    mask = users_df["user_id"].astype(str).str.strip() == str(user_id).strip()
+    if not mask.any():
+        raise ValueError(f"找不到 user_id：{user_id}")
+
+    for field, value in updates.items():
+        if field not in users_df.columns:
+            users_df[field] = ""
+        users_df.loc[mask, field] = value
+
+    _write_back_users_df(users_df)
+
+
+def _count_active_store_managers(users_df: pd.DataFrame, store_scope: str, exclude_user_id: str = "") -> int:
+    """計算某分店目前啟用中的店長人數。"""
+    if users_df.empty:
+        return 0
+
+    work = users_df.copy()
+    work = _ensure_columns(work, ["user_id", "role_id", "store_scope", "is_active"])
+    work["role_id"] = work["role_id"].astype(str).str.strip().str.lower()
+    work["store_scope"] = work["store_scope"].astype(str).str.strip()
+    work["user_id"] = work["user_id"].astype(str).str.strip()
+    work["is_active"] = _safe_active_series(work)
+
+    mask = (work["role_id"] == "store_manager") & (work["store_scope"] == str(store_scope).strip()) & (work["is_active"] == 1)
+    if exclude_user_id:
+        mask = mask & (work["user_id"] != str(exclude_user_id).strip())
+    return int(mask.sum())
+
+
 # ============================================================
 # [U2] 使用者權限主頁
 # ============================================================
 def page_user_admin():
     st.title("👥 使用者權限")
+
+    login_role_id = str(st.session_state.get("login_role_id", "")).strip().lower()
+    if login_role_id not in ["owner", "admin"]:
+        st.error("你沒有權限進入此頁。")
+        return
 
     # --------------------------------------------------------
     # 讀取資料表
@@ -113,6 +217,8 @@ def page_user_admin():
             "account_code",
             "email",
             "display_name",
+            "password_hash",
+            "must_change_password",
             "role_id",
             "store_scope",
             "is_active",
@@ -151,6 +257,11 @@ def page_user_admin():
     users_df["display_name"] = users_df["display_name"].astype(str).str.strip()
     users_df["role_id"] = users_df["role_id"].astype(str).str.strip()
     users_df["store_scope"] = users_df["store_scope"].astype(str).str.strip()
+    users_df["must_change_password"] = (
+        pd.to_numeric(users_df["must_change_password"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     users_df["is_active"] = (
         pd.to_numeric(users_df["is_active"], errors="coerce")
@@ -230,6 +341,7 @@ def page_user_admin():
     users_view["store_display"] = users_view["store_display_by_id"].fillna(users_view["store_display_by_code"])
     users_view.loc[users_view["store_scope"] == "ALL", "store_display"] = "全部分店"
     users_view["store_display"] = users_view["store_display"].fillna("未設定")
+    users_view = _visible_users_df(users_view)
 
     # --------------------------------------------------------
     # 建立三個分頁
@@ -250,17 +362,160 @@ def page_user_admin():
             st.info("目前尚無使用者資料")
         else:
             show_df = users_view[
-                ["account_code", "display_name", "role_display", "store_display"]
+                ["account_code", "display_name", "role_display", "store_display", "is_active", "must_change_password"]
             ].copy()
+            show_df["is_active"] = show_df["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
+            show_df["must_change_password"] = show_df["must_change_password"].map({1: "需修改", 0: "正常"}).fillna("正常")
 
             show_df.columns = [
                 "帳號",
                 "名稱",
                 "角色",
                 "分店",
+                "狀態",
+                "密碼狀態",
             ]
 
-            st.dataframe(show_df, use_container_width=True, hide_index=True)
+            render_report_dataframe(show_df)
+
+        st.divider()
+
+        # ============================================================
+        # 修改帳號與名稱
+        # ============================================================
+        st.subheader("修改帳號資料")
+
+        edit_users_df = read_table("users").copy()
+        edit_users_df = _ensure_columns(edit_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
+
+        edit_users_df = _visible_users_df(edit_users_df)
+        if edit_users_df.empty:
+            st.info("沒有可修改的使用者資料")
+        else:
+            edit_users_df["account_code"] = edit_users_df["account_code"].astype(str).str.strip()
+            edit_users_df["display_name"] = edit_users_df["display_name"].astype(str).str.strip()
+            edit_users_df["is_active"] = _safe_active_series(edit_users_df)
+            edit_users_df["edit_label"] = edit_users_df.apply(
+                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}｜帳號：{str(r.get('account_code', '')).strip() or '未設定'}",
+                axis=1,
+            )
+            edit_option_map = {row["edit_label"]: str(row["user_id"]).strip() for _, row in edit_users_df.iterrows()}
+            edit_options = list(edit_option_map.keys())
+
+            selected_edit_label = st.selectbox("選擇要修改的使用者", edit_options, key="edit_user_select")
+            selected_edit_user_id = edit_option_map.get(selected_edit_label, "")
+
+            if selected_edit_user_id:
+                selected_row = edit_users_df[edit_users_df["user_id"].astype(str).str.strip() == selected_edit_user_id].iloc[0]
+                with st.form("form_edit_user_account"):
+                    edit_account_code = st.text_input("修改帳號", value=str(selected_row.get("account_code", "")).strip()).strip()
+                    edit_display_name = st.text_input("修改名稱", value=str(selected_row.get("display_name", "")).strip()).strip()
+                    submitted_edit_user = st.form_submit_button("更新帳號資料", use_container_width=True)
+
+                if submitted_edit_user:
+                    if not edit_account_code:
+                        st.error("帳號不可空白。")
+                    elif not edit_display_name:
+                        st.error("名稱不可空白。")
+                    else:
+                        compare_df = edit_users_df.copy()
+                        compare_df["account_code_norm"] = compare_df["account_code"].astype(str).str.strip().str.lower()
+                        duplicated = compare_df[
+                            (compare_df["account_code_norm"] == edit_account_code.strip().lower())
+                            & (compare_df["user_id"].astype(str).str.strip() != selected_edit_user_id)
+                        ]
+                        if not duplicated.empty:
+                            st.error("此帳號已存在，請改用其他帳號。")
+                        else:
+                            try:
+                                _update_user_fields_by_user_id(
+                                    selected_edit_user_id,
+                                    {
+                                        "account_code": edit_account_code.strip(),
+                                        "display_name": edit_display_name.strip(),
+                                        "updated_at": _now_ts(),
+                                        "updated_by": st.session_state.get("login_user", ""),
+                                    },
+                                )
+                                st.success("帳號資料已更新。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失敗：{e}")
+
+        st.markdown("---")
+
+        # ============================================================
+        # 啟用 / 停用使用者
+        # ============================================================
+        st.subheader("使用者啟用狀態")
+
+        toggle_users_df = read_table("users").copy()
+        toggle_users_df = _ensure_columns(toggle_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
+
+        toggle_users_df = _visible_users_df(toggle_users_df)
+        if toggle_users_df.empty:
+            st.info("沒有可調整的使用者資料")
+        else:
+            toggle_users_df["account_code"] = toggle_users_df["account_code"].astype(str).str.strip()
+            toggle_users_df["display_name"] = toggle_users_df["display_name"].astype(str).str.strip()
+            toggle_users_df["is_active"] = _safe_active_series(toggle_users_df)
+            toggle_users_df["status_label"] = toggle_users_df["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
+            toggle_users_df["toggle_label"] = toggle_users_df.apply(
+                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}｜帳號：{str(r.get('account_code', '')).strip() or '未設定'}｜目前：{str(r.get('status_label', '啟用'))}",
+                axis=1,
+            )
+            toggle_option_map = {row["toggle_label"]: str(row["user_id"]).strip() for _, row in toggle_users_df.iterrows()}
+            toggle_options = list(toggle_option_map.keys())
+
+            selected_toggle_label = st.selectbox("選擇使用者", toggle_options, key="toggle_user_select")
+            selected_toggle_user_id = toggle_option_map.get(selected_toggle_label, "")
+
+            if selected_toggle_user_id:
+                selected_toggle_row = toggle_users_df[toggle_users_df["user_id"].astype(str).str.strip() == selected_toggle_user_id].iloc[0]
+                current_is_active = int(selected_toggle_row.get("is_active", 1))
+                target_is_active = st.selectbox(
+                    "設定狀態",
+                    ["啟用", "停用"],
+                    index=0 if current_is_active == 1 else 1,
+                    key="toggle_user_status_select",
+                )
+
+                if st.button("更新使用者狀態", use_container_width=True, key="btn_toggle_user_status"):
+                    new_is_active = 1 if target_is_active == "啟用" else 0
+                    if str(selected_toggle_row.get("role_id", "")).strip().lower() == "owner" and new_is_active == 0:
+                        active_owner_count = int(
+                            ((toggle_users_df.get("role_id", "").astype(str).str.strip().str.lower() == "owner") & (_safe_active_series(toggle_users_df) == 1)).sum()
+                        ) if "role_id" in toggle_users_df.columns else 1
+                        if active_owner_count <= 1:
+                            st.error("至少要保留一位啟用中的系統負責人，不能停用最後一位 owner。")
+                        else:
+                            try:
+                                _update_user_fields_by_user_id(
+                                    selected_toggle_user_id,
+                                    {
+                                        "is_active": new_is_active,
+                                        "updated_at": _now_ts(),
+                                        "updated_by": st.session_state.get("login_user", ""),
+                                    },
+                                )
+                                st.success("使用者狀態已更新。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失敗：{e}")
+                    else:
+                        try:
+                            _update_user_fields_by_user_id(
+                                selected_toggle_user_id,
+                                {
+                                    "is_active": new_is_active,
+                                    "updated_at": _now_ts(),
+                                    "updated_by": st.session_state.get("login_user", ""),
+                                },
+                            )
+                            st.success("使用者狀態已更新。")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"更新失敗：{e}")
 
         st.divider()
 
@@ -294,12 +549,22 @@ def page_user_admin():
                 if mask.sum() == 0:
                     st.error("找不到該使用者")
                 else:
-                    reset_users_df.loc[mask, "password_hash"] = new_hash
-                    reset_users_df.loc[mask, "must_change_password"] = 1
-                    reset_users_df.loc[mask, "updated_at"] = now_ts
-                    reset_users_df.loc[mask, "updated_by"] = st.session_state.get("login_user", "")
+                    selected_user_id = str(reset_users_df.loc[mask, "user_id"].iloc[0]).strip()
 
-                    st.warning("目前這段只是記憶體內修改，若要真正寫回 users 表，需改成更新指定列的寫法。")
+                    try:
+                        _update_user_fields_by_user_id(
+                            selected_user_id,
+                            {
+                                "password_hash": new_hash,
+                                "must_change_password": 1,
+                                "updated_at": now_ts,
+                                "updated_by": st.session_state.get("login_user", ""),
+                            },
+                        )
+                        st.success(f"已重設帳號 {selected_account} 的密碼為 123456。")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"重設失敗：{e}")
 
         st.markdown("---")
         st.subheader("新增使用者")
@@ -310,17 +575,13 @@ def page_user_admin():
         create_users_df = read_table("users").copy()
 
         # 只取啟用中的角色
-        if not create_roles_df.empty and "is_active" in create_roles_df.columns:
-            create_roles_df["is_active"] = pd.to_numeric(
-                create_roles_df["is_active"], errors="coerce"
-            ).fillna(0)
+        if not create_roles_df.empty:
+            create_roles_df["is_active"] = _safe_active_series(create_roles_df)
             create_roles_df = create_roles_df[create_roles_df["is_active"] == 1].copy()
 
         # 只取啟用中的分店
-        if not create_stores_df.empty and "is_active" in create_stores_df.columns:
-            create_stores_df["is_active"] = pd.to_numeric(
-                create_stores_df["is_active"], errors="coerce"
-            ).fillna(0)
+        if not create_stores_df.empty:
+            create_stores_df["is_active"] = _safe_active_series(create_stores_df)
             create_stores_df = create_stores_df[create_stores_df["is_active"] == 1].copy()
 
         # 角色下拉選單：顯示中文，實際寫入 role_id
@@ -336,21 +597,28 @@ def page_user_admin():
                 if not role_id:
                     continue
 
-                label = role_name_zh if role_name_zh else role_name if role_name else role_id
-                show_text = f"{label}（{role_id}）"
+                # 只有系統負責人可新增系統負責人
+                if role_id == "owner" and login_role_id != "owner":
+                    continue
+
+                label = role_name_zh if role_name_zh else ROLE_LABELS.get(role_id, role_name if role_name else role_id)
+                show_text = label
                 role_options.append(show_text)
                 role_label_map[show_text] = role_id
         else:
-            role_options = [
-                "系統負責人（owner）",
-                "管理員（admin）",
-                "店長（store_manager）",
-            ]
-            role_label_map = {
-                "系統負責人（owner）": "owner",
-                "管理員（admin）": "admin",
-                "店長（store_manager）": "store_manager",
-            }
+            if login_role_id == "owner":
+                role_options = ["系統負責人", "管理員", "店長"]
+                role_label_map = {
+                    "系統負責人": "owner",
+                    "管理員": "admin",
+                    "店長": "store_manager",
+                }
+            else:
+                role_options = ["管理員", "店長"]
+                role_label_map = {
+                    "管理員": "admin",
+                    "店長": "store_manager",
+                }
 
         # 分店下拉選單
         store_options = ["ALL"]
@@ -366,7 +634,7 @@ def page_user_admin():
                     continue
 
                 label = store_name_zh if store_name_zh else store_name if store_name else store_id
-                show_text = f"{label}（{store_id}）"
+                show_text = label
                 store_options.append(show_text)
                 store_label_map[show_text] = store_id
 
@@ -411,9 +679,11 @@ def page_user_admin():
                 else:
                     if selected_role_id in ["store_manager", "leader", "test_store_manager", "test_leader"] and selected_store_scope == "ALL":
                         st.error("此角色必須綁定指定分店，不可使用 ALL。")
+                    elif selected_role_id == "store_manager" and _count_active_store_managers(create_users_df, selected_store_scope) >= 3:
+                        st.error("此分店店長已達 3 位上限，請先調整後再建立。")
                     else:
                         try:
-                            new_user_id = allocate_ids("users", 1)[0]
+                            new_user_id = allocate_ids({"users": 1})["users"][0]
                         except Exception:
                             new_user_id = f"USER_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
@@ -460,17 +730,85 @@ def page_user_admin():
         if manager_df.empty:
             st.info("目前沒有店長資料")
         else:
-            show_manager_df = manager_df[
-                ["account_code", "display_name", "store_display"]
-            ].copy()
+            show_manager_df = manager_df[["account_code", "display_name", "store_display"]].copy()
+            show_manager_df.columns = ["店長帳號", "店長名稱", "管理分店"]
+            render_report_dataframe(show_manager_df)
 
-            show_manager_df.columns = [
-                "店長帳號",
-                "店長名稱",
-                "管理分店",
-            ]
+            st.markdown("---")
+            st.subheader("調整店長分店")
 
-            st.dataframe(show_manager_df, use_container_width=True, hide_index=True)
+            manager_option_map = {
+                f"{row['display_name']}｜帳號：{row['account_code']}": row['user_id']
+                for _, row in manager_df.sort_values(["display_name", "account_code"]).iterrows()
+            }
+            manager_options = list(manager_option_map.keys())
+
+            active_stores_df = stores_df.copy()
+            active_stores_df["is_active"] = _safe_active_series(active_stores_df)
+            active_stores_df = active_stores_df[active_stores_df["is_active"] == 1].copy()
+
+            store_option_map = {}
+            store_options = []
+            for _, row in active_stores_df.iterrows():
+                store_id = str(row.get("store_id", "")).strip()
+                store_name = str(row.get("store_name_zh", "")).strip() or str(row.get("store_name", "")).strip() or store_id
+                if not store_id:
+                    continue
+                label = store_name
+                store_options.append(label)
+                store_option_map[label] = store_id
+
+            if not store_options:
+                st.warning("目前沒有可指派的啟用分店。")
+            else:
+                selected_manager_label = st.selectbox("選擇店長", manager_options, key="mgr_user_select")
+                selected_manager_user_id = manager_option_map.get(selected_manager_label, "")
+
+                if not selected_manager_user_id:
+                    st.error("找不到選取的店長資料。")
+                else:
+                    current_scope = str(
+                        manager_df.loc[manager_df["user_id"] == selected_manager_user_id, "store_scope"].iloc[0]
+                    ).strip()
+                    current_store_idx = 0
+                    for idx, label in enumerate(store_options):
+                        if store_option_map.get(label, "") == current_scope:
+                            current_store_idx = idx
+                            break
+
+                    selected_store_label = st.selectbox(
+                        "改派分店",
+                        store_options,
+                        index=current_store_idx,
+                        key="mgr_store_scope_select",
+                    )
+                    new_store_scope = store_option_map.get(selected_store_label, "")
+
+                    if st.button("更新店長分店", use_container_width=True, key="btn_update_manager_scope"):
+                        if not new_store_scope:
+                            st.error("分店資料異常，請重新選擇。")
+                        else:
+                            current_manager_count = _count_active_store_managers(
+                                users_df,
+                                new_store_scope,
+                                exclude_user_id=selected_manager_user_id,
+                            )
+                            if current_manager_count >= 3:
+                                st.error("此分店店長已達 3 位上限，無法再指派。")
+                            else:
+                                try:
+                                    _update_user_fields_by_user_id(
+                                        selected_manager_user_id,
+                                        {
+                                            "store_scope": new_store_scope,
+                                            "updated_at": _now_ts(),
+                                            "updated_by": st.session_state.get("login_user", ""),
+                                        },
+                                    )
+                                    st.success("店長分店已更新。")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"更新失敗：{e}")
 
     # ========================================================
     # TAB 3 組長管理
@@ -483,15 +821,74 @@ def page_user_admin():
         if leader_df.empty:
             st.info("目前沒有組長資料")
         else:
-            show_leader_df = leader_df[
-                ["account_code", "display_name", "store_display"]
-            ].copy()
+            show_leader_df = leader_df[["account_code", "display_name", "store_display"]].copy()
+            show_leader_df.columns = ["組長帳號", "組長名稱", "所屬分店"]
+            render_report_dataframe(show_leader_df)
 
-            show_leader_df.columns = [
-                "組長帳號",
-                "組長名稱",
-                "所屬分店",
-            ]
+            st.markdown("---")
+            st.subheader("調整組長分店")
 
-            st.dataframe(show_leader_df, use_container_width=True, hide_index=True)
-            st.dataframe(show_leader_df, use_container_width=True, hide_index=True)
+            leader_option_map = {
+                f"{row['display_name']}｜帳號：{row['account_code']}": row['user_id']
+                for _, row in leader_df.sort_values(["display_name", "account_code"]).iterrows()
+            }
+            leader_options = list(leader_option_map.keys())
+
+            active_stores_df = stores_df.copy()
+            active_stores_df["is_active"] = _safe_active_series(active_stores_df)
+            active_stores_df = active_stores_df[active_stores_df["is_active"] == 1].copy()
+
+            leader_store_option_map = {}
+            leader_store_options = []
+            for _, row in active_stores_df.iterrows():
+                store_id = str(row.get("store_id", "")).strip()
+                store_name = str(row.get("store_name_zh", "")).strip() or str(row.get("store_name", "")).strip() or store_id
+                if not store_id:
+                    continue
+                label = store_name
+                leader_store_options.append(label)
+                leader_store_option_map[label] = store_id
+
+            if not leader_store_options:
+                st.warning("目前沒有可指派的啟用分店。")
+            else:
+                selected_leader_label = st.selectbox("選擇組長", leader_options, key="leader_user_select")
+                selected_leader_user_id = leader_option_map.get(selected_leader_label, "")
+
+                if not selected_leader_user_id:
+                    st.error("找不到選取的組長資料。")
+                else:
+                    current_scope = str(
+                        leader_df.loc[leader_df["user_id"] == selected_leader_user_id, "store_scope"].iloc[0]
+                    ).strip()
+                    current_store_idx = 0
+                    for idx, label in enumerate(leader_store_options):
+                        if leader_store_option_map.get(label, "") == current_scope:
+                            current_store_idx = idx
+                            break
+
+                    selected_store_label = st.selectbox(
+                        "改派分店",
+                        leader_store_options,
+                        index=current_store_idx,
+                        key="leader_store_scope_select",
+                    )
+                    new_store_scope = leader_store_option_map.get(selected_store_label, "")
+
+                    if st.button("更新組長分店", use_container_width=True, key="btn_update_leader_scope"):
+                        if not new_store_scope:
+                            st.error("分店資料異常，請重新選擇。")
+                        else:
+                            try:
+                                _update_user_fields_by_user_id(
+                                    selected_leader_user_id,
+                                    {
+                                        "store_scope": new_store_scope,
+                                        "updated_at": _now_ts(),
+                                        "updated_by": st.session_state.get("login_user", ""),
+                                    },
+                                )
+                                st.success("組長分店已更新。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失敗：{e}")

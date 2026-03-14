@@ -25,6 +25,16 @@ import hashlib
 import pandas as pd
 import streamlit as st
 
+LOGIN_ROLE_LABELS = {
+    "owner": "系統負責人",
+    "admin": "管理員",
+    "store_manager": "店長",
+    "leader": "組長",
+    "test_admin": "測試管理員",
+    "test_store_manager": "測試店長",
+    "test_leader": "測試組長",
+}
+
 from oms_core import get_spreadsheet, read_table
 
 
@@ -170,9 +180,10 @@ def render_login_sidebar():
     st.sidebar.markdown("---")
     st.sidebar.caption("目前登入")
     st.sidebar.write(st.session_state.get("login_display_name", ""))
+    role_id = str(st.session_state.get("login_role_id", "")).strip()
+    role_label = LOGIN_ROLE_LABELS.get(role_id, role_id)
     st.sidebar.caption(
-        f"{st.session_state.get('login_account_code', '')} / "
-        f"{st.session_state.get('login_role_id', '')}"
+        f"{st.session_state.get('login_account_code', '')} / {role_label}"
     )
 
     if st.sidebar.button("登出", use_container_width=True, key="btn_logout"):

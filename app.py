@@ -23,9 +23,11 @@ from oms_core import (
     get_header,
     get_spreadsheet,
     read_table,
+    render_report_dataframe,
 )
 
 from pages.page_order_entry import (
+    page_daily_stock_order_record,
     page_order_entry,
     page_order_message_detail,
     page_select_store,
@@ -56,8 +58,6 @@ if "login_user" not in st.session_state:
 if st.session_state.get("force_change_password", False):
     page_login()
     st.stop()
-    
-st.set_page_config(page_title="營運管理系統", layout="centered")
 
 # ============================================================
 # [A1] Session State 初始化
@@ -80,9 +80,11 @@ def init_session():
     if "vendor_name" not in st.session_state:
         st.session_state.vendor_name = ""
 
-    # 先用假角色測試，之後再接 users / roles
+    # 舊頁面仍可能讀取 role，這裡同步正式登入角色，避免抓到錯誤預設值
     if "role" not in st.session_state:
-        st.session_state.role = "owner"  # owner / admin / store_manager / leader
+        st.session_state.role = st.session_state.get("login_role_id", "")
+    else:
+        st.session_state.role = st.session_state.get("login_role_id", st.session_state.role)
 
 
 
@@ -273,7 +275,7 @@ def _load_id_sequences_view() -> pd.DataFrame:
 def page_system_maintenance():
     st.title("🛠️ 系統維護")
 
-    if st.session_state.role != "owner":
+    if st.session_state.get("login_role_id", "") != "owner":
         st.error("你沒有權限進入此頁。")
         return
 
@@ -329,7 +331,7 @@ def page_system_maintenance():
     if seq_df.empty:
         st.info("目前讀不到 id_sequences 資料")
     else:
-        st.dataframe(seq_df, width="stretch", hide_index=True)
+        render_report_dataframe(seq_df)
 
     if st.button("⬅️ 返回", width="stretch", key="back_from_system_maintenance"):
         st.session_state.step = "select_store"
@@ -339,7 +341,7 @@ def page_system_maintenance():
 def page_system_tools():
     st.title("🧰 系統工具")
 
-    if st.session_state.role != "owner":
+    if st.session_state.get("login_role_id", "") != "owner":
         st.error("你沒有權限進入此頁。")
         return
 
@@ -387,7 +389,7 @@ def page_placeholder(title: str, desc: str = "此功能入口已建立，功能�
 def page_appearance_settings():
     st.title("🎨 系統外觀")
 
-    if st.session_state.role not in ["owner", "admin"]:
+    if st.session_state.get("login_role_id", "") not in ["owner", "admin"]:
         st.error("你沒有權限進入此頁。")
         return
 
@@ -405,7 +407,7 @@ def page_appearance_settings():
     )
 
     logo_url = st.text_input(
-        "Logo URL",
+        "Logo 連結",
         value=current_logo_url,
         key="appearance_logo_url",
     )
@@ -442,7 +444,7 @@ def page_appearance_settings():
 def page_system_info():
     st.title("ℹ️ 系統資訊")
 
-    if st.session_state.role not in ["owner", "admin"]:
+    if st.session_state.get("login_role_id", "") != "owner":
         st.error("你沒有權限進入此頁。")
         return
 
@@ -454,12 +456,12 @@ def page_system_info():
         ("時區", settings_map.get("timezone", "")),
         ("建議叫貨天數", settings_map.get("default_suggestion_days", "")),
         ("歷史天數", settings_map.get("history_days", "")),
-        ("Logo URL", settings_map.get("logo_url", "")),
+        ("Logo 連結", settings_map.get("logo_url", "")),
     ]
 
     st.caption("此頁以查看系統目前設定為主，不直接修改營運邏輯參數。")
     info_df = pd.DataFrame(display_rows, columns=["項目", "目前值"])
-    st.dataframe(info_df, width="stretch", hide_index=True)
+    render_report_dataframe(info_df)
 
     if st.button("⬅️ 返回", width="stretch", key="back_from_system_info"):
         st.session_state.step = "select_store"
@@ -511,6 +513,10 @@ def render_sidebar():
             st.session_state.step = "order_message_detail"
             st.rerun()
 
+        if st.button("📋 當日庫存叫貨紀錄", width="stretch", key="sb_daily_stock_order_record"):
+            st.session_state.step = "daily_stock_order_record"
+            st.rerun()
+
         st.markdown("---")
 
         # ====================================================
@@ -526,9 +532,10 @@ def render_sidebar():
             st.session_state.step = "view_history"
             st.rerun()
 
-        if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
-            st.session_state.step = "cost_debug"
-            st.rerun()
+        if role in ["owner", "admin"]:
+            if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
+                st.session_state.step = "cost_debug"
+                st.rerun()
 
         if st.button("📤 資料匯出", width="stretch", key="sb_export"):
             st.session_state.step = "export"
@@ -579,17 +586,16 @@ def render_sidebar():
             if st.button("🎨 系統外觀", width="stretch", key="sb_appearance_settings"):
                 st.session_state.step = "appearance_settings"
                 st.rerun()
-            
-            if st.button("🔐 密碼工具", width="stretch", key="sb_password_tool"):
-                st.session_state.step = "password_tool"
-                st.rerun()
-                
-            if st.button("ℹ️ 系統資訊", width="stretch", key="sb_system_info"):
-                st.session_state.step = "system_info"
-                st.rerun()
-
 
             if role == "owner":
+                if st.button("🔐 密碼工具", width="stretch", key="sb_password_tool"):
+                    st.session_state.step = "password_tool"
+                    st.rerun()
+
+                if st.button("ℹ️ 系統資訊", width="stretch", key="sb_system_info"):
+                    st.session_state.step = "system_info"
+                    st.rerun()
+
                 if st.button("🛠 系統維護", width="stretch", key="sb_system_maintenance"):
                     st.session_state.step = "system_maintenance"
                     st.rerun()
@@ -625,6 +631,9 @@ def router():
     
     elif step == "order_message_detail":
         page_order_message_detail()
+
+    elif step == "daily_stock_order_record":
+        page_daily_stock_order_record()
     
     elif step == "export":
         page_export()

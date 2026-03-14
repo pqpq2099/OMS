@@ -21,6 +21,10 @@ def _hash_password(password: str) -> str:
 
 
 def page_password_tool():
+    if str(st.session_state.get("login_role_id", "")).strip().lower() != "owner":
+        st.error("你沒有權限進入此頁。")
+        return
+
     st.title("🔐 密碼工具")
 
     st.info("輸入密碼後，系統會產生對應的 password_hash，可直接貼回 users 表。")
