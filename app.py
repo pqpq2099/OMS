@@ -78,12 +78,11 @@ def init_session():
     if "vendor_name" not in st.session_state:
         st.session_state.vendor_name = ""
 
-    # 舊頁面若仍有使用 role，這裡同步登入角色，避免抓到錯誤預設值
-    login_role = st.session_state.get("login_role_id", "")
+    # 舊頁面仍可能讀取 role，這裡同步正式登入角色，避免抓到錯誤預設值
     if "role" not in st.session_state:
-        st.session_state.role = login_role
-    elif login_role and st.session_state.role != login_role:
-        st.session_state.role = login_role
+        st.session_state.role = st.session_state.get("login_role_id", "")
+    else:
+        st.session_state.role = st.session_state.get("login_role_id", st.session_state.role)
 
 
 
