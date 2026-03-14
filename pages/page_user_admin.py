@@ -204,6 +204,8 @@ def page_user_admin():
             "account_code",
             "email",
             "display_name",
+            "password_hash",
+            "must_change_password",
             "role_id",
             "store_scope",
             "is_active",
@@ -242,6 +244,11 @@ def page_user_admin():
     users_df["display_name"] = users_df["display_name"].astype(str).str.strip()
     users_df["role_id"] = users_df["role_id"].astype(str).str.strip()
     users_df["store_scope"] = users_df["store_scope"].astype(str).str.strip()
+    users_df["must_change_password"] = (
+        pd.to_numeric(users_df["must_change_password"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     users_df["is_active"] = (
         pd.to_numeric(users_df["is_active"], errors="coerce")
@@ -341,120 +348,158 @@ def page_user_admin():
             st.info("目前尚無使用者資料")
         else:
             show_df = users_view[
-                ["account_code", "display_name", "role_display", "store_display"]
+                ["account_code", "display_name", "role_display", "store_display", "is_active", "must_change_password"]
             ].copy()
+            show_df["is_active"] = show_df["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
+            show_df["must_change_password"] = show_df["must_change_password"].map({1: "需修改", 0: "正常"}).fillna("正常")
 
             show_df.columns = [
                 "帳號",
                 "名稱",
                 "角色",
                 "分店",
+                "狀態",
+                "密碼狀態",
             ]
 
-            
-        st.subheader("修改帳號")
+            st.dataframe(show_df, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ============================================================
+        # 修改帳號與名稱
+        # ============================================================
+        st.subheader("修改帳號資料")
 
         edit_users_df = read_table("users").copy()
-        edit_users_df = _ensure_columns(
-            edit_users_df,
-            ["user_id", "account_code", "display_name", "role_id", "store_scope", "is_active"],
-        )
+        edit_users_df = _ensure_columns(edit_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
 
         if edit_users_df.empty:
             st.info("沒有可修改的使用者資料")
         else:
             edit_users_df["account_code"] = edit_users_df["account_code"].astype(str).str.strip()
             edit_users_df["display_name"] = edit_users_df["display_name"].astype(str).str.strip()
-            edit_users_df["role_id"] = edit_users_df["role_id"].astype(str).str.strip()
-            edit_users_df["store_scope"] = edit_users_df["store_scope"].astype(str).str.strip()
             edit_users_df["is_active"] = _safe_active_series(edit_users_df)
+            edit_users_df["edit_label"] = edit_users_df.apply(
+                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}（{str(r.get('account_code', '')).strip() or '無帳號'}）",
+                axis=1,
+            )
+            edit_option_map = {row["edit_label"]: str(row["user_id"]).strip() for _, row in edit_users_df.iterrows()}
+            edit_options = list(edit_option_map.keys())
 
-            edit_target_df = edit_users_df[edit_users_df["is_active"] == 1].copy()
-            if edit_target_df.empty:
-                st.info("目前沒有啟用中的使用者可修改")
-            else:
-                edit_user_option_map = {
-                    f"{str(row.get('display_name', '')).strip() or str(row.get('account_code', '')).strip()}（{str(row.get('account_code', '')).strip()}）": str(row.get("user_id", "")).strip()
-                    for _, row in edit_target_df.sort_values(["display_name", "account_code"]).iterrows()
-                    if str(row.get("user_id", "")).strip()
-                }
-                edit_user_options = list(edit_user_option_map.keys())
+            selected_edit_label = st.selectbox("選擇要修改的使用者", edit_options, key="edit_user_select")
+            selected_edit_user_id = edit_option_map.get(selected_edit_label, "")
 
-                if not edit_user_options:
-                    st.info("目前沒有可修改的使用者")
-                else:
-                    selected_edit_user_label = st.selectbox(
-                        "選擇要修改帳號的使用者",
-                        edit_user_options,
-                        key="edit_user_account_select",
-                    )
-                    selected_edit_user_id = edit_user_option_map.get(selected_edit_user_label, "")
+            if selected_edit_user_id:
+                selected_row = edit_users_df[edit_users_df["user_id"].astype(str).str.strip() == selected_edit_user_id].iloc[0]
+                with st.form("form_edit_user_account"):
+                    edit_account_code = st.text_input("修改帳號", value=str(selected_row.get("account_code", "")).strip()).strip()
+                    edit_display_name = st.text_input("修改名稱", value=str(selected_row.get("display_name", "")).strip()).strip()
+                    submitted_edit_user = st.form_submit_button("更新帳號資料", use_container_width=True)
 
-                    edit_target_row = edit_target_df[
-                        edit_target_df["user_id"].astype(str).str.strip() == selected_edit_user_id
-                    ].copy()
-
-                    if edit_target_row.empty:
-                        st.error("找不到選取的使用者資料")
+                if submitted_edit_user:
+                    if not edit_account_code:
+                        st.error("帳號不可空白。")
+                    elif not edit_display_name:
+                        st.error("名稱不可空白。")
                     else:
-                        current_account_code = str(edit_target_row["account_code"].iloc[0]).strip()
-                        current_display_name = str(edit_target_row["display_name"].iloc[0]).strip()
-                        current_role_id = str(edit_target_row["role_id"].iloc[0]).strip()
-                        current_store_scope = str(edit_target_row["store_scope"].iloc[0]).strip()
+                        compare_df = edit_users_df.copy()
+                        compare_df["account_code_norm"] = compare_df["account_code"].astype(str).str.strip().str.lower()
+                        duplicated = compare_df[
+                            (compare_df["account_code_norm"] == edit_account_code.strip().lower())
+                            & (compare_df["user_id"].astype(str).str.strip() != selected_edit_user_id)
+                        ]
+                        if not duplicated.empty:
+                            st.error("此帳號已存在，請改用其他帳號。")
+                        else:
+                            try:
+                                _update_user_fields_by_user_id(
+                                    selected_edit_user_id,
+                                    {
+                                        "account_code": edit_account_code.strip(),
+                                        "display_name": edit_display_name.strip(),
+                                        "updated_at": _now_ts(),
+                                        "updated_by": st.session_state.get("login_user", ""),
+                                    },
+                                )
+                                st.success("帳號資料已更新。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失敗：{e}")
 
-                        with st.form("form_edit_account_code"):
-                            st.caption(
-                                f"目前角色：{ROLE_LABELS.get(current_role_id, current_role_id)}｜目前分店：{current_store_scope or 'ALL'}"
+        st.markdown("---")
+
+        # ============================================================
+        # 啟用 / 停用使用者
+        # ============================================================
+        st.subheader("使用者啟用狀態")
+
+        toggle_users_df = read_table("users").copy()
+        toggle_users_df = _ensure_columns(toggle_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
+
+        if toggle_users_df.empty:
+            st.info("沒有可調整的使用者資料")
+        else:
+            toggle_users_df["account_code"] = toggle_users_df["account_code"].astype(str).str.strip()
+            toggle_users_df["display_name"] = toggle_users_df["display_name"].astype(str).str.strip()
+            toggle_users_df["is_active"] = _safe_active_series(toggle_users_df)
+            toggle_users_df["status_label"] = toggle_users_df["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
+            toggle_users_df["toggle_label"] = toggle_users_df.apply(
+                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}（{str(r.get('account_code', '')).strip() or '無帳號'}）｜目前：{str(r.get('status_label', '啟用'))}",
+                axis=1,
+            )
+            toggle_option_map = {row["toggle_label"]: str(row["user_id"]).strip() for _, row in toggle_users_df.iterrows()}
+            toggle_options = list(toggle_option_map.keys())
+
+            selected_toggle_label = st.selectbox("選擇使用者", toggle_options, key="toggle_user_select")
+            selected_toggle_user_id = toggle_option_map.get(selected_toggle_label, "")
+
+            if selected_toggle_user_id:
+                selected_toggle_row = toggle_users_df[toggle_users_df["user_id"].astype(str).str.strip() == selected_toggle_user_id].iloc[0]
+                current_is_active = int(selected_toggle_row.get("is_active", 1))
+                target_is_active = st.selectbox(
+                    "設定狀態",
+                    ["啟用", "停用"],
+                    index=0 if current_is_active == 1 else 1,
+                    key="toggle_user_status_select",
+                )
+
+                if st.button("更新使用者狀態", use_container_width=True, key="btn_toggle_user_status"):
+                    new_is_active = 1 if target_is_active == "啟用" else 0
+                    if str(selected_toggle_row.get("role_id", "")).strip().lower() == "owner" and new_is_active == 0:
+                        active_owner_count = int(
+                            ((toggle_users_df.get("role_id", "").astype(str).str.strip().str.lower() == "owner") & (_safe_active_series(toggle_users_df) == 1)).sum()
+                        ) if "role_id" in toggle_users_df.columns else 1
+                        if active_owner_count <= 1:
+                            st.error("至少要保留一位啟用中的系統負責人，不能停用最後一位 owner。")
+                        else:
+                            try:
+                                _update_user_fields_by_user_id(
+                                    selected_toggle_user_id,
+                                    {
+                                        "is_active": new_is_active,
+                                        "updated_at": _now_ts(),
+                                        "updated_by": st.session_state.get("login_user", ""),
+                                    },
+                                )
+                                st.success("使用者狀態已更新。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失敗：{e}")
+                    else:
+                        try:
+                            _update_user_fields_by_user_id(
+                                selected_toggle_user_id,
+                                {
+                                    "is_active": new_is_active,
+                                    "updated_at": _now_ts(),
+                                    "updated_by": st.session_state.get("login_user", ""),
+                                },
                             )
-                            edited_account_code = st.text_input(
-                                "新帳號",
-                                value=current_account_code,
-                                placeholder="例如：store_mgr_001",
-                            ).strip()
-                            edited_display_name = st.text_input(
-                                "顯示名稱",
-                                value=current_display_name,
-                                placeholder="例如：王店長",
-                            ).strip()
-
-                            submitted_edit_account = st.form_submit_button(
-                                "更新帳號資料",
-                                use_container_width=True,
-                            )
-
-                        if submitted_edit_account:
-                            if not edited_account_code:
-                                st.error("帳號不可空白。")
-                            elif not edited_display_name:
-                                st.error("名稱不可空白。")
-                            else:
-                                lower_account = edited_account_code.lower()
-                                dup_df = edit_users_df.copy()
-                                dup_df["account_code_lower"] = dup_df["account_code"].astype(str).str.strip().str.lower()
-                                dup_df["user_id"] = dup_df["user_id"].astype(str).str.strip()
-
-                                duplicated = dup_df[
-                                    (dup_df["account_code_lower"] == lower_account)
-                                    & (dup_df["user_id"] != selected_edit_user_id)
-                                ]
-
-                                if not duplicated.empty:
-                                    st.error("此帳號已存在，請改用其他帳號。")
-                                else:
-                                    try:
-                                        _update_user_fields_by_user_id(
-                                            selected_edit_user_id,
-                                            {
-                                                "account_code": edited_account_code,
-                                                "display_name": edited_display_name,
-                                                "updated_at": _now_ts(),
-                                                "updated_by": st.session_state.get("login_user", ""),
-                                            },
-                                        )
-                                        st.success("帳號資料已更新。")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"更新失敗：{e}")
+                            st.success("使用者狀態已更新。")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"更新失敗：{e}")
 
         st.divider()
 
