@@ -439,14 +439,16 @@ def page_user_admin():
                         }
 
                         try:
-                            append_rows_by_header("users", [new_row])
+                            users_header = get_header("users")
+                            append_rows_by_header("users", users_header, [new_row])
+                        
                             st.success(
                                 f"建立成功。帳號：{new_account_code.strip()}｜預設密碼：123456｜第一次登入需修改密碼。"
                             )
                             st.rerun()
                         except Exception as e:
                             st.error(f"建立失敗：{e}")
-
+                            
     # ========================================================
     # TAB 2 店長管理
     # ========================================================
