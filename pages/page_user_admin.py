@@ -34,6 +34,7 @@ from oms_core import (
     allocate_ids,
     get_spreadsheet,
     bust_cache,
+    render_report_dataframe,
 )
 
 
@@ -56,6 +57,18 @@ ROLE_LABELS = {
     "test_store_manager": "測試店長",
     "test_leader": "測試組長",
 }
+
+
+HIDDEN_ROLE_IDS = {"owner"}
+
+
+def _visible_users_df(df: pd.DataFrame) -> pd.DataFrame:
+    """隱藏系統負責人，避免出現在一般管理名單與表格中。"""
+    if df.empty or "role_id" not in df.columns:
+        return df.copy()
+    work = df.copy()
+    work["role_id"] = work["role_id"].astype(str).str.strip().str.lower()
+    return work[~work["role_id"].isin(HIDDEN_ROLE_IDS)].copy()
 
 
 # ============================================================
@@ -328,6 +341,7 @@ def page_user_admin():
     users_view["store_display"] = users_view["store_display_by_id"].fillna(users_view["store_display_by_code"])
     users_view.loc[users_view["store_scope"] == "ALL", "store_display"] = "全部分店"
     users_view["store_display"] = users_view["store_display"].fillna("未設定")
+    users_view = _visible_users_df(users_view)
 
     # --------------------------------------------------------
     # 建立三個分頁
@@ -362,7 +376,7 @@ def page_user_admin():
                 "密碼狀態",
             ]
 
-            st.dataframe(show_df, use_container_width=True, hide_index=True)
+            render_report_dataframe(show_df)
 
         st.divider()
 
@@ -374,6 +388,7 @@ def page_user_admin():
         edit_users_df = read_table("users").copy()
         edit_users_df = _ensure_columns(edit_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
 
+        edit_users_df = _visible_users_df(edit_users_df)
         if edit_users_df.empty:
             st.info("沒有可修改的使用者資料")
         else:
@@ -381,7 +396,7 @@ def page_user_admin():
             edit_users_df["display_name"] = edit_users_df["display_name"].astype(str).str.strip()
             edit_users_df["is_active"] = _safe_active_series(edit_users_df)
             edit_users_df["edit_label"] = edit_users_df.apply(
-                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}（{str(r.get('account_code', '')).strip() or '無帳號'}）",
+                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}｜帳號：{str(r.get('account_code', '')).strip() or '未設定'}",
                 axis=1,
             )
             edit_option_map = {row["edit_label"]: str(row["user_id"]).strip() for _, row in edit_users_df.iterrows()}
@@ -437,6 +452,7 @@ def page_user_admin():
         toggle_users_df = read_table("users").copy()
         toggle_users_df = _ensure_columns(toggle_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
 
+        toggle_users_df = _visible_users_df(toggle_users_df)
         if toggle_users_df.empty:
             st.info("沒有可調整的使用者資料")
         else:
@@ -445,7 +461,7 @@ def page_user_admin():
             toggle_users_df["is_active"] = _safe_active_series(toggle_users_df)
             toggle_users_df["status_label"] = toggle_users_df["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
             toggle_users_df["toggle_label"] = toggle_users_df.apply(
-                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}（{str(r.get('account_code', '')).strip() or '無帳號'}）｜目前：{str(r.get('status_label', '啟用'))}",
+                lambda r: f"{str(r.get('display_name', '')).strip() or '未命名'}｜帳號：{str(r.get('account_code', '')).strip() or '未設定'}｜目前：{str(r.get('status_label', '啟用'))}",
                 axis=1,
             )
             toggle_option_map = {row["toggle_label"]: str(row["user_id"]).strip() for _, row in toggle_users_df.iterrows()}
@@ -581,21 +597,28 @@ def page_user_admin():
                 if not role_id:
                     continue
 
-                label = role_name_zh if role_name_zh else role_name if role_name else role_id
-                show_text = f"{label}（{role_id}）"
+                # 只有系統負責人可新增系統負責人
+                if role_id == "owner" and login_role_id != "owner":
+                    continue
+
+                label = role_name_zh if role_name_zh else ROLE_LABELS.get(role_id, role_name if role_name else role_id)
+                show_text = label
                 role_options.append(show_text)
                 role_label_map[show_text] = role_id
         else:
-            role_options = [
-                "系統負責人（owner）",
-                "管理員（admin）",
-                "店長（store_manager）",
-            ]
-            role_label_map = {
-                "系統負責人（owner）": "owner",
-                "管理員（admin）": "admin",
-                "店長（store_manager）": "store_manager",
-            }
+            if login_role_id == "owner":
+                role_options = ["系統負責人", "管理員", "店長"]
+                role_label_map = {
+                    "系統負責人": "owner",
+                    "管理員": "admin",
+                    "店長": "store_manager",
+                }
+            else:
+                role_options = ["管理員", "店長"]
+                role_label_map = {
+                    "管理員": "admin",
+                    "店長": "store_manager",
+                }
 
         # 分店下拉選單
         store_options = ["ALL"]
@@ -611,7 +634,7 @@ def page_user_admin():
                     continue
 
                 label = store_name_zh if store_name_zh else store_name if store_name else store_id
-                show_text = f"{label}（{store_id}）"
+                show_text = label
                 store_options.append(show_text)
                 store_label_map[show_text] = store_id
 
@@ -709,13 +732,13 @@ def page_user_admin():
         else:
             show_manager_df = manager_df[["account_code", "display_name", "store_display"]].copy()
             show_manager_df.columns = ["店長帳號", "店長名稱", "管理分店"]
-            st.dataframe(show_manager_df, use_container_width=True, hide_index=True)
+            render_report_dataframe(show_manager_df)
 
             st.markdown("---")
             st.subheader("調整店長分店")
 
             manager_option_map = {
-                f"{row['display_name']}（{row['account_code']}）": row['user_id']
+                f"{row['display_name']}｜帳號：{row['account_code']}": row['user_id']
                 for _, row in manager_df.sort_values(["display_name", "account_code"]).iterrows()
             }
             manager_options = list(manager_option_map.keys())
@@ -731,7 +754,7 @@ def page_user_admin():
                 store_name = str(row.get("store_name_zh", "")).strip() or str(row.get("store_name", "")).strip() or store_id
                 if not store_id:
                     continue
-                label = f"{store_name}（{store_id}）"
+                label = store_name
                 store_options.append(label)
                 store_option_map[label] = store_id
 
@@ -800,13 +823,13 @@ def page_user_admin():
         else:
             show_leader_df = leader_df[["account_code", "display_name", "store_display"]].copy()
             show_leader_df.columns = ["組長帳號", "組長名稱", "所屬分店"]
-            st.dataframe(show_leader_df, use_container_width=True, hide_index=True)
+            render_report_dataframe(show_leader_df)
 
             st.markdown("---")
             st.subheader("調整組長分店")
 
             leader_option_map = {
-                f"{row['display_name']}（{row['account_code']}）": row['user_id']
+                f"{row['display_name']}｜帳號：{row['account_code']}": row['user_id']
                 for _, row in leader_df.sort_values(["display_name", "account_code"]).iterrows()
             }
             leader_options = list(leader_option_map.keys())
@@ -822,7 +845,7 @@ def page_user_admin():
                 store_name = str(row.get("store_name_zh", "")).strip() or str(row.get("store_name", "")).strip() or store_id
                 if not store_id:
                     continue
-                label = f"{store_name}（{store_id}）"
+                label = store_name
                 leader_store_options.append(label)
                 leader_store_option_map[label] = store_id
 
