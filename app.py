@@ -56,8 +56,6 @@ if "login_user" not in st.session_state:
 if st.session_state.get("force_change_password", False):
     page_login()
     st.stop()
-    
-st.set_page_config(page_title="營運管理系統", layout="centered")
 
 # ============================================================
 # [A1] Session State 初始化
@@ -80,9 +78,12 @@ def init_session():
     if "vendor_name" not in st.session_state:
         st.session_state.vendor_name = ""
 
-    # 先用假角色測試，之後再接 users / roles
+    # 舊頁面若仍有使用 role，這裡同步登入角色，避免抓到錯誤預設值
+    login_role = st.session_state.get("login_role_id", "")
     if "role" not in st.session_state:
-        st.session_state.role = "owner"  # owner / admin / store_manager / leader
+        st.session_state.role = login_role
+    elif login_role and st.session_state.role != login_role:
+        st.session_state.role = login_role
 
 
 
