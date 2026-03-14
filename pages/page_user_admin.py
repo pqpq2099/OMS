@@ -573,8 +573,16 @@ def page_user_admin():
                 store_options.append(label)
                 store_option_map[label] = store_id
 
+            if not store_options:
+                st.warning("目前沒有可指派的啟用分店。")
+                st.stop()
+
             selected_manager_label = st.selectbox("選擇店長", manager_options, key="mgr_user_select")
-            selected_manager_user_id = manager_option_map[selected_manager_label]
+            selected_manager_user_id = manager_option_map.get(selected_manager_label, "")
+
+            if not selected_manager_user_id:
+                st.error("找不到所選店長資料，請重新整理頁面後再試。")
+                st.stop()
 
             current_scope = manager_df.loc[manager_df["user_id"] == selected_manager_user_id, "store_scope"].iloc[0]
             current_store_idx = 0
@@ -584,7 +592,7 @@ def page_user_admin():
                     break
 
             selected_store_label = st.selectbox("改派分店", store_options, index=current_store_idx, key="mgr_store_scope_select")
-            new_store_scope = store_option_map[selected_store_label]
+            new_store_scope = store_option_map.get(selected_store_label, current_scope)
 
             if st.button("更新店長分店", use_container_width=True, key="btn_update_manager_scope"):
                 current_manager_count = _count_active_store_managers(users_df, new_store_scope, exclude_user_id=selected_manager_user_id)
@@ -641,8 +649,16 @@ def page_user_admin():
                 leader_store_options.append(label)
                 leader_store_option_map[label] = store_id
 
+            if not leader_store_options:
+                st.warning("目前沒有可指派的啟用分店。")
+                st.stop()
+
             selected_leader_label = st.selectbox("選擇組長", leader_options, key="leader_user_select")
-            selected_leader_user_id = leader_option_map[selected_leader_label]
+            selected_leader_user_id = leader_option_map.get(selected_leader_label, "")
+
+            if not selected_leader_user_id:
+                st.error("找不到所選組長資料，請重新整理頁面後再試。")
+                st.stop()
 
             current_scope = leader_df.loc[leader_df["user_id"] == selected_leader_user_id, "store_scope"].iloc[0]
             current_store_idx = 0
@@ -652,7 +668,7 @@ def page_user_admin():
                     break
 
             selected_store_label = st.selectbox("改派分店", leader_store_options, index=current_store_idx, key="leader_store_scope_select")
-            new_store_scope = leader_store_option_map[selected_store_label]
+            new_store_scope = leader_store_option_map.get(selected_store_label, current_scope)
 
             if st.button("更新組長分店", use_container_width=True, key="btn_update_leader_scope"):
                 try:
