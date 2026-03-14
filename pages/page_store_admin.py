@@ -168,7 +168,7 @@ def page_store_admin():
     # --------------------------------------------------------
     # 權限限制：只有 owner / admin 可進入
     # --------------------------------------------------------
-    role = st.session_state.get("role", "")
+    role = str(st.session_state.get("login_role_id", "")).strip().lower()
     if role not in ["owner", "admin"]:
         st.error("你沒有權限進入此頁。")
         return
@@ -431,7 +431,7 @@ def page_store_admin():
                         _update_store_active(
                             store_id=selected_store_id,
                             new_active=1,
-                            actor=st.session_state.get("role", "system"),
+                            actor=st.session_state.get("login_user", "system"),
                         )
                         st.success("分店已啟用")
                         st.rerun()
@@ -444,7 +444,7 @@ def page_store_admin():
                         _update_store_active(
                             store_id=selected_store_id,
                             new_active=0,
-                            actor=st.session_state.get("role", "system"),
+                            actor=st.session_state.get("login_user", "system"),
                         )
                         st.success("分店已停用")
                         st.rerun()
