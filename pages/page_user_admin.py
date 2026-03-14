@@ -79,10 +79,25 @@ def _pick_first_existing_column(df: pd.DataFrame, candidates: list[str], fallbac
 
 
 def _safe_active_series(df: pd.DataFrame, col: str = "is_active") -> pd.Series:
-    """將啟用欄位統一轉成 1/0。"""
+    """將啟用欄位統一轉成 1/0，兼容 1 / 1.0 / TRUE / true / yes。"""
     if col not in df.columns:
         return pd.Series([1] * len(df), index=df.index)
-    return pd.to_numeric(df[col], errors="coerce").fillna(1).astype(int)
+
+    raw = df[col].copy()
+    raw_str = raw.astype(str).str.strip().str.lower()
+    true_mask = raw_str.isin(["1", "1.0", "true", "yes", "y"])
+    false_mask = raw_str.isin(["0", "0.0", "false", "no", "n"])
+
+    result = pd.Series(1, index=df.index, dtype="int64")
+    result.loc[false_mask] = 0
+    result.loc[true_mask] = 1
+
+    numeric_mask = ~(true_mask | false_mask)
+    if numeric_mask.any():
+        numeric_values = pd.to_numeric(raw[numeric_mask], errors="coerce")
+        result.loc[numeric_mask] = numeric_values.fillna(1).astype(int)
+
+    return result
 
 
 def _write_back_users_df(users_df: pd.DataFrame):
@@ -396,17 +411,13 @@ def page_user_admin():
         create_users_df = read_table("users").copy()
 
         # 只取啟用中的角色
-        if not create_roles_df.empty and "is_active" in create_roles_df.columns:
-            create_roles_df["is_active"] = pd.to_numeric(
-                create_roles_df["is_active"], errors="coerce"
-            ).fillna(0)
+        if not create_roles_df.empty:
+            create_roles_df["is_active"] = _safe_active_series(create_roles_df)
             create_roles_df = create_roles_df[create_roles_df["is_active"] == 1].copy()
 
         # 只取啟用中的分店
-        if not create_stores_df.empty and "is_active" in create_stores_df.columns:
-            create_stores_df["is_active"] = pd.to_numeric(
-                create_stores_df["is_active"], errors="coerce"
-            ).fillna(0)
+        if not create_stores_df.empty:
+            create_stores_df["is_active"] = _safe_active_series(create_stores_df)
             create_stores_df = create_stores_df[create_stores_df["is_active"] == 1].copy()
 
         # 角色下拉選單：顯示中文，實際寫入 role_id
@@ -561,7 +572,10 @@ def page_user_admin():
             }
             manager_options = list(manager_option_map.keys())
 
-            active_stores_df = stores_df[stores_df["is_active"] == 1].copy()
+            active_stores_df = stores_df.copy()
+            active_stores_df["is_active"] = _safe_active_series(active_stores_df)
+            active_stores_df = active_stores_df[active_stores_df["is_active"] == 1].copy()
+
             store_option_map = {}
             store_options = []
             for _, row in active_stores_df.iterrows():
@@ -575,43 +589,55 @@ def page_user_admin():
 
             if not store_options:
                 st.warning("目前沒有可指派的啟用分店。")
-                st.stop()
+            else:
+                selected_manager_label = st.selectbox("選擇店長", manager_options, key="mgr_user_select")
+                selected_manager_user_id = manager_option_map.get(selected_manager_label, "")
 
-            selected_manager_label = st.selectbox("選擇店長", manager_options, key="mgr_user_select")
-            selected_manager_user_id = manager_option_map.get(selected_manager_label, "")
-
-            if not selected_manager_user_id:
-                st.error("找不到所選店長資料，請重新整理頁面後再試。")
-                st.stop()
-
-            current_scope = manager_df.loc[manager_df["user_id"] == selected_manager_user_id, "store_scope"].iloc[0]
-            current_store_idx = 0
-            for idx, label in enumerate(store_options):
-                if store_option_map[label] == current_scope:
-                    current_store_idx = idx
-                    break
-
-            selected_store_label = st.selectbox("改派分店", store_options, index=current_store_idx, key="mgr_store_scope_select")
-            new_store_scope = store_option_map.get(selected_store_label, current_scope)
-
-            if st.button("更新店長分店", use_container_width=True, key="btn_update_manager_scope"):
-                current_manager_count = _count_active_store_managers(users_df, new_store_scope, exclude_user_id=selected_manager_user_id)
-                if current_manager_count >= 3:
-                    st.error("此分店店長已達 3 位上限，無法再指派。")
+                if not selected_manager_user_id:
+                    st.error("找不到選取的店長資料。")
                 else:
-                    try:
-                        _update_user_fields_by_user_id(
-                            selected_manager_user_id,
-                            {
-                                "store_scope": new_store_scope,
-                                "updated_at": _now_ts(),
-                                "updated_by": st.session_state.get("login_user", ""),
-                            },
-                        )
-                        st.success("店長分店已更新。")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"更新失敗：{e}")
+                    current_scope = str(
+                        manager_df.loc[manager_df["user_id"] == selected_manager_user_id, "store_scope"].iloc[0]
+                    ).strip()
+                    current_store_idx = 0
+                    for idx, label in enumerate(store_options):
+                        if store_option_map.get(label, "") == current_scope:
+                            current_store_idx = idx
+                            break
+
+                    selected_store_label = st.selectbox(
+                        "改派分店",
+                        store_options,
+                        index=current_store_idx,
+                        key="mgr_store_scope_select",
+                    )
+                    new_store_scope = store_option_map.get(selected_store_label, "")
+
+                    if st.button("更新店長分店", use_container_width=True, key="btn_update_manager_scope"):
+                        if not new_store_scope:
+                            st.error("分店資料異常，請重新選擇。")
+                        else:
+                            current_manager_count = _count_active_store_managers(
+                                users_df,
+                                new_store_scope,
+                                exclude_user_id=selected_manager_user_id,
+                            )
+                            if current_manager_count >= 3:
+                                st.error("此分店店長已達 3 位上限，無法再指派。")
+                            else:
+                                try:
+                                    _update_user_fields_by_user_id(
+                                        selected_manager_user_id,
+                                        {
+                                            "store_scope": new_store_scope,
+                                            "updated_at": _now_ts(),
+                                            "updated_by": st.session_state.get("login_user", ""),
+                                        },
+                                    )
+                                    st.success("店長分店已更新。")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"更新失敗：{e}")
 
     # ========================================================
     # TAB 3 組長管理
@@ -637,7 +663,10 @@ def page_user_admin():
             }
             leader_options = list(leader_option_map.keys())
 
-            active_stores_df = stores_df[stores_df["is_active"] == 1].copy()
+            active_stores_df = stores_df.copy()
+            active_stores_df["is_active"] = _safe_active_series(active_stores_df)
+            active_stores_df = active_stores_df[active_stores_df["is_active"] == 1].copy()
+
             leader_store_option_map = {}
             leader_store_options = []
             for _, row in active_stores_df.iterrows():
@@ -651,36 +680,44 @@ def page_user_admin():
 
             if not leader_store_options:
                 st.warning("目前沒有可指派的啟用分店。")
-                st.stop()
+            else:
+                selected_leader_label = st.selectbox("選擇組長", leader_options, key="leader_user_select")
+                selected_leader_user_id = leader_option_map.get(selected_leader_label, "")
 
-            selected_leader_label = st.selectbox("選擇組長", leader_options, key="leader_user_select")
-            selected_leader_user_id = leader_option_map.get(selected_leader_label, "")
+                if not selected_leader_user_id:
+                    st.error("找不到選取的組長資料。")
+                else:
+                    current_scope = str(
+                        leader_df.loc[leader_df["user_id"] == selected_leader_user_id, "store_scope"].iloc[0]
+                    ).strip()
+                    current_store_idx = 0
+                    for idx, label in enumerate(leader_store_options):
+                        if leader_store_option_map.get(label, "") == current_scope:
+                            current_store_idx = idx
+                            break
 
-            if not selected_leader_user_id:
-                st.error("找不到所選組長資料，請重新整理頁面後再試。")
-                st.stop()
-
-            current_scope = leader_df.loc[leader_df["user_id"] == selected_leader_user_id, "store_scope"].iloc[0]
-            current_store_idx = 0
-            for idx, label in enumerate(leader_store_options):
-                if leader_store_option_map[label] == current_scope:
-                    current_store_idx = idx
-                    break
-
-            selected_store_label = st.selectbox("改派分店", leader_store_options, index=current_store_idx, key="leader_store_scope_select")
-            new_store_scope = leader_store_option_map.get(selected_store_label, current_scope)
-
-            if st.button("更新組長分店", use_container_width=True, key="btn_update_leader_scope"):
-                try:
-                    _update_user_fields_by_user_id(
-                        selected_leader_user_id,
-                        {
-                            "store_scope": new_store_scope,
-                            "updated_at": _now_ts(),
-                            "updated_by": st.session_state.get("login_user", ""),
-                        },
+                    selected_store_label = st.selectbox(
+                        "改派分店",
+                        leader_store_options,
+                        index=current_store_idx,
+                        key="leader_store_scope_select",
                     )
-                    st.success("組長分店已更新。")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"更新失敗：{e}")
+                    new_store_scope = leader_store_option_map.get(selected_store_label, "")
+
+                    if st.button("更新組長分店", use_container_width=True, key="btn_update_leader_scope"):
+                        if not new_store_scope:
+                            st.error("分店資料異常，請重新選擇。")
+                        else:
+                            try:
+                                _update_user_fields_by_user_id(
+                                    selected_leader_user_id,
+                                    {
+                                        "store_scope": new_store_scope,
+                                        "updated_at": _now_ts(),
+                                        "updated_by": st.session_state.get("login_user", ""),
+                                    },
+                                )
+                                st.success("組長分店已更新。")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"更新失敗：{e}")
