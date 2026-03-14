@@ -413,7 +413,7 @@ def page_user_admin():
                         st.error("此角色必須綁定指定分店，不可使用 ALL。")
                     else:
                         try:
-                            new_user_id = allocate_ids("users", 1)[0]
+                            new_user_id = allocate_ids({"users": 1})["users"][0]
                         except Exception:
                             new_user_id = f"USER_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
