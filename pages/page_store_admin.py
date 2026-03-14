@@ -337,8 +337,7 @@ def page_store_admin():
                 help="例如：三總店",
             )
 
-            st.caption(f"系統將自動產生分店代碼：{preview_store_code}")
-            st.caption("系統名稱將自動與中文分店名稱相同")
+            st.caption("系統將自動建立分店代碼與系統名稱")
 
             submit_create = st.form_submit_button("建立分店")
 
@@ -389,7 +388,7 @@ def page_store_admin():
             stores_header = get_header("stores")
             append_rows_by_header("stores", stores_header, [new_row])
 
-            st.success(f"分店建立成功：{store_name_zh}（{new_store_id} / {new_store_code}）")
+            st.success(f"分店建立成功：{store_name_zh}")
             st.rerun()
 
     # ========================================================
@@ -407,7 +406,7 @@ def page_store_admin():
                 scode = str(row.get("store_code", "")).strip()
                 sname = str(row.get("store_display", "")).strip()
                 status_text = str(row.get("status_text", "")).strip()
-                option_map[sid] = f"{sname}（{scode} / {sid} / {status_text}）"
+                option_map[sid] = f"{sname}（{status_text}）"
 
             store_ids = list(option_map.keys())
 

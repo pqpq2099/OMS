@@ -125,11 +125,6 @@ def render_report_dataframe(
     column_config: dict | None = None,
     height: int | None = None,
 ):
-    """共用報表表格呈現。
-
-    注意：部分 Streamlit 版本不接受 height=None，
-    因此只有在明確提供高度時才傳入 height。
-    """
     apply_table_report_style()
 
     dataframe_kwargs = {
@@ -138,10 +133,14 @@ def render_report_dataframe(
         "column_config": column_config or {},
     }
 
+    # 某些 Streamlit 版本不接受 height=None
     if height is not None:
         dataframe_kwargs["height"] = height
 
-    st.dataframe(df, **dataframe_kwargs)
+    st.dataframe(
+        df,
+        **dataframe_kwargs,
+    )
 
 
 # ============================================================
