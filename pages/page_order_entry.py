@@ -877,6 +877,395 @@ def _save_order_entry(
 # 3. LINE 訊息文案
 # 先看這一段。
 # ============================================================
+
+
+
+def _fmt_display_qty(v: float) -> str:
+    try:
+        v = float(v)
+        if abs(v - round(v)) < 1e-9:
+            return str(int(round(v)))
+        return f"{v:.1f}"
+    except Exception:
+        return "0"
+
+
+def _build_vendor_item_map(items_df: pd.DataFrame, vendor_id: str) -> pd.DataFrame:
+    if items_df.empty or "default_vendor_id" not in items_df.columns:
+        return pd.DataFrame()
+
+    work = items_df[
+        items_df["default_vendor_id"].astype(str).str.strip() == str(vendor_id).strip()
+    ].copy()
+    if work.empty:
+        return work
+    return _sort_items_for_operation(work).reset_index(drop=True)
+
+
+def _get_vendor_options_df() -> pd.DataFrame:
+    vendors_df = _get_active_df(read_table("vendors"))
+    items_df = _get_active_df(read_table("items"))
+    if vendors_df.empty or items_df.empty or "default_vendor_id" not in items_df.columns:
+        return pd.DataFrame()
+
+    item_vendor_ids = set(items_df["default_vendor_id"].astype(str).str.strip())
+    vendors = vendors_df[vendors_df["vendor_id"].astype(str).str.strip().isin(item_vendor_ids)].copy()
+    if vendors.empty:
+        return pd.DataFrame()
+
+    vendors["vendor_label"] = vendors.apply(_label_vendor, axis=1)
+    vendors = vendors.sort_values(["vendor_label"], ascending=[True]).reset_index(drop=True)
+    return vendors
+
+
+def _pick_latest_po_id(store_id: str, vendor_id: str, selected_date: date) -> str:
+    po_df = read_table("purchase_orders")
+    if po_df.empty or not {"po_id", "store_id", "vendor_id", "order_date"}.issubset(set(po_df.columns)):
+        return ""
+
+    work = po_df.copy()
+    work["po_id"] = work["po_id"].astype(str).str.strip()
+    work["__date"] = pd.to_datetime(work["order_date"], errors="coerce").dt.date
+    work["__created"] = pd.to_datetime(work.get("created_at", ""), errors="coerce")
+
+    work = work[
+        (work["store_id"].astype(str).str.strip() == str(store_id).strip())
+        & (work["vendor_id"].astype(str).str.strip() == str(vendor_id).strip())
+        & (work["__date"] == selected_date)
+    ].copy()
+    if work.empty:
+        return ""
+
+    work = work.sort_values(["__created", "po_id"], ascending=[True, True])
+    return str(work.iloc[-1]["po_id"]).strip()
+
+
+def _pick_latest_stocktake_id(store_id: str, vendor_id: str, selected_date: date) -> str:
+    stocktakes_df = read_table("stocktakes")
+    stocktake_lines_df = read_table("stocktake_lines")
+    if stocktakes_df.empty or stocktake_lines_df.empty:
+        return ""
+    need_st = {"stocktake_id", "store_id", "stocktake_date"}
+    need_stl = {"stocktake_id", "vendor_id"}
+    if not need_st.issubset(set(stocktakes_df.columns)) or not need_stl.issubset(set(stocktake_lines_df.columns)):
+        return ""
+
+    stx = stocktakes_df.copy()
+    stl = stocktake_lines_df.copy()
+    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+    stx["__date"] = pd.to_datetime(stx["stocktake_date"], errors="coerce").dt.date
+    stx["__created"] = pd.to_datetime(stx.get("created_at", ""), errors="coerce")
+
+    stx = stx[
+        (stx["store_id"].astype(str).str.strip() == str(store_id).strip())
+        & (stx["__date"] == selected_date)
+    ].copy()
+    if stx.empty:
+        return ""
+
+    merged = stl.merge(stx[["stocktake_id", "__created"]], on="stocktake_id", how="inner")
+    merged = merged[merged["vendor_id"].astype(str).str.strip() == str(vendor_id).strip()].copy()
+    if merged.empty:
+        return ""
+
+    merged = merged.sort_values(["__created", "stocktake_id"], ascending=[True, True])
+    return str(merged.iloc[-1]["stocktake_id"]).strip()
+
+
+def _get_stock_record_maps(stocktake_id: str) -> tuple[dict[str, float], dict[str, str], str]:
+    if not stocktake_id:
+        return {}, {}, ""
+    stocktakes_df = read_table("stocktakes")
+    stocktake_lines_df = read_table("stocktake_lines")
+    if stocktakes_df.empty or stocktake_lines_df.empty:
+        return {}, {}, ""
+
+    stx = stocktakes_df.copy()
+    stl = stocktake_lines_df.copy()
+    stx["stocktake_id"] = stx["stocktake_id"].astype(str).str.strip()
+    stl["stocktake_id"] = stl["stocktake_id"].astype(str).str.strip()
+
+    row = stx[stx["stocktake_id"] == str(stocktake_id).strip()].copy()
+    lines = stl[stl["stocktake_id"] == str(stocktake_id).strip()].copy()
+    if lines.empty:
+        return {}, {}, ""
+
+    qty_map = {}
+    unit_map = {}
+    for _, r in lines.iterrows():
+        item_id = _norm(r.get("item_id", ""))
+        if not item_id:
+            continue
+        qty_map[item_id] = _safe_float(r.get("stock_qty", r.get("qty", 0)))
+        unit_map[item_id] = _norm(r.get("stock_unit", r.get("unit_id", "")))
+
+    created_at = ""
+    if not row.empty and "created_at" in row.columns:
+        created_at = str(row.iloc[0].get("created_at", "")).strip()
+    return qty_map, unit_map, created_at
+
+
+def _get_order_record_maps(po_id: str) -> tuple[dict[str, float], dict[str, str], str]:
+    if not po_id:
+        return {}, {}, ""
+    po_df = read_table("purchase_orders")
+    pol_df = read_table("purchase_order_lines")
+    if po_df.empty or pol_df.empty:
+        return {}, {}, ""
+
+    po = po_df.copy()
+    pol = pol_df.copy()
+    po["po_id"] = po["po_id"].astype(str).str.strip()
+    pol["po_id"] = pol["po_id"].astype(str).str.strip()
+
+    row = po[po["po_id"] == str(po_id).strip()].copy()
+    lines = pol[pol["po_id"] == str(po_id).strip()].copy()
+    if lines.empty:
+        return {}, {}, ""
+
+    qty_map = {}
+    unit_map = {}
+    for _, r in lines.iterrows():
+        item_id = _norm(r.get("item_id", ""))
+        if not item_id:
+            continue
+        qty_map[item_id] = _safe_float(r.get("order_qty", r.get("qty", 0)))
+        unit_map[item_id] = _norm(r.get("order_unit", r.get("unit_id", "")))
+
+    created_at = ""
+    if not row.empty and "created_at" in row.columns:
+        created_at = str(row.iloc[0].get("created_at", "")).strip()
+    return qty_map, unit_map, created_at
+
+
+def page_daily_stock_order_record():
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 2rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }
+
+        [data-testid='stHorizontalBlock'] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            gap: 0.35rem !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0px !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(2),
+        div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
+            flex: 0 0 84px !important;
+            min-width: 84px !important;
+            max-width: 84px !important;
+        }
+
+        div[data-testid='stNumberInput'] label {
+            display: none !important;
+        }
+
+        div[data-testid="stNumberInput"] input {
+            text-align: center !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
+
+        .order-divider {
+            margin: 10px 0 14px 0;
+            border-top: 1px solid rgba(128,128,128,0.25);
+        }
+
+        .order-meta {
+            font-size: 0.82rem;
+            color: rgba(170, 178, 195, 0.9);
+            margin-top: -0.2rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .order-unit-label {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 34px;
+            font-size: 1rem;
+            font-weight: 500;
+            opacity: 0.9;
+            margin-top: 3px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title("📋 當日庫存叫貨紀錄")
+
+    store_id = _norm(st.session_state.get("store_id", ""))
+    if not store_id:
+        st.warning("請先選擇分店")
+        if st.button("⬅️ 前往選擇分店", use_container_width=True, key="goto_select_store_from_daily_record"):
+            st.session_state.step = "select_store"
+            st.rerun()
+        return
+
+    vendors = _get_vendor_options_df()
+    if vendors.empty:
+        st.warning("⚠️ 目前沒有可用廠商")
+        return
+
+    selected_date = st.date_input("🗓️ 日期", value=date.today(), key="daily_stock_order_record_date")
+
+    vendor_id_to_label = {str(r.get("vendor_id", "")).strip(): str(r.get("vendor_label", "")).strip() for _, r in vendors.iterrows()}
+    vendor_label_to_id = {v: k for k, v in vendor_id_to_label.items() if v}
+
+    default_vendor_id = _norm(st.session_state.get("vendor_id", ""))
+    vendor_labels = list(vendor_label_to_id.keys())
+    default_index = vendor_labels.index(vendor_id_to_label[default_vendor_id]) if default_vendor_id in vendor_id_to_label else 0
+    selected_vendor_label = st.selectbox("🏢 廠商", vendor_labels, index=default_index, key="daily_stock_order_record_vendor")
+    selected_vendor_id = vendor_label_to_id.get(selected_vendor_label, "")
+
+    st.session_state.vendor_id = selected_vendor_id
+    st.session_state.vendor_name = selected_vendor_label
+
+    items_df = _get_active_df(read_table("items"))
+    prices_df = read_table("prices")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
+
+    vendor_items = _build_vendor_item_map(items_df, selected_vendor_id)
+    if vendor_items.empty:
+        st.info("💡 此廠商目前沒有對應品項")
+        return
+
+    latest_metrics_df = _build_latest_item_metrics_df(store_id=store_id, as_of_date=selected_date)
+    latest_metrics_map = {}
+    if not latest_metrics_df.empty:
+        for _, m in latest_metrics_df.iterrows():
+            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
+
+    stocktake_id = _pick_latest_stocktake_id(store_id, selected_vendor_id, selected_date)
+    po_id = _pick_latest_po_id(store_id, selected_vendor_id, selected_date)
+
+    stock_qty_map, stock_unit_map, stock_created_at = _get_stock_record_maps(stocktake_id)
+    order_qty_map, order_unit_map, po_created_at = _get_order_record_maps(po_id)
+
+    if not stock_qty_map and not order_qty_map:
+        st.info("這一天沒有找到該廠商的庫存 / 叫貨紀錄")
+        return
+
+    latest_time_text = po_created_at or stock_created_at or ""
+    if latest_time_text:
+        st.caption(f"最近一筆紀錄時間：{latest_time_text}")
+
+    ref_rows = []
+    item_meta = {}
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        item_name = _item_display_name(row)
+        base_unit = _norm(row.get("base_unit", ""))
+        stock_unit = stock_unit_map.get(item_id) or _norm(row.get("default_stock_unit", "")) or base_unit
+        order_unit = order_unit_map.get(item_id) or _norm(row.get("default_order_unit", "")) or base_unit
+
+        metric = latest_metrics_map.get(item_id, {})
+        period_purchase = _safe_float(metric.get("期間進貨", 0))
+        period_usage = _safe_float(metric.get("期間消耗", 0))
+        daily_avg = _safe_float(metric.get("日平均", 0))
+        total_stock_ref = _safe_float(metric.get("庫存合計", 0))
+        suggest_qty = round(daily_avg * 1.5, 1)
+        status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
+
+        if period_purchase > 0 or period_usage > 0:
+            ref_rows.append({
+                "品項名稱": item_name,
+                "上次叫貨": round(period_purchase, 1),
+                "期間消耗": round(period_usage, 1),
+            })
+
+        price = _get_latest_price_for_item(prices_df, item_id, selected_date)
+        item_meta[item_id] = {
+            "item_name": item_name,
+            "stock_unit": stock_unit,
+            "order_unit": order_unit,
+            "stock_qty": _safe_float(stock_qty_map.get(item_id, 0)),
+            "order_qty": _safe_float(order_qty_map.get(item_id, 0)),
+            "total_stock_ref": round(total_stock_ref, 1),
+            "suggest_qty": suggest_qty,
+            "status_hint": status_hint,
+            "price": round(price, 1),
+        }
+
+    ref_df = pd.DataFrame(ref_rows).sort_values(["品項名稱"]).reset_index(drop=True) if ref_rows else None
+
+    with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
+        if ref_df is None or ref_df.empty:
+            st.caption("目前沒有可參考的資料")
+        else:
+            for col in ["上次叫貨", "期間消耗"]:
+                ref_df[col] = ref_df[col].map(lambda x: f"{x:.1f}")
+            st.table(ref_df)
+
+    st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
+
+    h1, h2, h3 = st.columns([6, 1, 1])
+    h1.write("**品項名稱（建議量=日均×1.5）**")
+    h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+    h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
+
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        meta = item_meta.get(item_id, {})
+        c1, c2, c3 = st.columns([6, 1, 1])
+
+        with c1:
+            st.write(f"<b>{meta.get('item_name', '')}</b>", unsafe_allow_html=True)
+            tail = f"　{_norm(meta.get('status_hint', ''))}" if _norm(meta.get('status_hint', '')) else ""
+            st.markdown(
+                f"<div class='order-meta'>總庫存：{_fmt_display_qty(meta.get('total_stock_ref', 0))}　建議量：{_fmt_display_qty(meta.get('suggest_qty', 0))}{tail}</div>",
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.number_input(
+                "庫",
+                min_value=0.0,
+                step=0.1,
+                format="%g",
+                value=float(_safe_float(meta.get('stock_qty', 0))),
+                key=f"daily_record_stock_{item_id}",
+                label_visibility="collapsed",
+                disabled=True,
+            )
+            st.markdown(f"<div class='order-unit-label'>{_norm(meta.get('stock_unit', ''))}</div>", unsafe_allow_html=True)
+
+        with c3:
+            st.number_input(
+                "進",
+                min_value=0.0,
+                step=0.1,
+                format="%g",
+                value=float(_safe_float(meta.get('order_qty', 0))),
+                key=f"daily_record_order_{item_id}",
+                label_visibility="collapsed",
+                disabled=True,
+            )
+            st.selectbox(
+                "進貨單位",
+                options=[_norm(meta.get('order_unit', '')) or "-"],
+                index=0,
+                key=f"daily_record_order_unit_{item_id}",
+                label_visibility="collapsed",
+                disabled=True,
+            )
+
+    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_daily_stock_order_record"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
 def page_order_message_detail():
     st.title("🧾 叫貨明細")
 
