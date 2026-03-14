@@ -173,6 +173,26 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
     return merged
 
 
+def _short_item_name(text: str, limit: int = 14) -> str:
+    value = str(text or '').strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit] + '…'
+
+
+def _report_mode_key(section_key: str) -> str:
+    return f"{section_key}_report_mode"
+
+
+def _render_report_mode_selector(section_key: str, title: str = "顯示模式") -> str:
+    return st.radio(
+        title,
+        options=["手機精簡", "完整表格"],
+        horizontal=True,
+        key=_report_mode_key(section_key),
+    )
+
+
 # ============================================================
 # [R1] 庫存歷史頁
 # ============================================================
@@ -311,6 +331,8 @@ def page_view_history():
             filt_df["品項"].astype(str).str.strip() == str(sel_i).strip()
         ].copy()
 
+    report_mode = _render_report_mode_selector("history", "歷史顯示模式")
+
     detail_df = filt_df.copy()
     detail_df = detail_df[
         (detail_df["上次庫存"] != 0)
@@ -325,7 +347,7 @@ def page_view_history():
     elif sel_v == "全部廠商":
         st.caption("全部廠商時，歷史紀錄明細預設不顯示")
     else:
-        show_cols = [
+        full_cols = [
             "日期顯示",
             "品項",
             "上次庫存",
@@ -336,7 +358,7 @@ def page_view_history():
             "這次叫貨",
             "日平均",
         ]
-        export_df = detail_df[show_cols].copy().reset_index(drop=True)
+        export_df = detail_df[full_cols].copy().reset_index(drop=True)
 
         st.download_button(
             "📥 匯出 CSV",
@@ -347,11 +369,22 @@ def page_view_history():
             key="download_history_csv",
         )
 
-        render_report_dataframe(
-            export_df,
-            column_config={
+        if report_mode == "手機精簡":
+            show_df = export_df.copy()
+            show_df["品項"] = show_df["品項"].apply(_short_item_name)
+            show_df = show_df[["日期顯示", "品項", "這次庫存", "這次叫貨", "日平均"]]
+            show_config = {
                 "日期顯示": st.column_config.TextColumn("日期", width="small"),
-                "品項": st.column_config.TextColumn(width="small"),
+                "品項": st.column_config.TextColumn(width="medium"),
+                "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+            }
+        else:
+            show_df = export_df
+            show_config = {
+                "日期顯示": st.column_config.TextColumn("日期", width="small"),
+                "品項": st.column_config.TextColumn(width="medium"),
                 "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
@@ -359,8 +392,9 @@ def page_view_history():
                 "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-            },
-        )
+            }
+
+        render_report_dataframe(show_df, column_config=show_config, height=360)
 
     if st.button("⬅️ 返回", use_container_width=True, key="back_hist_final"):
         st.session_state.step = "select_vendor"
@@ -507,6 +541,8 @@ def page_analysis():
         if not purchase_filt.empty and "廠商" in purchase_filt.columns:
             purchase_filt = purchase_filt[purchase_filt["廠商"] == selected_vendor].copy()
 
+    report_mode = _render_report_mode_selector("analysis", "分析顯示模式")
+
     st.markdown("---")
 
     total_purchase_amount = 0.0
@@ -622,6 +658,7 @@ def page_analysis():
                     "廠商": st.column_config.TextColumn(width="medium"),
                     "進貨金額": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
+                height=360,
             )
 
         if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_all"):
@@ -680,9 +717,20 @@ def page_analysis():
                 key="download_analysis_single_vendor",
             )
 
-            render_report_dataframe(
-                export_df,
-                column_config={
+            if report_mode == "手機精簡":
+                show_df = export_df.copy()
+                show_df["品項"] = show_df["品項"].apply(_short_item_name)
+                show_df = show_df[["日期", "品項", "這次庫存", "這次叫貨", "日平均"]]
+                show_config = {
+                    "日期": st.column_config.TextColumn(width="small"),
+                    "品項": st.column_config.TextColumn(width="medium"),
+                    "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                }
+            else:
+                show_df = export_df
+                show_config = {
                     "日期": st.column_config.TextColumn(width="small"),
                     "品項": st.column_config.TextColumn(width="medium"),
                     "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
@@ -692,8 +740,9 @@ def page_analysis():
                     "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
                     "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
-                },
-            )
+                }
+
+            render_report_dataframe(show_df, column_config=show_config, height=360)
 
     if st.button("⬅️ 返回選單", use_container_width=True, key="back_from_analysis_single"):
         st.session_state.step = "select_vendor"

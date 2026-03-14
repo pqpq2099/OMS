@@ -120,14 +120,19 @@ def apply_table_report_style():
     )
 
 
-def render_report_dataframe(df: pd.DataFrame, column_config: dict | None = None):
+def render_report_dataframe(
+    df: pd.DataFrame,
+    column_config: dict | None = None,
+    height: int | None = None,
+):
     """共用表格呈現：統一撐滿寬度、隱藏 index，盡量讓欄寬自動適配。"""
     apply_table_report_style()
     st.dataframe(
         df,
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
         column_config=column_config or {},
+        height=height,
     )
 
 

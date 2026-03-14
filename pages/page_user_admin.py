@@ -383,7 +383,8 @@ def page_user_admin():
         # ============================================================
         # 修改帳號與名稱
         # ============================================================
-        st.subheader("修改帳號資料")
+        with st.container(border=True):
+            st.subheader("修改帳號資料")
 
         edit_users_df = read_table("users").copy()
         edit_users_df = _ensure_columns(edit_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
@@ -447,7 +448,8 @@ def page_user_admin():
         # ============================================================
         # 啟用 / 停用使用者
         # ============================================================
-        st.subheader("使用者啟用狀態")
+        with st.container(border=True):
+            st.subheader("使用者啟用狀態")
 
         toggle_users_df = read_table("users").copy()
         toggle_users_df = _ensure_columns(toggle_users_df, ["user_id", "account_code", "display_name", "is_active", "updated_at", "updated_by"])
@@ -522,9 +524,11 @@ def page_user_admin():
         # ============================================================
         # 重設使用者密碼
         # ============================================================
-        st.subheader("重設使用者密碼")
+        with st.container(border=True):
+            st.subheader("重設使用者密碼")
 
         reset_users_df = read_table("users").copy()
+        reset_users_df = _visible_users_df(reset_users_df)
 
         if reset_users_df.empty:
             st.info("沒有使用者資料")
@@ -567,7 +571,8 @@ def page_user_admin():
                         st.error(f"重設失敗：{e}")
 
         st.markdown("---")
-        st.subheader("新增使用者")
+        with st.container(border=True):
+            st.subheader("新增使用者")
 
         # 讀角色與分店資料
         create_roles_df = read_table("roles").copy()
@@ -621,8 +626,8 @@ def page_user_admin():
                 }
 
         # 分店下拉選單
-        store_options = ["ALL"]
-        store_label_map = {"ALL": "ALL"}
+        store_options = ["全部分店"]
+        store_label_map = {"全部分店": "ALL"}
 
         if not create_stores_df.empty:
             for _, row in create_stores_df.iterrows():
@@ -639,7 +644,7 @@ def page_user_admin():
                 store_label_map[show_text] = store_id
 
         with st.form("form_create_user", clear_on_submit=True):
-            new_account_code = st.text_input("帳號", placeholder="例如：jenny").strip()
+            new_account_code = st.text_input("帳號", placeholder="例如：jenny 或 name@email.com").strip()
             new_display_name = st.text_input("名稱", placeholder="例如：Jenny").strip()
 
             selected_role_label = st.selectbox("角色", options=role_options, index=0)
