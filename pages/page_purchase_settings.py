@@ -128,7 +128,7 @@ def _tab_vendors():
                     index=0 if brand_map else None,
                 )
 
-                submitted = st.form_submit_button("新增廠商", use_container_width=True)
+                submitted = st.form_submit_button("新增廠商", width="stretch")
                 if submitted:
                     try:
                         create_vendor(
@@ -181,7 +181,7 @@ def _tab_vendors():
                         index=brand_idx if brand_map else None,
                     )
 
-                    submitted = st.form_submit_button("更新廠商", use_container_width=True)
+                    submitted = st.form_submit_button("更新廠商", width="stretch")
                     if submitted:
                         try:
                             update_vendor(
@@ -220,7 +220,7 @@ def _tab_vendors():
                     "狀態": view_df.get("is_active", "").apply(_bool_text),
                 }
             )
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
 
 # ============================================================
@@ -284,7 +284,7 @@ def _tab_items():
                 orderable_unit_labels = st.multiselect("可叫貨單位 *", options=list(unit_options.keys()))
                 is_active = st.toggle("啟用", value=True)
 
-                submitted = st.form_submit_button("新增品項", use_container_width=True)
+                submitted = st.form_submit_button("新增品項", width="stretch")
                 if submitted:
                     try:
                         create_item(
@@ -360,7 +360,7 @@ def _tab_items():
                         orderable_unit_labels = st.multiselect("可叫貨單位 *", options=unit_keys, default=default_orderable)
                         is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
 
-                        submitted = st.form_submit_button("更新品項", use_container_width=True)
+                        submitted = st.form_submit_button("更新品項", width="stretch")
                         if submitted:
                             try:
                                 update_item(
@@ -413,7 +413,7 @@ def _tab_items():
                     "狀態": view_df.get("is_active", "").apply(_bool_text),
                 }
             )
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
 
 # ============================================================
@@ -469,7 +469,7 @@ def _tab_prices():
                 effective_date = st.date_input("生效日期 *")
                 is_active = st.toggle("啟用", value=True)
 
-                submitted = st.form_submit_button("新增價格", use_container_width=True)
+                submitted = st.form_submit_button("新增價格", width="stretch")
                 if submitted:
                     try:
                         create_price(
@@ -526,7 +526,7 @@ def _tab_prices():
                     end_date = st.text_input("結束日期（YYYY-MM-DD，可留空）", value=end_date_raw)
                     is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
 
-                    submitted = st.form_submit_button("更新價格", use_container_width=True)
+                    submitted = st.form_submit_button("更新價格", width="stretch")
                     if submitted:
                         try:
                             update_price(
@@ -556,7 +556,7 @@ def _tab_prices():
                     "狀態": prices_df.get("is_active", "").apply(_bool_text),
                 }
             )
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
 
 # ============================================================
@@ -589,7 +589,7 @@ def _tab_units():
                     index=0 if brand_map else None,
                 )
 
-                submitted = st.form_submit_button("新增單位", use_container_width=True)
+                submitted = st.form_submit_button("新增單位", width="stretch")
                 if submitted:
                     try:
                         create_unit(
@@ -633,7 +633,7 @@ def _tab_units():
                     is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
                     brand_label = st.selectbox("品牌", options=brand_keys, index=brand_idx if brand_keys else None)
 
-                    submitted = st.form_submit_button("更新單位", use_container_width=True)
+                    submitted = st.form_submit_button("更新單位", width="stretch")
                     if submitted:
                         try:
                             update_unit(
@@ -668,7 +668,7 @@ def _tab_units():
                     "狀態": view_df.get("is_active", "").apply(_bool_text),
                 }
             )
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
 
 # ============================================================
@@ -735,7 +735,7 @@ def _tab_unit_conversions():
                 )
                 is_active = st.toggle("啟用", value=True)
 
-                submitted = st.form_submit_button("新增換算", use_container_width=True)
+                submitted = st.form_submit_button("新增換算", width="stretch")
                 if submitted:
                     try:
                         create_unit_conversion(
@@ -794,7 +794,7 @@ def _tab_unit_conversions():
                     )
                     is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
 
-                    submitted = st.form_submit_button("更新換算", use_container_width=True)
+                    submitted = st.form_submit_button("更新換算", width="stretch")
                     if submitted:
                         try:
                             update_unit_conversion(
@@ -823,7 +823,7 @@ def _tab_unit_conversions():
                     "狀態": conv_df.get("is_active", "").apply(_bool_text),
                 }
             )
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
 
 # ============================================================

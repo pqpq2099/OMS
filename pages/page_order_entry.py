@@ -26,6 +26,7 @@ from oms_core import (
     _get_active_df,
     _get_last_po_summary,
     _get_latest_price_for_item,
+    get_base_unit_cost,
     _get_latest_stock_qty_in_display_unit,
     _item_display_name,
     _label_store,
@@ -553,8 +554,32 @@ def page_order_entry():
                 errors.append("初始化庫存不可全部為 0，且不可完全沒有叫貨。")
     
             # 有叫貨的品項，必須有有效價格
+            prices_df_for_check = read_table("prices")
             for r in submit_rows:
-                if _safe_float(r["order_qty"]) > 0 and _safe_float(r["unit_price"]) <= 0:
+                if _safe_float(r["order_qty"]) <= 0:
+                    continue
+
+                try:
+                    order_base_qty_check, _ = convert_to_base(
+                        item_id=r["item_id"],
+                        qty=r["order_qty"],
+                        from_unit=r["order_unit"],
+                        items_df=vendor_items,
+                        conversions_df=conversions_df,
+                        as_of_date=st.session_state.record_date,
+                    )
+                    base_unit_cost_check = get_base_unit_cost(
+                        item_id=r["item_id"],
+                        target_date=st.session_state.record_date,
+                        items_df=vendor_items,
+                        prices_df=prices_df_for_check,
+                        conversions_df=conversions_df,
+                    )
+                    check_amount = round(float(order_base_qty_check) * float(base_unit_cost_check or 0), 1)
+                except Exception:
+                    check_amount = 0
+
+                if check_amount <= 0:
                     errors.append(f"{r['item_name']} 缺少有效價格設定，無法送出。")
     
             if errors:
@@ -619,6 +644,7 @@ def _save_order_entry(
     is_initial_stock: bool,
 ):
     now = _now_ts()
+    prices_df = read_table("prices")
 
     # ============================================================
     # 1. 叫貨資料：只保留 > 0 的列
@@ -770,7 +796,21 @@ def _save_order_entry(
             except Exception as e:
                 raise ValueError(f"{r['item_name']} 叫貨單位換算失敗：{e}")
 
-            line_amount = round(float(r["order_qty"]) * float(r["unit_price"]), 1)
+            base_unit_cost = get_base_unit_cost(
+                item_id=r["item_id"],
+                target_date=record_date,
+                items_df=vendor_items,
+                prices_df=prices_df,
+                conversions_df=conversions_df,
+            )
+            if base_unit_cost is None or float(base_unit_cost) <= 0:
+                raise ValueError(f"{r['item_name']} 缺少有效價格設定，無法計算叫貨金額。")
+
+            line_amount = round(float(order_base_qty) * float(base_unit_cost), 1)
+            order_unit_price = round(
+                line_amount / float(r["order_qty"]),
+                4,
+            ) if float(r["order_qty"]) > 0 else 0
 
             row_dict = {c: "" for c in pol_header}
             defaults_pol = {
@@ -786,7 +826,7 @@ def _save_order_entry(
                 "order_unit": r["order_unit"],
                 "base_qty": str(round(order_base_qty, 3)),
                 "base_unit": order_base_unit,
-                "unit_price": str(r["unit_price"]),
+                "unit_price": str(order_unit_price),
                 "amount": str(line_amount),
                 "line_amount": str(line_amount),
                 "created_at": now,

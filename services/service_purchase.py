@@ -34,8 +34,8 @@ class PurchaseServiceError(Exception):
     """資料管理頁用的可顯示錯誤。"""
 
 
-def _to_bool_text(v: bool) -> str:
-    return "TRUE" if bool(v) else "FALSE"
+def _to_bool_num(v: bool) -> int:
+    return 1 if bool(v) else 0
 
 
 def _today_str(v: date | str | None = None) -> str:
@@ -111,7 +111,7 @@ def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: d
 
     for key, value in updates.items():
         if key in current:
-            current[key] = "" if value is None else str(value)
+            current[key] = "" if value is None else value
 
     new_row = [current.get(col, "") for col in header]
     start_col_letter = "A"
@@ -304,7 +304,7 @@ def create_vendor(
         "phone": _norm(phone),
         "line_id": _norm(line_id),
         "notes": _norm(notes),
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "created_at": now,
         "updated_at": now,
     }
@@ -345,7 +345,7 @@ def create_unit(
         "unit_name_zh": _norm(unit_name_zh),
         "unit_type": _norm(unit_type),
         "unit_symbol": _norm(unit_symbol),
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "created_at": now,
         "updated_at": now,
     }
@@ -407,7 +407,7 @@ def create_item(
         "default_stock_unit": _norm(default_stock_unit),
         "default_order_unit": _norm(default_order_unit),
         "orderable_units": orderable_units_text,
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "category": _norm(category),
         "spec": _norm(spec),
         "created_at": now,
@@ -441,11 +441,11 @@ def create_price(
     row = {
         "price_id": new_id,
         "item_id": _norm(item_id),
-        "unit_price": str(price_val),
+        "unit_price": price_val,
         "price_unit": _norm(price_unit),
         "effective_date": _today_str(effective_date),
         "end_date": "",
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "created_at": now,
         "updated_at": now,
     }
@@ -492,8 +492,8 @@ def create_unit_conversion(
         "item_id": _norm(item_id),
         "from_unit": _norm(from_unit),
         "to_unit": _norm(to_unit),
-        "ratio": str(ratio_val),
-        "is_active": _to_bool_text(is_active),
+        "ratio": ratio_val,
+        "is_active": _to_bool_num(is_active),
         "created_at": now,
         "updated_at": now,
     }
@@ -531,7 +531,7 @@ def update_vendor(
         "phone": _norm(phone),
         "line_id": _norm(line_id),
         "notes": _norm(notes),
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "updated_at": now,
     }
     _update_row_by_id("vendors", "vendor_id", vendor_id, updates)
@@ -557,7 +557,7 @@ def update_unit(
         "unit_name_zh": _norm(unit_name_zh),
         "unit_symbol": _norm(unit_symbol),
         "unit_type": _norm(unit_type),
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "updated_at": now,
     }
     _update_row_by_id("units", "unit_id", unit_id, updates)
@@ -604,7 +604,7 @@ def update_item(
         "default_stock_unit": _norm(default_stock_unit),
         "default_order_unit": _norm(default_order_unit),
         "orderable_units": orderable_units_text,
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "category": _norm(category),
         "spec": _norm(spec),
         "updated_at": now,
@@ -630,11 +630,11 @@ def update_price(
 
     now = _now_ts()
     updates = {
-        "unit_price": str(price_val),
+        "unit_price": price_val,
         "price_unit": _norm(price_unit),
         "effective_date": _today_str(effective_date),
         "end_date": _norm(end_date),
-        "is_active": _to_bool_text(is_active),
+        "is_active": _to_bool_num(is_active),
         "updated_at": now,
     }
     _update_row_by_id("prices", "price_id", price_id, updates)
@@ -663,8 +663,8 @@ def update_unit_conversion(
     updates = {
         "from_unit": _norm(from_unit),
         "to_unit": _norm(to_unit),
-        "ratio": str(ratio_val),
-        "is_active": _to_bool_text(is_active),
+        "ratio": ratio_val,
+        "is_active": _to_bool_num(is_active),
         "updated_at": now,
     }
     _update_row_by_id("unit_conversions", "conversion_id", conversion_id, updates)
