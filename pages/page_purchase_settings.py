@@ -79,6 +79,58 @@ def _fmt_ratio_int(v) -> str:
     except Exception:
         return str(v)
 
+def _safe_float(v, default: float = 0.0) -> float:
+    try:
+        return float(v)
+    except Exception:
+        return default
+
+def _active_like(v) -> bool:
+    return str(v).strip().lower() in {"true", "1", "yes", "y"}
+
+def _find_conversion_ratio(conv_df: pd.DataFrame, from_unit: str, to_unit: str) -> float | None:
+    if conv_df.empty:
+        return None
+    work = conv_df.copy()
+    if "is_active" in work.columns:
+        work = work[work["is_active"].apply(_active_like)]
+    if work.empty:
+        return None
+
+    mask = (
+        work.get("from_unit", "").astype(str).eq(str(from_unit))
+        & work.get("to_unit", "").astype(str).eq(str(to_unit))
+    )
+    if mask.any():
+        row = work[mask].iloc[0]
+        return _safe_float(row.get("ratio"), 0.0)
+    return None
+
+def _render_price_rule_hint(item_row: pd.Series, conv_df: pd.DataFrame, base_unit_price: float | None = None):
+    base_unit = _norm(item_row.get("base_unit"))
+    order_unit = _norm(item_row.get("default_order_unit"))
+    stock_unit = _norm(item_row.get("default_stock_unit"))
+
+    st.info(
+        f"價格固定填『基準單位』價格。此品項基準單位：{base_unit or '-'}；庫存單位：{stock_unit or '-'}；預設叫貨單位：{order_unit or '-'}"
+    )
+    st.caption(
+        "請填最小計算單位的單價，例如：1箱=12條、1箱1260 元，則價格要填 105 / 條，不要直接填 1260 / 箱。"
+    )
+
+    if base_unit_price is None or base_unit_price <= 0:
+        return
+
+    if not base_unit or not order_unit or order_unit == base_unit:
+        return
+
+    ratio = _find_conversion_ratio(conv_df, order_unit, base_unit)
+    if ratio and ratio > 0:
+        order_price = base_unit_price * ratio
+        st.caption(
+            f"自動換算參考：{_fmt_price_1(base_unit_price)}/{base_unit} ≈ {_fmt_price_1(order_price)}/{order_unit}（1{order_unit} = {_fmt_ratio_int(ratio)}{base_unit}）"
+        )
+
 def _filter_items_by_vendor(items_df: pd.DataFrame, vendor_id: str) -> pd.DataFrame:
     if items_df.empty:
         return items_df.copy()
@@ -424,14 +476,12 @@ def _tab_prices():
 
     vendors_df = list_active_vendors()
     items_df = list_active_items()
-    units_df = list_active_units()
 
     if vendors_df.empty:
         st.info("請先建立啟用中的廠商")
         return
 
     vendor_options = {_vendor_label(r): _norm(r.get("vendor_id")) for _, r in vendors_df.iterrows()}
-    unit_options = {_unit_label(r): _norm(r.get("unit_name_zh") or r.get("unit_name") or r.get("unit_id")) for _, r in units_df.iterrows()}
 
     selected_vendor_label = st.selectbox(
         "選擇供應商",
@@ -455,7 +505,10 @@ def _tab_prices():
         key="price_item_select",
     )
     item_id = item_options[selected_label]
+    item_row = filtered_items_df[filtered_items_df["item_id"].astype(str) == item_id].iloc[0]
+    base_unit = _norm(item_row.get("base_unit"))
     prices_df = list_prices(item_id=item_id)
+    conv_df = list_unit_conversions(item_id=item_id)
 
     col_left, col_right = st.columns([1.1, 1.9], gap="large")
 
@@ -464,10 +517,11 @@ def _tab_prices():
 
         if mode == "新增價格":
             with st.form("form_create_price", clear_on_submit=True):
-                unit_price = st.number_input("單價 *", min_value=0.0, step=0.1, format="%.1f")
-                price_unit_label = st.selectbox("價格單位 *", options=list(unit_options.keys()), index=None, placeholder="請選擇")
+                unit_price = st.number_input("基準單位單價 *", min_value=0.0, step=0.1, format="%.1f")
+                st.text_input("價格單位（固定基準單位）", value=base_unit, disabled=True)
                 effective_date = st.date_input("生效日期 *")
                 is_active = st.toggle("啟用", value=True)
+                _render_price_rule_hint(item_row, conv_df, unit_price)
 
                 submitted = st.form_submit_button("新增價格", width="stretch")
                 if submitted:
@@ -475,7 +529,7 @@ def _tab_prices():
                         create_price(
                             item_id=item_id,
                             unit_price=unit_price,
-                            price_unit=unit_options.get(price_unit_label, ""),
+                            price_unit=base_unit,
                             effective_date=effective_date,
                             is_active=is_active,
                         )
@@ -500,31 +554,20 @@ def _tab_prices():
                 price_id = price_options[selected_price_label]
                 row = prices_df[prices_df["price_id"].astype(str) == price_id].iloc[0]
 
-                unit_keys = list(unit_options.keys())
-
-                def _find_unit_idx(target: str) -> int:
-                    for i, label in enumerate(unit_keys):
-                        if unit_options[label] == target:
-                            return i
-                        return 0
-
                 with st.form("form_update_price"):
                     unit_price = st.number_input(
-                        "單價 *",
+                        "基準單位單價 *",
                         min_value=0.0,
                         step=0.1,
                         format="%.1f",
                         value=float(_norm(row.get("unit_price")) or 0),
                     )
-                    price_unit_label = st.selectbox(
-                        "價格單位 *",
-                        options=unit_keys,
-                        index=_find_unit_idx(_norm(row.get("price_unit"))),
-                    )
+                    st.text_input("價格單位（固定基準單位）", value=base_unit, disabled=True)
                     effective_date = st.date_input("生效日期 *", value=pd.to_datetime(_norm(row.get("effective_date"))).date())
                     end_date_raw = _norm(row.get("end_date"))
                     end_date = st.text_input("結束日期（YYYY-MM-DD，可留空）", value=end_date_raw)
                     is_active = st.toggle("啟用", value=_bool_text(row.get("is_active")) == "啟用")
+                    _render_price_rule_hint(item_row, conv_df, unit_price)
 
                     submitted = st.form_submit_button("更新價格", width="stretch")
                     if submitted:
@@ -532,7 +575,7 @@ def _tab_prices():
                             update_price(
                                 price_id=price_id,
                                 unit_price=unit_price,
-                                price_unit=unit_options.get(price_unit_label, ""),
+                                price_unit=base_unit,
                                 effective_date=effective_date,
                                 end_date=end_date,
                                 is_active=is_active,
@@ -550,15 +593,13 @@ def _tab_prices():
             display = pd.DataFrame(
                 {
                     "生效日期": prices_df.get("effective_date", ""),
-                    "單價": prices_df.get("unit_price", ""),
+                    "單價": prices_df.get("unit_price", "").apply(_fmt_price_1),
                     "單位": prices_df.get("price_unit", ""),
                     "結束日期": prices_df.get("end_date", ""),
                     "狀態": prices_df.get("is_active", "").apply(_bool_text),
                 }
             )
             st.dataframe(display, width="stretch", hide_index=True)
-
-
 # ============================================================
 # [P5] 單位管理（全系統共用）
 # ============================================================
