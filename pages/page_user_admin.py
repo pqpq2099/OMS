@@ -620,6 +620,7 @@ def page_user_admin():
                                 note="建立新使用者",
                             )
                             st.success("建立成功。預設密碼為 123456，第一次登入需修改密碼。")
+                            bust_cache()
                             st.rerun()
                         except Exception as e:
                             st.error(f"建立失敗：{e}")
