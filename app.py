@@ -627,7 +627,7 @@ def router():
         page_order_entry()
 
     elif page == "daily_stock_order_record":
-    page_daily_stock_order_record()
+        page_daily_stock_order_record()
     
     elif step == "order_message_detail":
         page_order_message_detail()
