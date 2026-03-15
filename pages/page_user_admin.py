@@ -305,15 +305,26 @@ def _build_store_maps(stores_df: pd.DataFrame) -> tuple[dict[str, str], dict[str
 
 
 def _build_store_option_map(store_id_to_name: dict[str, str]) -> dict[str, str]:
-    """建立穩定的分店下拉選單，避免僅靠中文名稱反查造成選錯分店。"""
+    """建立分店下拉選單，UI 只顯示店名，但實際值仍綁定 store_id。"""
     option_map: dict[str, str] = {}
+
     if "ALL" in store_id_to_name:
-        option_map["全部分店（ALL）"] = "ALL"
+        option_map["全部分店"] = "ALL"
 
     normal_store_ids = [sid for sid in store_id_to_name.keys() if sid != "ALL"]
     for sid in normal_store_ids:
         sname = _norm_text(store_id_to_name.get(sid)) or sid
-        option_map[f"{sname}（{sid}）"] = sid
+        label = sname
+
+        # 若真的遇到重複店名，才在重複項目後面補流水號，避免下拉選單顯示 store_id
+        if label in option_map:
+            dup_no = 2
+            while f"{label} ({dup_no})" in option_map:
+                dup_no += 1
+            label = f"{label} ({dup_no})"
+
+        option_map[label] = sid
+
     return option_map
 
 
@@ -432,7 +443,7 @@ def _user_display_label(row: pd.Series, store_id_to_name: dict[str, str]) -> str
 
 
 def _build_users_view(users_df: pd.DataFrame, roles_df: pd.DataFrame, stores_df: pd.DataFrame) -> pd.DataFrame:
-    """建立顯示用 users_view。"""
+    """建立顯示用 users_view。只用 store_id 對照店名，避免顯示錯店。"""
     role_display_col = _pick_first_existing_column(
         roles_df,
         ["role_name_zh", "role_name"],
@@ -449,29 +460,24 @@ def _build_users_view(users_df: pd.DataFrame, roles_df: pd.DataFrame, stores_df:
         "store_id",
     )
 
-    store_map_id = stores_df[["store_id", store_label_col]].copy()
-    store_map_id = store_map_id.rename(columns={
+    store_map = stores_df[["store_id", store_label_col]].copy()
+    store_map = store_map.rename(columns={
         "store_id": "store_scope",
-        store_label_col: "store_display_by_id",
+        store_label_col: "store_display",
     })
-
-    store_map_code = stores_df[["store_code", store_label_col]].copy()
-    store_map_code = store_map_code.rename(columns={
-        "store_code": "store_scope",
-        store_label_col: "store_display_by_code",
-    })
+    store_map["store_scope"] = store_map["store_scope"].astype(str).str.strip()
 
     users_view = users_df.copy()
+    users_view["store_scope"] = users_view["store_scope"].astype(str).str.strip()
+
     users_view = users_view.merge(role_map, on="role_id", how="left")
-    users_view = users_view.merge(store_map_id, on="store_scope", how="left")
-    users_view = users_view.merge(store_map_code, on="store_scope", how="left")
+    users_view = users_view.merge(store_map, on="store_scope", how="left")
 
     users_view["role_display"] = users_view["role_display"].fillna(
         users_view["role_id"].map(ROLE_LABELS)
     )
     users_view["role_display"] = users_view["role_display"].fillna(users_view["role_id"])
 
-    users_view["store_display"] = users_view["store_display_by_id"].fillna(users_view["store_display_by_code"])
     users_view.loc[users_view["store_scope"] == "ALL", "store_display"] = "全部分店"
     users_view["store_display"] = users_view["store_display"].fillna("未設定")
     users_view["status_display"] = users_view["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
@@ -632,9 +638,9 @@ def page_user_admin():
                 selected_role_id = role_name_to_id[selected_role_name]
 
                 if selected_role_id in ["admin", "test_admin"]:
-                    default_store_label = "全部分店（ALL）"
+                    default_store_label = "全部分店"
                 else:
-                    non_all_options = [x for x in store_options if x != "全部分店（ALL）"]
+                    non_all_options = [x for x in store_options if x != "全部分店"]
                     default_store_label = non_all_options[0] if non_all_options else (store_options[0] if store_options else "")
 
                 default_store_index = store_options.index(default_store_label) if default_store_label in store_options else 0
