@@ -1,3 +1,11 @@
+# ============================================================
+# ORIVIA OMS
+# 檔案：pages/page_order_entry.py
+# 說明：叫貨與庫存作業頁
+# 功能：選擇分店、選擇廠商、進行庫存與叫貨輸入、產出 LINE 明細。
+# 注意：這是營運核心頁，修改前要先確認現場流程。
+# ============================================================
+
 """
 頁面模組：叫貨流程與分店/廠商選擇。
 這個檔案負責：
@@ -711,6 +719,7 @@ def _save_order_entry(
         defaults = {
             "stocktake_id": stocktake_id,
             "store_id": store_id,
+            "vendor_id": vendor_id,
             "stocktake_date": str(record_date),
             "stocktake_type": "initial" if is_initial_stock else "regular",
             "status": "done",
@@ -1270,42 +1279,105 @@ def page_daily_stock_order_record():
 
     # -----------------------------
     # 取得當日最新盤點
+    # 說明：
+    # 1. 先用 stocktakes 主表抓同分店、同日期的盤點批次
+    # 2. vendor_id 若有寫入就優先精準比對
+    # 3. 若主表 vendor_id 為空，改由 stocktake_lines 的 vendor_id 補抓
+    # 4. 最後逐品項取最新一筆，避免整批找得到但明細抓不到
     # -----------------------------
     stocktake_map = {}
     if not stocktakes_df.empty and not stocktake_lines_df.empty:
         st_work = stocktakes_df.copy()
-        st_work["store_id"] = st_work["store_id"].astype(str).str.strip()
-        st_work["vendor_id"] = st_work.get("vendor_id", "").astype(str).str.strip()
-        st_work["stocktake_date_dt"] = pd.to_datetime(st_work.get("stocktake_date"), errors="coerce")
-        st_work["created_at_dt"] = pd.to_datetime(st_work.get("created_at"), errors="coerce")
+        stl_work = stocktake_lines_df.copy()
 
-        st_work = st_work[
-            (st_work["store_id"] == store_id) &
-            (st_work["vendor_id"] == vendor_id) &
-            (st_work["stocktake_date_dt"].dt.date == selected_date)
-        ].copy()
+        if "stocktake_id" not in st_work.columns or "stocktake_id" not in stl_work.columns:
+            st_work = pd.DataFrame()
+        else:
+            st_work["stocktake_id"] = st_work["stocktake_id"].astype(str).str.strip()
+            st_work["store_id"] = st_work.get("store_id", "").astype(str).str.strip()
+            st_work["vendor_id"] = st_work.get("vendor_id", "").astype(str).str.strip()
+            st_work["stocktake_date_dt"] = pd.to_datetime(st_work.get("stocktake_date"), errors="coerce")
+            st_work["created_at_dt"] = pd.to_datetime(st_work.get("created_at"), errors="coerce")
 
-        latest_stocktake_id = ""
-        if not st_work.empty:
-            sort_cols = [c for c in ["created_at_dt", "stocktake_date_dt"] if c in st_work.columns]
-            if sort_cols:
-                st_work = st_work.sort_values(sort_cols, ascending=True)
-            latest_stocktake = st_work.tail(1).iloc[0]
-            latest_stocktake_id = _norm(latest_stocktake.get("stocktake_id", ""))
-
-        if latest_stocktake_id:
-            stl_work = stocktake_lines_df.copy()
             stl_work["stocktake_id"] = stl_work["stocktake_id"].astype(str).str.strip()
-            stl_work = stl_work[stl_work["stocktake_id"] == latest_stocktake_id].copy()
+            stl_work["store_id"] = stl_work.get("store_id", "").astype(str).str.strip()
+            stl_work["vendor_id"] = stl_work.get("vendor_id", "").astype(str).str.strip()
+            stl_work["item_id"] = stl_work.get("item_id", "").astype(str).str.strip()
+            stl_work["created_at_dt"] = pd.to_datetime(stl_work.get("created_at"), errors="coerce")
 
-            for _, r in stl_work.iterrows():
-                item_id = _norm(r.get("item_id", ""))
-                if not item_id:
-                    continue
-                stocktake_map[item_id] = {
-                    "stock_qty": _safe_float(r.get("stock_qty", 0)),
-                    "stock_unit": _norm(r.get("stock_unit", "")),
-                }
+            # 先抓同分店、同日期主表
+            st_work = st_work[
+                (st_work["store_id"] == store_id) &
+                (st_work["stocktake_date_dt"].dt.date == selected_date)
+            ].copy()
+
+            if not st_work.empty:
+                exact_st = st_work[st_work["vendor_id"] == vendor_id].copy()
+                candidate_stocktake_ids = set()
+
+                # 優先使用主表 vendor_id 精準命中的批次
+                if not exact_st.empty:
+                    candidate_stocktake_ids = set(exact_st["stocktake_id"].tolist())
+                else:
+                    # 若主表 vendor_id 沒寫到，退回由明細 vendor_id 補抓
+                    same_day_ids = set(st_work["stocktake_id"].tolist())
+                    stl_same_day = stl_work[stl_work["stocktake_id"].isin(same_day_ids)].copy()
+                    if not stl_same_day.empty:
+                        stl_same_day = stl_same_day[
+                            (stl_same_day["store_id"] == store_id) &
+                            (stl_same_day["vendor_id"] == vendor_id)
+                        ].copy()
+                        candidate_stocktake_ids = set(stl_same_day["stocktake_id"].tolist())
+
+                if candidate_stocktake_ids:
+                    stl_pick = stl_work[stl_work["stocktake_id"].isin(candidate_stocktake_ids)].copy()
+                    stl_pick = stl_pick[
+                        (stl_pick["store_id"] == store_id) &
+                        (stl_pick["vendor_id"] == vendor_id)
+                    ].copy()
+
+                    # 若明細 vendor_id 也沒有寫到，最後退回同批次全部明細
+                    if stl_pick.empty:
+                        stl_pick = stl_work[stl_work["stocktake_id"].isin(candidate_stocktake_ids)].copy()
+
+                    if not stl_pick.empty:
+                        meta_cols = [c for c in ["stocktake_id", "stocktake_date_dt", "created_at_dt"] if c in st_work.columns]
+                        stl_pick = stl_pick.merge(
+                            st_work[meta_cols].drop_duplicates(subset=["stocktake_id"]),
+                            on="stocktake_id",
+                            how="left",
+                            suffixes=("", "_main"),
+                        )
+
+                        if "created_at_dt_main" in stl_pick.columns:
+                            stl_pick["sort_created_at"] = stl_pick["created_at_dt_main"]
+                        else:
+                            stl_pick["sort_created_at"] = stl_pick["created_at_dt"]
+
+                        if "stocktake_date_dt" not in stl_pick.columns:
+                            stl_pick["stocktake_date_dt"] = pd.NaT
+
+                        stl_pick = stl_pick.sort_values(
+                            by=["sort_created_at", "stocktake_date_dt"],
+                            ascending=True,
+                            na_position="last",
+                        )
+
+                        # 同一品項若當天重複送出，取最後一筆
+                        latest_by_item = stl_pick.drop_duplicates(subset=["item_id"], keep="last")
+
+                        for _, r in latest_by_item.iterrows():
+                            item_id = _norm(r.get("item_id", ""))
+                            if not item_id:
+                                continue
+
+                            stock_qty = r.get("stock_qty", r.get("qty", 0))
+                            stock_unit = r.get("stock_unit", r.get("unit_id", ""))
+
+                            stocktake_map[item_id] = {
+                                "stock_qty": _safe_float(stock_qty),
+                                "stock_unit": _norm(stock_unit),
+                            }
 
     if not order_map and not stocktake_map:
         st.info("這一天目前沒有找到庫存 / 叫貨紀錄。")
