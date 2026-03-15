@@ -1080,7 +1080,333 @@ def page_order_message_detail():
 
 
 
+# ============================================================
+# [E4] Daily Stock Order Record / 當日庫存叫貨紀錄
+# 說明：
+# 1. 顯示指定日期、指定廠商的最近一筆庫存/叫貨紀錄
+# 2. 畫面風格比照叫貨頁
+# 3. 完全唯讀，不可編輯
+# ============================================================
+def page_daily_stock_order_record():
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 2rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }
 
+        [data-testid='stHorizontalBlock'] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            gap: 0.35rem !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0px !important;
+        }
+
+        div[data-testid='stHorizontalBlock'] > div:nth-child(2),
+        div[data-testid='stHorizontalBlock'] > div:nth-child(3) {
+            flex: 0 0 84px !important;
+            min-width: 84px !important;
+            max-width: 84px !important;
+        }
+
+        div[data-testid='stNumberInput'] label {
+            display: none !important;
+        }
+
+        div[data-testid="stNumberInput"] input {
+            text-align: center !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
+
+        .order-divider {
+            margin: 10px 0 14px 0;
+            border-top: 1px solid rgba(128,128,128,0.25);
+        }
+
+        .order-meta {
+            font-size: 0.82rem;
+            color: rgba(170, 178, 195, 0.9);
+            margin-top: -0.2rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .order-unit-label {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 34px;
+            font-size: 1rem;
+            font-weight: 500;
+            opacity: 0.9;
+            margin-top: 3px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title("📋 當日庫存叫貨紀錄")
+
+    store_id = _norm(st.session_state.get("store_id", ""))
+    store_name = st.session_state.get("store_name", "")
+
+    if not store_id:
+        st.warning("請先選擇分店。")
+        if st.button("⬅️ 返回分店列表", use_container_width=True):
+            st.session_state.step = "select_store"
+            st.rerun()
+        return
+
+    selected_date = st.date_input(
+        "📅 日期",
+        value=st.session_state.get("record_date", date.today()),
+        key="daily_record_date",
+    )
+
+    vendors_df = _get_active_df(read_table("vendors"))
+    items_df = _get_active_df(read_table("items"))
+    stocktakes_df = read_table("stocktakes")
+    stocktake_lines_df = read_table("stocktake_lines")
+    po_df = read_table("purchase_orders")
+    pol_df = read_table("purchase_order_lines")
+
+    if vendors_df.empty or items_df.empty:
+        st.warning("⚠️ 廠商或品項資料讀取失敗")
+        return
+
+    # 只顯示目前有品項綁定的啟用廠商
+    item_vendor_ids = set(items_df.get("default_vendor_id", pd.Series(dtype=str)).astype(str).str.strip())
+    vendors = vendors_df[
+        vendors_df["vendor_id"].astype(str).str.strip().isin(item_vendor_ids)
+    ].copy()
+
+    if vendors.empty:
+        st.info("目前沒有可用廠商")
+        return
+
+    vendors["vendor_label"] = vendors.apply(_label_vendor, axis=1)
+    vendors = vendors.sort_values(by=["vendor_label"], ascending=True).reset_index(drop=True)
+
+    default_vendor_id = _norm(st.session_state.get("vendor_id", ""))
+    vendor_id_to_label = {
+        _norm(r.get("vendor_id", "")): r.get("vendor_label", "")
+        for _, r in vendors.iterrows()
+    }
+    vendor_label_to_id = {
+        r.get("vendor_label", ""): _norm(r.get("vendor_id", ""))
+        for _, r in vendors.iterrows()
+    }
+
+    vendor_labels = vendors["vendor_label"].tolist()
+    default_index = 0
+    if default_vendor_id and default_vendor_id in vendor_id_to_label:
+        default_label = vendor_id_to_label[default_vendor_id]
+        if default_label in vendor_labels:
+            default_index = vendor_labels.index(default_label)
+
+    selected_vendor_label = st.selectbox(
+        "🏢 選擇廠商",
+        options=vendor_labels,
+        index=default_index,
+        key="daily_record_vendor",
+    )
+    vendor_id = vendor_label_to_id.get(selected_vendor_label, "")
+
+    vendor_items = items_df[
+        items_df["default_vendor_id"].astype(str).str.strip() == vendor_id
+    ].copy()
+
+    if vendor_items.empty:
+        st.info("此廠商目前沒有對應品項")
+        return
+
+    vendor_items = _sort_items_for_operation(vendor_items).reset_index(drop=True)
+
+    # -----------------------------
+    # 取得當日最新叫貨單
+    # -----------------------------
+    po_work = po_df.copy()
+    if not po_work.empty:
+        po_work["store_id"] = po_work["store_id"].astype(str).str.strip()
+        po_work["vendor_id"] = po_work["vendor_id"].astype(str).str.strip()
+        po_work["order_date_dt"] = pd.to_datetime(po_work.get("order_date"), errors="coerce")
+        po_work["created_at_dt"] = pd.to_datetime(po_work.get("created_at"), errors="coerce")
+
+        po_work = po_work[
+            (po_work["store_id"] == store_id) &
+            (po_work["vendor_id"] == vendor_id) &
+            (po_work["order_date_dt"].dt.date == selected_date)
+        ].copy()
+    latest_po_id = ""
+    if not po_work.empty:
+        sort_cols = [c for c in ["created_at_dt", "order_date_dt"] if c in po_work.columns]
+        if sort_cols:
+            po_work = po_work.sort_values(sort_cols, ascending=True)
+        latest_po = po_work.tail(1).iloc[0]
+        latest_po_id = _norm(latest_po.get("po_id", ""))
+
+    order_map = {}
+    if latest_po_id and not pol_df.empty:
+        pol_work = pol_df.copy()
+        pol_work["po_id"] = pol_work["po_id"].astype(str).str.strip()
+        pol_work = pol_work[pol_work["po_id"] == latest_po_id].copy()
+
+        for _, r in pol_work.iterrows():
+            item_id = _norm(r.get("item_id", ""))
+            if not item_id:
+                continue
+            order_map[item_id] = {
+                "order_qty": _safe_float(r.get("order_qty", 0)),
+                "order_unit": _norm(r.get("order_unit", "")),
+            }
+
+    # -----------------------------
+    # 取得當日最新盤點
+    # -----------------------------
+    stocktake_map = {}
+    if not stocktakes_df.empty and not stocktake_lines_df.empty:
+        st_work = stocktakes_df.copy()
+        st_work["store_id"] = st_work["store_id"].astype(str).str.strip()
+        st_work["vendor_id"] = st_work.get("vendor_id", "").astype(str).str.strip()
+        st_work["stocktake_date_dt"] = pd.to_datetime(st_work.get("stocktake_date"), errors="coerce")
+        st_work["created_at_dt"] = pd.to_datetime(st_work.get("created_at"), errors="coerce")
+
+        st_work = st_work[
+            (st_work["store_id"] == store_id) &
+            (st_work["vendor_id"] == vendor_id) &
+            (st_work["stocktake_date_dt"].dt.date == selected_date)
+        ].copy()
+
+        latest_stocktake_id = ""
+        if not st_work.empty:
+            sort_cols = [c for c in ["created_at_dt", "stocktake_date_dt"] if c in st_work.columns]
+            if sort_cols:
+                st_work = st_work.sort_values(sort_cols, ascending=True)
+            latest_stocktake = st_work.tail(1).iloc[0]
+            latest_stocktake_id = _norm(latest_stocktake.get("stocktake_id", ""))
+
+        if latest_stocktake_id:
+            stl_work = stocktake_lines_df.copy()
+            stl_work["stocktake_id"] = stl_work["stocktake_id"].astype(str).str.strip()
+            stl_work = stl_work[stl_work["stocktake_id"] == latest_stocktake_id].copy()
+
+            for _, r in stl_work.iterrows():
+                item_id = _norm(r.get("item_id", ""))
+                if not item_id:
+                    continue
+                stocktake_map[item_id] = {
+                    "stock_qty": _safe_float(r.get("stock_qty", 0)),
+                    "stock_unit": _norm(r.get("stock_unit", "")),
+                }
+
+    if not order_map and not stocktake_map:
+        st.info("這一天目前沒有找到庫存 / 叫貨紀錄。")
+        if st.button("⬅️ 返回廠商選單", use_container_width=True):
+            st.session_state.step = "select_vendor"
+            st.rerun()
+        return
+
+    latest_metrics_df = _build_latest_item_metrics_df(
+        store_id=store_id,
+        as_of_date=selected_date,
+    )
+
+    latest_metrics_map = {}
+    if not latest_metrics_df.empty:
+        for _, m in latest_metrics_df.iterrows():
+            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
+
+    st.caption(f"{store_name}｜{selected_vendor_label}｜最近一筆紀錄")
+
+    st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
+
+    h1, h2, h3 = st.columns([6, 1, 1])
+    h1.write("**品項名稱（建議量=日均×1.5）**")
+    h2.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+    h3.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
+
+    for _, row in vendor_items.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        item_name = _item_display_name(row)
+
+        base_unit = _norm(row.get("base_unit", ""))
+        stock_unit_default = _norm(row.get("default_stock_unit", "")) or base_unit
+        order_unit_default = _norm(row.get("default_order_unit", "")) or base_unit
+
+        metric = latest_metrics_map.get(item_id, {})
+        total_stock_ref = _safe_float(metric.get("庫存合計", 0))
+        daily_avg = _safe_float(metric.get("日平均", 0))
+        suggest_qty = round(daily_avg * 1.5, 1)
+        status_hint = _norm(_status_hint(total_stock_ref, daily_avg, suggest_qty))
+
+        stock_info = stocktake_map.get(item_id, {})
+        order_info = order_map.get(item_id, {})
+
+        stock_qty = _safe_float(stock_info.get("stock_qty", 0))
+        stock_unit = _norm(stock_info.get("stock_unit", "")) or stock_unit_default
+
+        order_qty = _safe_float(order_info.get("order_qty", 0))
+        order_unit = _norm(order_info.get("order_unit", "")) or order_unit_default
+
+        c1, c2, c3 = st.columns([6, 1, 1])
+
+        with c1:
+            st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
+            tail = f"　{status_hint}" if status_hint else ""
+            st.markdown(
+                f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
+                unsafe_allow_html=True,
+            )
+
+        with c2:
+            st.number_input(
+                "庫",
+                min_value=0.0,
+                step=0.1,
+                format="%g",
+                value=float(stock_qty),
+                key=f"daily_record_stock_{item_id}",
+                label_visibility="collapsed",
+                disabled=True,
+            )
+            st.markdown(
+                f"<div class='order-unit-label'>{stock_unit}</div>",
+                unsafe_allow_html=True,
+            )
+
+        with c3:
+            st.number_input(
+                "進",
+                min_value=0.0,
+                step=0.1,
+                format="%g",
+                value=float(order_qty),
+                key=f"daily_record_order_{item_id}",
+                label_visibility="collapsed",
+                disabled=True,
+            )
+            st.selectbox(
+                "進貨單位",
+                options=[order_unit or "-"],
+                index=0,
+                key=f"daily_record_unit_{item_id}",
+                label_visibility="collapsed",
+                disabled=True,
+            )
+
+    st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
+
+    if st.button("⬅️ 返回廠商選單", use_container_width=True):
+        st.session_state.step = "select_vendor"
+        st.rerun()
 
 
 
