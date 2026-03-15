@@ -1,3 +1,11 @@
+# ============================================================
+# ORIVIA OMS
+# 檔案：pages/page_login.py
+# 說明：登入頁面
+# 功能：帳號登入、權限載入、登入狀態建立。
+# 注意：登入成功後會把角色與分店範圍寫入 session_state。
+# ============================================================
+
 """
 頁面模組：登入 / 首次初始化 / 修改密碼
 
@@ -162,6 +170,22 @@ def logout():
             del st.session_state[key]
 
 
+def _role_label_zh(role_id: str) -> str:
+    """將角色代碼轉成中文顯示，sidebar 不再直接顯示英文代碼。"""
+    mapping = {
+        "owner": "負責人",
+        "admin": "管理員",
+        "store_manager": "店長",
+        "leader": "組長",
+        "staff": "一般員工",
+        "employee": "一般員工",
+        "test_admin": "測試管理員",
+        "test_store_manager": "測試店長",
+    }
+    rid = _norm_text(role_id).lower()
+    return mapping.get(rid, rid)
+
+
 def render_login_sidebar():
     """在 sidebar 顯示目前登入者資訊與登出按鈕。"""
     if "login_user" not in st.session_state:
@@ -170,9 +194,10 @@ def render_login_sidebar():
     st.sidebar.markdown("---")
     st.sidebar.caption("目前登入")
     st.sidebar.write(st.session_state.get("login_display_name", ""))
+    role_id = st.session_state.get("login_role_id", "")
     st.sidebar.caption(
         f"{st.session_state.get('login_account_code', '')} / "
-        f"{st.session_state.get('login_role_id', '')}"
+        f"{_role_label_zh(role_id)}"
     )
 
     if st.sidebar.button("登出", use_container_width=True, key="btn_logout"):

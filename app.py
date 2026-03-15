@@ -531,9 +531,10 @@ def render_sidebar():
             st.session_state.step = "view_history"
             st.rerun()
 
-        if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
-            st.session_state.step = "cost_debug"
-            st.rerun()
+        if role in ["owner", "admin"]:
+            if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
+                st.session_state.step = "cost_debug"
+                st.rerun()
 
         if st.button("📤 資料匯出", width="stretch", key="sb_export"):
             st.session_state.step = "export"
@@ -585,10 +586,6 @@ def render_sidebar():
                 st.session_state.step = "appearance_settings"
                 st.rerun()
             
-            if st.button("🔐 密碼工具", width="stretch", key="sb_password_tool"):
-                st.session_state.step = "password_tool"
-                st.rerun()
-                
             if st.button("ℹ️ 系統資訊", width="stretch", key="sb_system_info"):
                 st.session_state.step = "system_info"
                 st.rerun()

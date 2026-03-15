@@ -1,3 +1,11 @@
+# ============================================================
+# ORIVIA OMS
+# 檔案：tests/write_pipeline_smoke_test.py
+# 說明：寫入流程快速測試
+# 功能：檢查 write pipeline 的基本可用性。
+# 注意：屬測試用途。
+# ============================================================
+
 """測試檔：驗證 write pipeline 建立資料與 audit 寫入流程。"""
 
 print("== write pipeline smoke test ==")
