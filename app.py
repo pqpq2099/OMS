@@ -26,10 +26,11 @@ from oms_core import (
 )
 
 from pages.page_order_entry import (
-    page_order_entry,
-    page_order_message_detail,
     page_select_store,
     page_select_vendor,
+    page_order_entry,
+    page_order_message_detail,
+    page_daily_stock_order_record,   # ←補回
 )
 
 from pages.page_reports import (
@@ -511,6 +512,8 @@ def render_sidebar():
             st.session_state.step = "order_message_detail"
             st.rerun()
 
+        if st.button("📋 當日庫存叫貨紀錄", use_container_width=True):
+           st.session_state["page"] = "daily_stock_order_record"
         st.markdown("---")
 
         # ====================================================
@@ -622,6 +625,9 @@ def router():
 
     elif step == "order_entry":
         page_order_entry()
+
+    elif page == "daily_stock_order_record":
+    page_daily_stock_order_record()
     
     elif step == "order_message_detail":
         page_order_message_detail()
