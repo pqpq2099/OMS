@@ -548,8 +548,8 @@ def page_user_admin():
             st.warning("目前 roles 表沒有可用角色，無法新增使用者。")
         else:
             with st.form("form_create_user", clear_on_submit=True):
-                new_account_code = st.text_input("帳號", placeholder="例如：jenny").strip()
-                new_display_name = st.text_input("名稱", placeholder="例如：Jenny").strip()
+                new_account_code = st.text_input("登入帳號", placeholder="例如：staff01").strip()
+                new_display_name = st.text_input("顯示名稱", placeholder="例如：阿辰").strip()
                 selected_role_name = st.selectbox("角色", options=role_options, index=0)
                 selected_role_id = role_name_to_id[selected_role_name]
 
