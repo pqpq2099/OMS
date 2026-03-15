@@ -631,6 +631,16 @@ def page_user_admin():
         if not role_options:
             st.warning("目前 roles 表沒有可用角色，無法新增使用者。")
         else:
+            # 新增使用者：分店下拉只顯示店名，但 session_state 內部綁定店名標籤，
+            # 避免送出瞬間 rerun 時又被預設值蓋回第一家店。
+            if "create_user_store_label" not in st.session_state or st.session_state["create_user_store_label"] not in store_options:
+                if "全部分店" in store_options:
+                    default_non_admin_label = next((x for x in store_options if x != "全部分店"), "全部分店")
+                else:
+                    default_non_admin_label = store_options[0] if store_options else ""
+
+                st.session_state["create_user_store_label"] = default_non_admin_label
+
             with st.form("form_create_user", clear_on_submit=True):
                 new_account_code = st.text_input("登入帳號", placeholder="例如：staff01").strip()
                 new_display_name = st.text_input("顯示名稱", placeholder="例如：阿辰").strip()
@@ -638,13 +648,18 @@ def page_user_admin():
                 selected_role_id = role_name_to_id[selected_role_name]
 
                 if selected_role_id in ["admin", "test_admin"]:
-                    default_store_label = "全部分店"
+                    if "全部分店" in store_options:
+                        st.session_state["create_user_store_label"] = "全部分店"
                 else:
-                    non_all_options = [x for x in store_options if x != "全部分店"]
-                    default_store_label = non_all_options[0] if non_all_options else (store_options[0] if store_options else "")
+                    if st.session_state.get("create_user_store_label") == "全部分店":
+                        non_all_options = [x for x in store_options if x != "全部分店"]
+                        st.session_state["create_user_store_label"] = non_all_options[0] if non_all_options else (store_options[0] if store_options else "")
 
-                default_store_index = store_options.index(default_store_label) if default_store_label in store_options else 0
-                selected_store_label = st.selectbox("分店", options=store_options, index=default_store_index)
+                selected_store_label = st.selectbox(
+                    "分店",
+                    options=store_options,
+                    key="create_user_store_label",
+                )
                 selected_store_scope = store_option_map[selected_store_label]
 
                 st.caption("預設密碼：123456")
@@ -704,6 +719,8 @@ def page_user_admin():
                                 note="建立新使用者",
                             )
                             st.success("建立成功。預設密碼為 123456，第一次登入需修改密碼。")
+                            if "create_user_store_label" in st.session_state:
+                                del st.session_state["create_user_store_label"]
                             bust_cache()
                             st.rerun()
                         except Exception as e:
