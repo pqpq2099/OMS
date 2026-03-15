@@ -30,7 +30,7 @@ from pages.page_order_entry import (
     page_select_vendor,
     page_order_entry,
     page_order_message_detail,
-    page_daily_stock_order_record,   # ←補回
+    page_daily_stock_order_record,
 )
 
 from pages.page_reports import (
