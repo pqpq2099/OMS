@@ -302,6 +302,94 @@ def _build_store_maps(stores_df: pd.DataFrame) -> tuple[dict[str, str], dict[str
     return store_id_to_name, store_name_to_id
 
 
+
+
+def _build_store_option_map(store_id_to_name: dict[str, str]) -> dict[str, str]:
+    """建立分店下拉選單，UI 只顯示店名，但實際值仍綁定 store_id。"""
+    option_map: dict[str, str] = {}
+
+    if "ALL" in store_id_to_name:
+        option_map["全部分店"] = "ALL"
+
+    normal_store_ids = [sid for sid in store_id_to_name.keys() if sid != "ALL"]
+    for sid in normal_store_ids:
+        sname = _norm_text(store_id_to_name.get(sid)) or sid
+        label = sname
+
+        # 若真的遇到重複店名，才在重複項目後面補流水號，避免下拉選單顯示 store_id
+        if label in option_map:
+            dup_no = 2
+            while f"{label} ({dup_no})" in option_map:
+                dup_no += 1
+            label = f"{label} ({dup_no})"
+
+        option_map[label] = sid
+
+    return option_map
+
+
+def _get_store_label_by_scope(store_option_map: dict[str, str], store_scope: str) -> str:
+    """依 store_scope 找回對應下拉標籤。"""
+    target_scope = _norm_text(store_scope)
+    for label, sid in store_option_map.items():
+        if _norm_text(sid) == target_scope:
+            return label
+    return next(iter(store_option_map.keys()), "")
+
+
+def _allocate_user_id_safely() -> str:
+    """
+    先走既有 allocate_ids；若 users 序號表暫時異常，則只對 users 做安全備援，
+    仍維持 USER_000001 這種流水號格式，避免跳成時間戳。
+    """
+    try:
+        return allocate_ids({"users": 1})["users"][0]
+    except Exception:
+        sh = get_spreadsheet()
+        if sh is None:
+            raise ValueError("Spreadsheet 未初始化")
+
+        ws = sh.worksheet("id_sequences")
+        values = ws.get_all_values()
+        if not values or len(values) < 2:
+            raise ValueError("id_sequences 為空")
+
+        header = [_norm_text(x) for x in values[0]]
+        rows = values[1:]
+        df = pd.DataFrame(rows, columns=header)
+
+        required = ["key", "env", "prefix", "width", "next_value"]
+        for col in required:
+            if col not in df.columns:
+                raise ValueError(f"id_sequences 缺少欄位：{col}")
+
+        hit = df[
+            (df["key"].astype(str).str.strip() == "users")
+            & (df["env"].astype(str).str.strip() == "prod")
+        ]
+        if hit.empty:
+            raise ValueError("id_sequences 找不到 users / prod 設定")
+
+        idx = hit.index[0]
+        prefix = _norm_text(df.at[idx, "prefix"])
+        width = int(pd.to_numeric(df.at[idx, "width"], errors="coerce") or 0)
+        next_value = int(pd.to_numeric(df.at[idx, "next_value"], errors="coerce") or 0)
+
+        if not prefix or width <= 0 or next_value <= 0:
+            raise ValueError("users 的 id_sequences 設定錯誤")
+
+        new_user_id = f"{prefix}{str(next_value).zfill(width)}"
+        df.at[idx, "next_value"] = str(next_value + 1)
+        if "updated_at" in df.columns:
+            df.at[idx, "updated_at"] = _now_ts()
+        if "updated_by" in df.columns:
+            df.at[idx, "updated_by"] = str(st.session_state.get("login_user", "")).strip()
+
+        out_values = [header] + df[header].fillna("").astype(str).values.tolist()
+        ws.update(out_values)
+        bust_cache()
+        return new_user_id
+
 def _build_role_maps(roles_df: pd.DataFrame, login_role_id: str) -> tuple[dict[str, str], dict[str, str]]:
     """建立角色顯示與反查字典。"""
     active_roles_df = roles_df.copy()
@@ -355,7 +443,7 @@ def _user_display_label(row: pd.Series, store_id_to_name: dict[str, str]) -> str
 
 
 def _build_users_view(users_df: pd.DataFrame, roles_df: pd.DataFrame, stores_df: pd.DataFrame) -> pd.DataFrame:
-    """建立顯示用 users_view。"""
+    """建立顯示用 users_view。只用 store_id 對照店名，避免顯示錯店。"""
     role_display_col = _pick_first_existing_column(
         roles_df,
         ["role_name_zh", "role_name"],
@@ -372,29 +460,24 @@ def _build_users_view(users_df: pd.DataFrame, roles_df: pd.DataFrame, stores_df:
         "store_id",
     )
 
-    store_map_id = stores_df[["store_id", store_label_col]].copy()
-    store_map_id = store_map_id.rename(columns={
+    store_map = stores_df[["store_id", store_label_col]].copy()
+    store_map = store_map.rename(columns={
         "store_id": "store_scope",
-        store_label_col: "store_display_by_id",
+        store_label_col: "store_display",
     })
-
-    store_map_code = stores_df[["store_code", store_label_col]].copy()
-    store_map_code = store_map_code.rename(columns={
-        "store_code": "store_scope",
-        store_label_col: "store_display_by_code",
-    })
+    store_map["store_scope"] = store_map["store_scope"].astype(str).str.strip()
 
     users_view = users_df.copy()
+    users_view["store_scope"] = users_view["store_scope"].astype(str).str.strip()
+
     users_view = users_view.merge(role_map, on="role_id", how="left")
-    users_view = users_view.merge(store_map_id, on="store_scope", how="left")
-    users_view = users_view.merge(store_map_code, on="store_scope", how="left")
+    users_view = users_view.merge(store_map, on="store_scope", how="left")
 
     users_view["role_display"] = users_view["role_display"].fillna(
         users_view["role_id"].map(ROLE_LABELS)
     )
     users_view["role_display"] = users_view["role_display"].fillna(users_view["role_id"])
 
-    users_view["store_display"] = users_view["store_display_by_id"].fillna(users_view["store_display_by_code"])
     users_view.loc[users_view["store_scope"] == "ALL", "store_display"] = "全部分店"
     users_view["store_display"] = users_view["store_display"].fillna("未設定")
     users_view["status_display"] = users_view["is_active"].map({1: "啟用", 0: "停用"}).fillna("啟用")
@@ -542,23 +625,42 @@ def page_user_admin():
 
         create_users_df = users_df.copy()
         role_options = list(role_name_to_id.keys())
-        store_options = list(store_name_to_id.keys())
+        store_option_map = _build_store_option_map(store_id_to_name)
+        store_options = list(store_option_map.keys())
 
         if not role_options:
             st.warning("目前 roles 表沒有可用角色，無法新增使用者。")
         else:
+            # 新增使用者：分店下拉只顯示店名，但 session_state 內部綁定店名標籤，
+            # 避免送出瞬間 rerun 時又被預設值蓋回第一家店。
+            if "create_user_store_label" not in st.session_state or st.session_state["create_user_store_label"] not in store_options:
+                if "全部分店" in store_options:
+                    default_non_admin_label = next((x for x in store_options if x != "全部分店"), "全部分店")
+                else:
+                    default_non_admin_label = store_options[0] if store_options else ""
+
+                st.session_state["create_user_store_label"] = default_non_admin_label
+
             with st.form("form_create_user", clear_on_submit=True):
                 new_account_code = st.text_input("登入帳號", placeholder="例如：staff01").strip()
                 new_display_name = st.text_input("顯示名稱", placeholder="例如：阿辰").strip()
                 selected_role_name = st.selectbox("角色", options=role_options, index=0)
                 selected_role_id = role_name_to_id[selected_role_name]
 
-                default_store_name = "全部分店" if selected_role_id in ["admin", "test_admin"] else (
-                    store_options[1] if len(store_options) > 1 and store_options[0] == "全部分店" else store_options[0]
+                if selected_role_id in ["admin", "test_admin"]:
+                    if "全部分店" in store_options:
+                        st.session_state["create_user_store_label"] = "全部分店"
+                else:
+                    if st.session_state.get("create_user_store_label") == "全部分店":
+                        non_all_options = [x for x in store_options if x != "全部分店"]
+                        st.session_state["create_user_store_label"] = non_all_options[0] if non_all_options else (store_options[0] if store_options else "")
+
+                selected_store_label = st.selectbox(
+                    "分店",
+                    options=store_options,
+                    key="create_user_store_label",
                 )
-                default_store_index = store_options.index(default_store_name) if default_store_name in store_options else 0
-                selected_store_name = st.selectbox("分店", options=store_options, index=default_store_index)
-                selected_store_scope = store_name_to_id[selected_store_name]
+                selected_store_scope = store_option_map[selected_store_label]
 
                 st.caption("預設密碼：123456")
                 st.caption("建立後，使用者第一次登入會被要求修改密碼。")
@@ -581,10 +683,7 @@ def page_user_admin():
                     elif selected_role_id in ["store_manager", "test_store_manager"] and _count_active_store_managers(users_df, selected_store_scope) >= 3:
                         st.error("此分店店長已達 3 位上限，請先調整後再建立。")
                     else:
-                        try:
-                            new_user_id = allocate_ids({"users": 1})["users"][0]
-                        except Exception:
-                            new_user_id = f"USER_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        new_user_id = _allocate_user_id_safely()
 
                         now_ts = _now_ts()
                         new_row = {
@@ -620,6 +719,8 @@ def page_user_admin():
                                 note="建立新使用者",
                             )
                             st.success("建立成功。預設密碼為 123456，第一次登入需修改密碼。")
+                            if "create_user_store_label" in st.session_state:
+                                del st.session_state["create_user_store_label"]
                             bust_cache()
                             st.rerun()
                         except Exception as e:
@@ -645,11 +746,12 @@ def page_user_admin():
             current_role_name = role_id_to_name.get(_norm_text(edit_row.get("role_id")), _norm_text(edit_row.get("role_id")))
             edit_role_index = edit_role_names.index(current_role_name) if current_role_name in edit_role_names else 0
 
-            edit_store_names = list(store_name_to_id.keys())
-            current_store_name = store_id_to_name.get(_norm_text(edit_row.get("store_scope")), "未設定")
-            if current_store_name not in edit_store_names:
-                current_store_name = edit_store_names[0]
-            edit_store_index = edit_store_names.index(current_store_name)
+            edit_store_option_map = _build_store_option_map(store_id_to_name)
+            edit_store_names = list(edit_store_option_map.keys())
+            current_store_label = _get_store_label_by_scope(edit_store_option_map, _norm_text(edit_row.get("store_scope")))
+            if current_store_label not in edit_store_names:
+                current_store_label = edit_store_names[0]
+            edit_store_index = edit_store_names.index(current_store_label)
 
             with st.form("form_edit_user"):
                 edit_display_name = st.text_input("名稱", value=_norm_text(edit_row.get("display_name")), key="edit_display_name")
@@ -665,7 +767,7 @@ def page_user_admin():
 
             if submitted_edit:
                 new_role_id = role_name_to_id[edit_role_name]
-                new_store_scope = store_name_to_id[edit_store_name]
+                new_store_scope = edit_store_option_map[edit_store_name]
                 new_is_active = 1 if edit_is_active == "啟用" else 0
 
                 if new_role_id in ["store_manager", "leader", "test_store_manager", "test_leader", "staff"] and new_store_scope == "ALL":
@@ -855,13 +957,17 @@ def page_user_admin():
             new_role_name = st.selectbox("調整為新角色", promotion_role_candidates, index=role_index, key="promotion_new_role")
             new_role_id = role_name_to_id[new_role_name]
 
-            promotion_store_names = list(store_name_to_id.keys())
-            current_store_name = store_id_to_name.get(_norm_text(promotion_row.get("store_scope")), promotion_store_names[0])
-            if current_store_name not in promotion_store_names:
-                current_store_name = promotion_store_names[0]
-            store_idx = promotion_store_names.index(current_store_name)
+            promotion_store_option_map = _build_store_option_map(store_id_to_name)
+            promotion_store_names = list(promotion_store_option_map.keys())
+            current_store_label = _get_store_label_by_scope(
+                promotion_store_option_map,
+                _norm_text(promotion_row.get("store_scope")),
+            )
+            if current_store_label not in promotion_store_names:
+                current_store_label = promotion_store_names[0]
+            store_idx = promotion_store_names.index(current_store_label)
             new_store_name = st.selectbox("同步調整分店", promotion_store_names, index=store_idx, key="promotion_new_store")
-            new_store_scope = store_name_to_id[new_store_name]
+            new_store_scope = promotion_store_option_map[new_store_name]
             promotion_note = st.text_input("備註", placeholder="例如：升任組長 / 調店 / 權限調整", key="promotion_note")
 
             promotion_kind = "角色不變"
