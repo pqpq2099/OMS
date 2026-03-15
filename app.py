@@ -512,8 +512,10 @@ def render_sidebar():
             st.session_state.step = "order_message_detail"
             st.rerun()
 
-        if st.button("📋 當日庫存叫貨紀錄", use_container_width=True):
-           st.session_state["page"] = "daily_stock_order_record"
+        if st.button("📋 當日庫存叫貨紀錄", width="stretch", key="sb_daily_stock_order_record"):
+            st.session_state.step = "daily_stock_order_record"
+            st.rerun()
+
         st.markdown("---")
 
         # ====================================================
@@ -626,7 +628,7 @@ def router():
     elif step == "order_entry":
         page_order_entry()
 
-    elif st.session_state.step == "daily_stock_order_record":
+    elif step == "daily_stock_order_record":
         page_daily_stock_order_record()
     
     elif step == "order_message_detail":
