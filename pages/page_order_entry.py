@@ -1085,12 +1085,6 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
-    st.text_area(
-    "可手動複製內容",
-    value=line_message,
-    height=max(220, min(520, len(lines) * 28)),
-    key="order_message_detail_text",
-    )
 
     c1, c2 = st.columns(2)
 
