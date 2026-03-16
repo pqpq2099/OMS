@@ -54,44 +54,72 @@ from oms_core import (
 from utils.utils_units import convert_to_base
 
 
-def send_line_message(line_message: str) -> bool:
+def send_line_message(message: str) -> bool:
     """
-    把文字訊息推送到 LINE 群組。
-    需要先在 Streamlit secrets 設定：
-    1. LINE_CHANNEL_ACCESS_TOKEN
-    2. LINE_GROUP_ID
+    把文字訊息推送到 LINE。
+
+    支援兩種 secrets 結構：
+    1. 舊版：
+       [line_bot]
+       channel_access_token = "..."
+       user_id = "..."
+
+       [line_groups]
+       STORE_001 = "群組ID"
+       STORE_002 = "群組ID"
+
+    2. 簡化版：
+       LINE_CHANNEL_ACCESS_TOKEN = "..."
+       LINE_GROUP_ID = "..."
+
+    發送優先順序：
+    1. 依目前分店 store_id / store 取得對應群組 ID
+    2. 若找不到群組，退回 line_bot.user_id
+    3. 若還是沒有，再退回 LINE_GROUP_ID
     """
     try:
-        channel_access_token = str(
-            st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")
-        ).strip()
-        group_id = str(
-            st.secrets.get("LINE_GROUP_ID", "")
+        token = ""
+        target_id = ""
+
+        line_bot = st.secrets.get("line_bot", {})
+        line_groups = st.secrets.get("line_groups", {})
+
+        if isinstance(line_bot, dict):
+            token = str(line_bot.get("channel_access_token", "")).strip()
+        if not token:
+            token = str(st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")).strip()
+
+        current_store = str(
+            st.session_state.get("store_id")
+            or st.session_state.get("store")
+            or ""
         ).strip()
 
-        if not channel_access_token:
-            st.error("缺少 LINE_CHANNEL_ACCESS_TOKEN，請先到 Streamlit secrets 設定。")
+        if isinstance(line_groups, dict) and current_store:
+            target_id = str(line_groups.get(current_store, "")).strip()
+
+        if not target_id and isinstance(line_bot, dict):
+            target_id = str(line_bot.get("user_id", "")).strip()
+
+        if not target_id:
+            target_id = str(st.secrets.get("LINE_GROUP_ID", "")).strip()
+
+        if not token:
+            st.error("缺少 LINE Channel Access Token，請先檢查 secrets 設定。")
             return False
 
-        if not group_id:
-            st.error("缺少 LINE_GROUP_ID，請先到 Streamlit secrets 設定。")
+        if not target_id:
+            st.error("缺少 LINE 群組或使用者 ID，請先檢查 secrets 設定。")
             return False
 
         url = "https://api.line.me/v2/bot/message/push"
-
         headers = {
-            "Authorization": f"Bearer {channel_access_token}",
             "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
         }
-
         payload = {
-            "to": group_id,
-            "messages": [
-                {
-                    "type": "text",
-                    "text": line_message,
-                }
-            ],
+            "to": target_id,
+            "messages": [{"type": "text", "text": message}],
         }
 
         response = requests.post(
