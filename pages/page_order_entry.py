@@ -1085,7 +1085,27 @@ def page_order_message_detail():
     # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
+    st.text_area(
+    "可手動複製內容",
+    value=line_message,
+    height=max(220, min(520, len(lines) * 28)),
+    key="order_message_detail_text",
+    )
 
+    c1, c2 = st.columns(2)
+
+    with c1:
+        if st.button("📤 發送到 LINE", type="primary", use_container_width=True):
+            ok = send_line_message(line_message)
+            if ok:
+                st.success("✅ 已成功發送到 LINE")
+            else:
+                st.error("❌ LINE 發送失敗，請檢查 line_bot / line_groups 設定")
+
+    with c2:
+        if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_message_detail"):
+            st.session_state.step = "select_vendor"
+            st.rerun()
 
 
 
