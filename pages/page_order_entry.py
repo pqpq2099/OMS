@@ -74,12 +74,6 @@ def send_line_message(message: str) -> bool:
         if current_store:
             target_id = str(line_groups.get(current_store, "")).strip()
 
-        st.write("DEBUG store_id =", st.session_state.get("store_id"))
-        st.write("DEBUG store =", st.session_state.get("store"))
-        st.write("DEBUG current_store =", current_store)
-        st.write("DEBUG line_groups keys =", list(line_groups.keys()) if line_groups else [])
-        st.write("DEBUG target_id before fallback =", target_id)
-
         if not target_id:
             target_id = str(line_bot.get("user_id", "")).strip()
 
