@@ -84,8 +84,7 @@ def send_line_message(message: str) -> bool:
         line_bot = st.secrets.get("line_bot", {})
         line_groups = st.secrets.get("line_groups", {})
 
-        if isinstance(line_bot, dict):
-            token = str(line_bot.get("channel_access_token", "")).strip()
+        token = str(line_bot.get("channel_access_token", "")).strip()
         if not token:
             token = str(st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")).strip()
 
@@ -95,7 +94,7 @@ def send_line_message(message: str) -> bool:
             or ""
         ).strip()
 
-        if isinstance(line_groups, dict) and current_store:
+        if current_store:
             target_id = str(line_groups.get(current_store, "")).strip()
 
         if not target_id and isinstance(line_bot, dict):
