@@ -1122,26 +1122,82 @@ def page_order_message_detail():
 
     # ========================================================
     # 12. 產生 LINE 訊息內容
+    # 目標格式：
+    # 3/16（一）
+    # 尊進
+    # 師大
+    # 酸甜醬(500g/包) 1包
+    # ...
+    # 禮拜一到，謝謝
     # ========================================================
+    def _fmt_line_date(d):
+        """把日期格式化成 3/16（一）"""
+        try:
+            weekday_map = ["一", "二", "三", "四", "五", "六", "日"]
+            return f"{d.month}/{d.day}（{weekday_map[d.weekday()]}）"
+        except Exception:
+            return str(d)
+
+    def _get_store_short_name(name: str) -> str:
+        """把分店名稱縮成 LINE 常用短名稱，例如：師大店 -> 師大"""
+        name = str(name or "").strip()
+        if name.endswith("店"):
+            return name[:-1]
+        return name
+
+    def _simplify_line_item_name(name: str) -> str:
+        """整理品項名稱，讓 LINE 訊息更好讀"""
+        text = str(name or "").strip()
+        text = text.replace(" / ", " ")
+        text = text.replace("/熟", "(熟)")
+        text = text.replace("/生", "(生)")
+        return text
+
     lines = []
-    lines.append("今日進貨明細")
 
-    if store_name:
-        lines.append(store_name)
+    store_short_name = _get_store_short_name(store_name)
+    date_text = _fmt_line_date(selected_date)
 
-    lines.append(str(selected_date))
+    weekday_map_for_arrival = {
+        0: "一",
+        1: "二",
+        2: "三",
+        3: "四",
+        4: "五",
+        5: "六",
+        6: "日",
+    }
+    try:
+        arrival_text = f"禮拜{weekday_map_for_arrival[selected_date.weekday()]}到，謝謝"
+    except Exception:
+        arrival_text = "謝謝"
+
+    # 最上方先放日期
+    lines.append(date_text)
     lines.append("")
 
+    # 逐廠商產生一段
     for vendor_name, group in merged.groupby("vendor_name", sort=False):
-        show_vendor = vendor_name.strip() if str(vendor_name).strip() else "未分類廠商"
+        show_vendor = str(vendor_name).strip() if str(vendor_name).strip() else "未分類廠商"
+
+        # 每個廠商都要顯示廠商名稱
         lines.append(show_vendor)
 
+        # 分店短名稱
+        if store_short_name:
+            lines.append(store_short_name)
+
+        # 品項明細
         for _, r in group.iterrows():
-            item_name = str(r.get("item_name", "")).strip()
+            item_name = _simplify_line_item_name(r.get("item_name", ""))
             qty = _fmt_qty(r.get(qty_col, ""))
             unit = str(r.get(unit_col, "")).strip()
             lines.append(f"{item_name} {qty}{unit}")
 
+        # 每個廠商段落最後補到貨文字
+        lines.append(arrival_text)
+
+        # 廠商與廠商之間留空行
         lines.append("")
 
     line_message = "\n".join(lines).strip()
