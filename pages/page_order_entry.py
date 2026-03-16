@@ -23,7 +23,7 @@ from __future__ import annotations
 # [A1] 基本匯入
 # 這一區放：日期、Streamlit、核心函式
 # ============================================================
-from datetime import date
+from datetime import date, timedelta
 import requests
 import streamlit as st
 import pandas as pd
@@ -53,49 +53,45 @@ from oms_core import (
 )
 from utils.utils_units import convert_to_base
 
-def send_line_message(message: str) -> bool:
+
+def send_line_message(line_message: str) -> bool:
+    """
+    把文字訊息推送到 LINE 群組。
+    需要先在 Streamlit secrets 設定：
+    1. LINE_CHANNEL_ACCESS_TOKEN
+    2. LINE_GROUP_ID
+    """
     try:
-        token = ""
-        target_id = ""
-
-        line_bot = st.secrets.get("line_bot", {})
-        line_groups = st.secrets.get("line_groups", {})
-
-        token = str(line_bot.get("channel_access_token", "")).strip()
-        if not token:
-            token = str(st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")).strip()
-
-        current_store = str(
-            st.session_state.get("store_id")
-            or st.session_state.get("store")
-            or ""
+        channel_access_token = str(
+            st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+        ).strip()
+        group_id = str(
+            st.secrets.get("LINE_GROUP_ID", "")
         ).strip()
 
-        if current_store:
-            target_id = str(line_groups.get(current_store, "")).strip()
-
-        if not target_id:
-            target_id = str(line_bot.get("user_id", "")).strip()
-
-        if not target_id:
-            target_id = str(st.secrets.get("LINE_GROUP_ID", "")).strip()
-
-        if not token:
-            st.error("缺少 LINE Channel Access Token，請先檢查 secrets 設定。")
+        if not channel_access_token:
+            st.error("缺少 LINE_CHANNEL_ACCESS_TOKEN，請先到 Streamlit secrets 設定。")
             return False
 
-        if not target_id:
-            st.error("缺少 LINE 群組或使用者 ID，請先檢查 secrets 設定。")
+        if not group_id:
+            st.error("缺少 LINE_GROUP_ID，請先到 Streamlit secrets 設定。")
             return False
 
         url = "https://api.line.me/v2/bot/message/push"
+
         headers = {
+            "Authorization": f"Bearer {channel_access_token}",
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
         }
+
         payload = {
-            "to": target_id,
-            "messages": [{"type": "text", "text": message}],
+            "to": group_id,
+            "messages": [
+                {
+                    "type": "text",
+                    "text": line_message,
+                }
+            ],
         }
 
         response = requests.post(
@@ -114,9 +110,6 @@ def send_line_message(message: str) -> bool:
     except Exception as e:
         st.error(f"發送 LINE 時發生錯誤：{e}")
         return False
-
-
-        
 
 # ============================================================
 # [B1] 盤點引擎輔助函式
@@ -1122,13 +1115,13 @@ def page_order_message_detail():
 
     # ========================================================
     # 12. 產生 LINE 訊息內容
-    # 目標格式：
+    # 格式範例：
     # 3/16（一）
-    # 尊進
+    # 昶翔
     # 師大
-    # 酸甜醬(500g/包) 1包
-    # ...
-    # 禮拜一到，謝謝
+    # 義大利麵(熟) 3箱
+    # 青醬 1箱
+    # 禮拜二到，謝謝
     # ========================================================
     def _fmt_line_date(d):
         """把日期格式化成 3/16（一）"""
@@ -1168,7 +1161,8 @@ def page_order_message_detail():
         6: "日",
     }
     try:
-        arrival_text = f"禮拜{weekday_map_for_arrival[selected_date.weekday()]}到，謝謝"
+        arrival_date = selected_date + timedelta(days=1)
+        arrival_text = f"禮拜{weekday_map_for_arrival[arrival_date.weekday()]}到，謝謝"
     except Exception:
         arrival_text = "謝謝"
 
