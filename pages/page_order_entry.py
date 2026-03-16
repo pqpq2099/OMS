@@ -24,6 +24,7 @@ from __future__ import annotations
 # 這一區放：日期、Streamlit、核心函式
 # ============================================================
 from datetime import date
+import requests
 import streamlit as st
 import pandas as pd
 
@@ -51,6 +52,64 @@ from oms_core import (
     read_table,
 )
 from utils.utils_units import convert_to_base
+
+
+def send_line_message(line_message: str) -> bool:
+    """
+    把文字訊息推送到 LINE 群組。
+    需要先在 Streamlit secrets 設定：
+    1. LINE_CHANNEL_ACCESS_TOKEN
+    2. LINE_GROUP_ID
+    """
+    try:
+        channel_access_token = str(
+            st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+        ).strip()
+        group_id = str(
+            st.secrets.get("LINE_GROUP_ID", "")
+        ).strip()
+
+        if not channel_access_token:
+            st.error("缺少 LINE_CHANNEL_ACCESS_TOKEN，請先到 Streamlit secrets 設定。")
+            return False
+
+        if not group_id:
+            st.error("缺少 LINE_GROUP_ID，請先到 Streamlit secrets 設定。")
+            return False
+
+        url = "https://api.line.me/v2/bot/message/push"
+
+        headers = {
+            "Authorization": f"Bearer {channel_access_token}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "to": group_id,
+            "messages": [
+                {
+                    "type": "text",
+                    "text": line_message,
+                }
+            ],
+        }
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+
+        if response.status_code == 200:
+            return True
+
+        st.error(f"LINE API 錯誤：{response.status_code} / {response.text}")
+        return False
+
+    except Exception as e:
+        st.error(f"發送 LINE 時發生錯誤：{e}")
+        return False
 
 # ============================================================
 # [B1] 盤點引擎輔助函式
