@@ -53,30 +53,7 @@ from oms_core import (
 )
 from utils.utils_units import convert_to_base
 
-
 def send_line_message(message: str) -> bool:
-    """
-    把文字訊息推送到 LINE。
-
-    支援兩種 secrets 結構：
-    1. 舊版：
-       [line_bot]
-       channel_access_token = "..."
-       user_id = "..."
-
-       [line_groups]
-       STORE_001 = "群組ID"
-       STORE_002 = "群組ID"
-
-    2. 簡化版：
-       LINE_CHANNEL_ACCESS_TOKEN = "..."
-       LINE_GROUP_ID = "..."
-
-    發送優先順序：
-    1. 依目前分店 store_id / store 取得對應群組 ID
-    2. 若找不到群組，退回 line_bot.user_id
-    3. 若還是沒有，再退回 LINE_GROUP_ID
-    """
     try:
         token = ""
         target_id = ""
@@ -97,7 +74,13 @@ def send_line_message(message: str) -> bool:
         if current_store:
             target_id = str(line_groups.get(current_store, "")).strip()
 
-        if not target_id and isinstance(line_bot, dict):
+        st.write("DEBUG store_id =", st.session_state.get("store_id"))
+        st.write("DEBUG store =", st.session_state.get("store"))
+        st.write("DEBUG current_store =", current_store)
+        st.write("DEBUG line_groups keys =", list(line_groups.keys()) if line_groups else [])
+        st.write("DEBUG target_id before fallback =", target_id)
+
+        if not target_id:
             target_id = str(line_bot.get("user_id", "")).strip()
 
         if not target_id:
@@ -137,6 +120,9 @@ def send_line_message(message: str) -> bool:
     except Exception as e:
         st.error(f"發送 LINE 時發生錯誤：{e}")
         return False
+
+
+        
 
 # ============================================================
 # [B1] 盤點引擎輔助函式
