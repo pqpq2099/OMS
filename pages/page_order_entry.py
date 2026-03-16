@@ -245,7 +245,7 @@ def page_select_vendor():
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
     if st.button("📋 產生今日進貨明細", type="primary", use_container_width=True):
-        st.session_state.step = "export"
+        st.session_state.step = "order_message_detail"
         st.rerun()
 
     if st.button("📈 期間進銷存分析", use_container_width=True):
