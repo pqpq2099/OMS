@@ -59,67 +59,85 @@ from utils.utils_units import convert_to_base
 def send_line_message(line_message: str) -> bool:
     """
     把文字訊息推送到 LINE 群組。
-    同時相容兩種 Streamlit secrets 寫法：
+
+    支援兩種 secrets 寫法：
 
     方案 A：扁平寫法
     LINE_CHANNEL_ACCESS_TOKEN = "xxx"
     LINE_GROUP_ID = "xxx"
 
-    方案 B：巢狀寫法
+    方案 B：巢狀寫法（建議）
     [line_bot]
-    LINE_CHANNEL_ACCESS_TOKEN = "xxx"
+    channel_access_token = "xxx"
 
     [line_groups]
-    LINE_GROUP_ID = "xxx"
+    STORE_001 = "群組ID"
+    STORE_002 = "群組ID"
+
+    規則：
+    1. 先依目前分店的 store_id 去 line_groups 找群組
+    2. 若找不到，再 fallback 到 LINE_GROUP_ID
     """
+
     try:
         # ------------------------------------------------------------
-        # 先讀扁平寫法
+        # 取得目前分店代碼
+        # ------------------------------------------------------------
+        store_id = str(st.session_state.get("store_id", "")).strip()
+
+        # ------------------------------------------------------------
+        # 讀取 token：先扁平，再巢狀
         # ------------------------------------------------------------
         channel_access_token = str(
             st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")
         ).strip()
 
-        group_id = str(
-            st.secrets.get("LINE_GROUP_ID", "")
-        ).strip()
-
-        # ------------------------------------------------------------
-        # 若扁平寫法讀不到，再讀巢狀寫法
-        # ------------------------------------------------------------
         if not channel_access_token:
             try:
                 line_bot_cfg = st.secrets.get("line_bot", {})
                 channel_access_token = str(
-                    line_bot_cfg.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+                    line_bot_cfg.get("channel_access_token", "")
                 ).strip()
             except Exception:
                 channel_access_token = ""
 
+        # ------------------------------------------------------------
+        # 讀取 group_id：
+        # 1. 先依 store_id 從 line_groups 抓
+        # 2. 抓不到再 fallback 到扁平 LINE_GROUP_ID
+        # ------------------------------------------------------------
+        group_id = ""
+
+        try:
+            line_groups_cfg = st.secrets.get("line_groups", {})
+            if store_id:
+                group_id = str(line_groups_cfg.get(store_id, "")).strip()
+        except Exception:
+            group_id = ""
+
         if not group_id:
-            try:
-                line_groups_cfg = st.secrets.get("line_groups", {})
-                group_id = str(
-                    line_groups_cfg.get("LINE_GROUP_ID", "")
-                ).strip()
-            except Exception:
-                group_id = ""
+            group_id = str(
+                st.secrets.get("LINE_GROUP_ID", "")
+            ).strip()
 
         # ------------------------------------------------------------
         # 驗證必要設定
         # ------------------------------------------------------------
         if not channel_access_token:
             st.error(
-                "缺少 LINE_CHANNEL_ACCESS_TOKEN。請檢查 Streamlit secrets，"
-                "支援扁平寫法或 [line_bot] 巢狀寫法。"
+                "缺少 LINE token，請檢查 Streamlit secrets："
+                "LINE_CHANNEL_ACCESS_TOKEN 或 [line_bot].channel_access_token"
             )
             return False
 
         if not group_id:
-            st.error(
-                "缺少 LINE_GROUP_ID。請檢查 Streamlit secrets，"
-                "支援扁平寫法或 [line_groups] 巢狀寫法。"
-            )
+            if store_id:
+                st.error(
+                    f"找不到分店 {store_id} 對應的 LINE 群組，"
+                    "請檢查 [line_groups] 或 LINE_GROUP_ID 設定。"
+                )
+            else:
+                st.error("缺少 LINE 群組設定，請檢查 [line_groups] 或 LINE_GROUP_ID。")
             return False
 
         # ------------------------------------------------------------
