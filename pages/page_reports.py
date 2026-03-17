@@ -26,6 +26,7 @@ import streamlit as st
 from oms_core import (
     PLOTLY_CONFIG,
     _build_inventory_history_summary_df,
+    _build_latest_item_metrics_df,
     _build_purchase_detail_df,
     _build_purchase_summary_df,
     _clean_option_list,
@@ -266,6 +267,164 @@ def _download_csv_block(preview: pd.DataFrame, filename: str):
     render_report_dataframe(preview)
 
 
+def _format_mmdd_value(value):
+    dt = pd.to_datetime(value, errors="coerce")
+    if pd.isna(dt):
+        return value
+    return dt.strftime("%m/%d")
+
+
+def _format_mmdd_column(df: pd.DataFrame, col: str) -> pd.DataFrame:
+    if df.empty or col not in df.columns:
+        return df
+    out = df.copy()
+    out[col] = out[col].apply(_format_mmdd_value)
+    return out
+
+
+
+# ============================================================
+# [R0] 庫存＋叫貨對照表（極簡版）
+# 說明：
+# 1. 只顯示單日資料
+# 2. 欄位只保留：廠商 / 品項 / 這次庫存 / 這次叫貨
+# 3. 只顯示庫存或叫貨非 0 的列
+# ============================================================
+def page_stock_order_compare():
+    st.title("📄 庫存＋叫貨對照表")
+
+    store_id = str(st.session_state.get("store_id", "")).strip()
+    store_name = str(st.session_state.get("store_name", "")).strip()
+    if not store_id:
+        st.warning("請先選擇分店")
+        return
+
+    selected_date = st.date_input(
+        "日期",
+        value=st.session_state.get("record_date", date.today()),
+        key="stock_order_compare_date",
+    )
+
+    latest_df = _build_latest_item_metrics_df(
+        store_id=store_id,
+        as_of_date=selected_date,
+    )
+    if latest_df.empty:
+        st.info("這一天沒有可顯示的資料")
+        return
+
+    work = latest_df.copy()
+    if "日期_dt" in work.columns:
+        work = work[pd.to_datetime(work["日期_dt"], errors="coerce").dt.date == selected_date].copy()
+    elif "日期" in work.columns:
+        work = work[pd.to_datetime(work["日期"], errors="coerce").dt.date == selected_date].copy()
+
+    if work.empty:
+        st.info("這一天沒有可顯示的資料")
+        return
+
+    if "這次庫存" not in work.columns:
+        work["這次庫存"] = 0
+    if "這次叫貨" not in work.columns:
+        work["這次叫貨"] = 0
+
+    work["這次庫存"] = pd.to_numeric(work["這次庫存"], errors="coerce").fillna(0)
+    work["這次叫貨"] = pd.to_numeric(work["這次叫貨"], errors="coerce").fillna(0)
+    work = work[(work["這次庫存"] != 0) | (work["這次叫貨"] != 0)].copy()
+    if work.empty:
+        st.info("這一天沒有非 0 的庫存 / 叫貨資料")
+        return
+
+    items_df = read_table("items")
+    vendors_df = read_table("vendors")
+
+    stock_unit_map = {}
+    order_unit_map = {}
+
+    if not items_df.empty and "item_id" in items_df.columns:
+        items_df = items_df.copy()
+        items_df["item_id"] = items_df["item_id"].astype(str).str.strip()
+
+        if "default_stock_unit" in items_df.columns:
+            stock_unit_map = dict(
+                zip(
+                    items_df["item_id"],
+                    items_df["default_stock_unit"].astype(str).str.strip(),
+                )
+            )
+
+        if "default_order_unit" in items_df.columns:
+            order_unit_map = dict(
+                zip(
+                    items_df["item_id"],
+                    items_df["default_order_unit"].astype(str).str.strip(),
+                )
+            )
+
+    if (
+        not items_df.empty
+        and not vendors_df.empty
+        and {"item_id", "default_vendor_id"}.issubset(items_df.columns)
+        and "vendor_id" in vendors_df.columns
+    ):
+        item_vendor = items_df[["item_id", "default_vendor_id"]].copy()
+        item_vendor["item_id"] = item_vendor["item_id"].astype(str).str.strip()
+        item_vendor["default_vendor_id"] = item_vendor["default_vendor_id"].astype(str).str.strip()
+
+        vendors_df = vendors_df.copy()
+        vendors_df["vendor_id"] = vendors_df["vendor_id"].astype(str).str.strip()
+        vendors_df["vendor_name_disp"] = vendors_df.apply(
+            lambda r: _norm(r.get("vendor_name_zh", "")) or _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
+            axis=1,
+        )
+
+        vendor_map = dict(zip(vendors_df["vendor_id"], vendors_df["vendor_name_disp"]))
+        work = work.merge(item_vendor, on="item_id", how="left")
+        work["廠商"] = work["default_vendor_id"].astype(str).str.strip().map(vendor_map).fillna("-")
+    else:
+        work["廠商"] = "-"
+
+    vendor_options = ["全部廠商"] + _clean_option_list(work["廠商"].dropna().tolist())
+    selected_vendor = st.selectbox(
+        "選擇廠商",
+        vendor_options,
+        index=0,
+        key="stock_order_compare_vendor",
+    )
+
+    if selected_vendor != "全部廠商":
+        work = work[work["廠商"].astype(str).str.strip() == selected_vendor].copy()
+
+    work["庫存單位"] = work["item_id"].astype(str).str.strip().map(stock_unit_map).fillna("")
+    work["叫貨單位"] = work["item_id"].astype(str).str.strip().map(order_unit_map).fillna("")
+
+    item_col = "品項" if "品項" in work.columns else "item_id"
+    preview = work[["廠商", item_col, "這次庫存", "庫存單位", "這次叫貨", "叫貨單位"]].copy()
+    preview = preview.rename(columns={item_col: "品項"})
+
+    preview["這次庫存"] = preview.apply(
+        lambda r: f"{_safe_float(r['這次庫存']):g} {str(r['庫存單位']).strip()}".strip(),
+        axis=1,
+    )
+    preview["這次叫貨"] = preview.apply(
+        lambda r: f"{_safe_float(r['這次叫貨']):g} {str(r['叫貨單位']).strip()}".strip(),
+        axis=1,
+    )
+
+    preview = preview.drop(columns=["庫存單位", "叫貨單位"])
+    preview = preview.sort_values(["廠商", "品項"], ascending=[True, True]).reset_index(drop=True)
+
+    if preview.empty:
+        st.info("此條件下沒有可顯示的資料")
+        return
+
+    st.caption(f"{store_name}｜{selected_date.strftime('%m/%d')}")
+    _download_csv_block(preview, f"stock_order_compare_{store_id}_{selected_date}.csv")
+
+    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_stock_order_compare"):
+        st.session_state.step = "select_vendor"
+        st.rerun()
+
 
 # ============================================================
 # [R1] 庫存歷史頁
@@ -292,7 +451,7 @@ def page_view_history():
         unsafe_allow_html=True,
     )
 
-    st.title(f"📜 {st.session_state.store_name} 歷史紀錄")
+    st.title(f"📜 {st.session_state.store_name} 歷史叫貨紀錄")
 
     c_h_date1, c_h_date2 = st.columns(2)
     h_start = c_h_date1.date_input(
@@ -417,7 +576,7 @@ def page_view_history():
     if detail_df.empty:
         st.caption("此條件下無歷史資料")
     elif sel_v == "全部廠商":
-        st.caption("全部廠商時，歷史紀錄明細預設不顯示")
+        st.caption("全部廠商時，歷史叫貨紀錄明細預設不顯示")
     else:
         mode = _display_mode_selector("hist_display_mode")
 
@@ -433,6 +592,7 @@ def page_view_history():
             "日平均",
         ]
         export_df = detail_df[full_cols].copy().reset_index(drop=True)
+        export_df = _format_mmdd_column(export_df, "日期顯示")
 
         if mode == "手機精簡":
             show_df = export_df[["日期顯示", "品項", "這次庫存", "這次叫貨", "日平均"]].copy()
@@ -461,7 +621,7 @@ def page_view_history():
         st.download_button(
             "📥 匯出 CSV",
             export_df.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"{st.session_state.store_name}_歷史紀錄_{sel_v}_{h_start}_{h_end}.csv",
+            file_name=f"{st.session_state.store_name}_歷史叫貨紀錄_{sel_v}_{h_start}_{h_end}.csv",
             mime="text/csv",
             use_container_width=True,
             key="download_history_csv",
@@ -473,16 +633,12 @@ def page_view_history():
         st.session_state.step = "select_vendor"
         st.rerun()
 
-
-# ============================================================
-# [R2] 匯出頁
-# ============================================================
 def page_export():
     st.title("📤 資料匯出")
 
     export_type = st.selectbox(
         "匯出資料類型",
-        ["今日進貨明細", "進銷存分析", "分店歷史", "目前畫面資料總覽"],
+        ["今日進貨明細", "進銷存分析", "歷史叫貨紀錄"],
         key="export_type",
     )
 
@@ -506,8 +662,9 @@ def page_export():
     if export_type == "今日進貨明細":
         df = _build_purchase_detail_df()
         if not df.empty:
+            date_field = "delivery_date_dt" if "delivery_date_dt" in df.columns else "order_date_dt"
             df = df[df["store_id"].astype(str).str.strip() == str(selected_store_id).strip()].copy()
-            df = df[(df["order_date_dt"].notna()) & (df["order_date_dt"] >= start) & (df["order_date_dt"] <= end)].copy()
+            df = df[(df[date_field].notna()) & (df[date_field] >= start) & (df[date_field] <= end)].copy()
 
         if not df.empty and "vendor_name_disp" in df.columns:
             vendor_options += _clean_option_list(df["vendor_name_disp"].dropna().tolist())
@@ -524,7 +681,7 @@ def page_export():
 
         if not df.empty:
             preview = pd.DataFrame({
-                "日期": pd.to_datetime(df["order_date_dt"], errors="coerce").dt.strftime("%Y/%m/%d"),
+                "日期": pd.to_datetime(df[date_field], errors="coerce").dt.strftime("%m/%d"),
                 "分店": selected_store_name,
                 "廠商": df.get("vendor_name_disp", ""),
                 "品項": df.get("item_name_disp", ""),
@@ -556,9 +713,10 @@ def page_export():
         if not df.empty:
             df = df[(df["上次庫存"] != 0) | (df["期間進貨"] != 0) | (df["期間消耗"] != 0) | (df["這次庫存"] != 0) | (df["這次叫貨"] != 0)].copy()
             preview = df[[c for c in ["日期", "廠商", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"] if c in df.columns]].copy().reset_index(drop=True)
+            preview = _format_mmdd_column(preview, "日期")
         filename = f"進銷存分析_{selected_store_name}_{start}_{end}.csv"
 
-    elif export_type == "分店歷史":
+    elif export_type == "歷史叫貨紀錄":
         df = _build_history_with_vendor(
             store_id=selected_store_id,
             start_date=start,
@@ -582,7 +740,8 @@ def page_export():
             preview = df[[c for c in ["日期顯示", "廠商", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"] if c in df.columns]].copy().reset_index(drop=True)
             if "日期顯示" in preview.columns:
                 preview = preview.rename(columns={"日期顯示": "日期"})
-        filename = f"分店歷史_{selected_store_name}_{start}_{end}.csv"
+            preview = _format_mmdd_column(preview, "日期")
+        filename = f"歷史叫貨紀錄_{selected_store_name}_{start}_{end}.csv"
 
     else:
         po_df = _build_purchase_detail_df()
@@ -602,8 +761,9 @@ def page_export():
         hist_count = 0
 
         if not po_df.empty:
+            date_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
             po_df = po_df[po_df["store_id"].astype(str).str.strip() == str(selected_store_id).strip()].copy()
-            po_df = po_df[(po_df["order_date_dt"].notna()) & (po_df["order_date_dt"] >= start) & (po_df["order_date_dt"] <= end)].copy()
+            po_df = po_df[(po_df[date_field].notna()) & (po_df[date_field] >= start) & (po_df[date_field] <= end)].copy()
             po_count = len(po_df)
         if not ana_df.empty:
             ana_df = ana_df[(ana_df["上次庫存"] != 0) | (ana_df["期間進貨"] != 0) | (ana_df["期間消耗"] != 0) | (ana_df["這次庫存"] != 0) | (ana_df["這次叫貨"] != 0)].copy()
@@ -615,7 +775,7 @@ def page_export():
         preview = pd.DataFrame([
             {"資料類型": "今日進貨明細", "筆數": po_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
             {"資料類型": "進銷存分析", "筆數": ana_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
-            {"資料類型": "分店歷史", "筆數": hist_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
+            {"資料類型": "歷史叫貨紀錄", "筆數": hist_count, "分店": selected_store_name, "起始日期": start, "結束日期": end},
         ])
         filename = f"資料總覽_{selected_store_name}_{start}_{end}.csv"
 
@@ -654,15 +814,16 @@ def page_analysis():
 
     purchase_filt = pd.DataFrame()
     if not po_detail_df.empty:
+        date_field = "delivery_date_dt" if "delivery_date_dt" in po_detail_df.columns else "order_date_dt"
         purchase_filt = po_detail_df[
             (po_detail_df["store_id"].astype(str).str.strip() == str(st.session_state.store_id).strip())
-            & (po_detail_df["order_date_dt"].notna())
-            & (po_detail_df["order_date_dt"] >= start)
-            & (po_detail_df["order_date_dt"] <= end)
+            & (po_detail_df[date_field].notna())
+            & (po_detail_df[date_field] >= start)
+            & (po_detail_df[date_field] <= end)
         ].copy()
         purchase_filt["日期"] = pd.to_datetime(
-            purchase_filt["order_date_dt"], errors="coerce"
-        ).dt.strftime("%Y/%m/%d")
+            purchase_filt[date_field], errors="coerce"
+        ).dt.strftime("%m/%d")
         purchase_filt["廠商"] = purchase_filt["vendor_name_disp"].apply(lambda x: _norm(x) or "-")
         purchase_filt["進貨金額"] = pd.to_numeric(purchase_filt["amount_num"], errors="coerce").fillna(0)
 
@@ -710,47 +871,18 @@ def page_analysis():
     total_stock_amount = 0.0
     if not hist_filt.empty:
         work_stock = hist_filt.copy()
-    
+
         if "這次庫存" not in work_stock.columns:
             work_stock["這次庫存"] = 0
-    
+
         items_df = read_table("items")
         prices_df = read_table("prices")
         conversions_df = _get_active_df(read_table("unit_conversions"))
-    
+
         work_stock["這次庫存"] = pd.to_numeric(
             work_stock["這次庫存"], errors="coerce"
         ).fillna(0)
-    
-        def _calc_stock_amount(row):
-            item_id = _norm(row.get("item_id", ""))
-            qty = _safe_float(row.get("這次庫存", 0))
-            row_date = row.get("日期")
-    
-            if not item_id or qty == 0:
-                return 0.0
-    
-            target_date = _parse_date(row_date)
-            if target_date is None:
-                return 0.0
-    
-            base_unit_cost = get_base_unit_cost(
-                item_id=item_id,
-                target_date=target_date,
-                items_df=items_df,
-                prices_df=prices_df,
-                conversions_df=conversions_df,
-            )
-    
-            if base_unit_cost is None:
-                return 0.0
-    
-            return round(qty * float(base_unit_cost), 2)
-    
-        work_stock["庫存總額"] = work_stock.apply(_calc_stock_amount, axis=1)
-        total_stock_amount = float(
-            pd.to_numeric(work_stock["庫存總額"], errors="coerce").fillna(0).sum()
-        )
+
         def _calc_stock_amount(row):
             item_id = _norm(row.get("item_id", ""))
             qty = _safe_float(row.get("這次庫存", 0))
@@ -808,6 +940,7 @@ def page_analysis():
             )
 
             show_vendor_summary = vendor_summary.copy()
+            show_vendor_summary = _format_mmdd_column(show_vendor_summary, "日期")
             if display_mode == "手機精簡":
                 show_vendor_summary["廠商"] = show_vendor_summary["廠商"].apply(lambda x: _short_item_name(x, 10))
 
@@ -836,11 +969,11 @@ def page_analysis():
             if pd.api.types.is_numeric_dtype(detail_df["日期"]):
                 detail_df["日期"] = pd.to_datetime(
                     detail_df["日期"], unit="s", errors="coerce"
-                ).dt.strftime("%Y/%m/%d")
+                ).dt.strftime("%m/%d")
             else:
                 detail_df["日期"] = pd.to_datetime(
                     detail_df["日期"], errors="coerce"
-                ).dt.strftime("%Y/%m/%d")
+                ).dt.strftime("%m/%d")
 
         detail_df = detail_df[
             (detail_df["上次庫存"] != 0)
@@ -866,6 +999,7 @@ def page_analysis():
             ]
 
             export_df = detail_df[show_cols].copy().reset_index(drop=True)
+            export_df = _format_mmdd_column(export_df, "日期")
 
             if display_mode == "手機精簡":
                 show_df = export_df[["日期", "品項", "這次庫存", "這次叫貨", "日平均"]].copy()
@@ -906,10 +1040,6 @@ def page_analysis():
         st.session_state.step = "select_vendor"
         st.rerun()
 
-
-# ============================================================
-# [R4] 成本檢查頁
-# ============================================================
 def page_cost_debug():
     st.title("🧮 成本檢查")
 

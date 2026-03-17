@@ -42,6 +42,7 @@ from oms_core import (
     _label_vendor,
     _norm,
     _now_ts,
+    _parse_date,
     _safe_float,
     _sort_items_for_operation,
     _status_hint,
@@ -49,6 +50,7 @@ from oms_core import (
     append_rows_by_header,
     bust_cache,
     get_header,
+    get_spreadsheet,
     read_table,
 )
 from utils.utils_units import convert_to_base
@@ -182,6 +184,278 @@ def _build_new_stock_map(
 
 
 
+
+
+# ============================================================
+# [B2] 到貨日 / 既有訂單修改輔助函式
+# ============================================================
+WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
+WEEKDAY_OPTIONS = [f"星期{x}" for x in WEEKDAY_LABELS]
+
+
+def _weekday_option_from_date(target_date: date | None, fallback: date | None = None) -> str:
+    ref = target_date or fallback or date.today()
+    return WEEKDAY_OPTIONS[ref.weekday()]
+
+
+def _delivery_date_from_weekday(record_date: date, weekday_option: str) -> date:
+    """把下拉選到的星期幾，換算成最近一次「大於等於作業日」的到貨日。"""
+    text = str(weekday_option or "").strip().replace("禮拜", "星期")
+    if text not in WEEKDAY_OPTIONS:
+        return record_date + timedelta(days=1)
+
+    target_weekday = WEEKDAY_OPTIONS.index(text)
+    current_weekday = record_date.weekday()
+    delta = target_weekday - current_weekday
+    if delta < 0:
+        delta += 7
+    return record_date + timedelta(days=delta)
+
+
+def _sheet_col_to_letter(n: int) -> str:
+    result = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        result = chr(65 + rem) + result
+    return result
+
+
+def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: dict):
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet(sheet_name)
+    header = [_norm(x) for x in ws.row_values(1)]
+    if id_field not in header:
+        raise ValueError(f"{sheet_name} 缺少欄位：{id_field}")
+
+    values = ws.get_all_values()
+    target_row_num = None
+    id_idx = header.index(id_field)
+    for row_num, row in enumerate(values[1:], start=2):
+        cell = row[id_idx] if id_idx < len(row) else ""
+        if _norm(cell) == _norm(entity_id):
+            target_row_num = row_num
+            break
+
+    if target_row_num is None:
+        raise ValueError(f"{sheet_name} 找不到 {entity_id}")
+
+    row_values = ws.row_values(target_row_num)
+    if len(row_values) < len(header):
+        row_values = row_values + [""] * (len(header) - len(row_values))
+    else:
+        row_values = row_values[:len(header)]
+
+    current = {col: row_values[idx] for idx, col in enumerate(header)}
+    for key, value in updates.items():
+        if key in current:
+            current[key] = "" if value is None else value
+
+    new_row = [current.get(col, "") for col in header]
+    end_col = _sheet_col_to_letter(len(header))
+    ws.update(
+        f"A{target_row_num}:{end_col}{target_row_num}",
+        [new_row],
+        value_input_option="USER_ENTERED",
+    )
+
+
+def _write_audit_log(action: str, table_name: str, entity_id: str, note: str, before_json: str = "{}", after_json: str = "{}"):
+    try:
+        header = get_header("audit_logs")
+    except Exception:
+        return
+
+    if not header:
+        return
+
+    now = _now_ts()
+    login_user_id = _norm(st.session_state.get("login_user_id", "")) or "SYSTEM"
+    audit_id = f"AUDIT_{pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f')}"
+    row = {c: "" for c in header}
+    defaults = {
+        "audit_id": audit_id,
+        "ts": now,
+        "user_id": login_user_id,
+        "action": action,
+        "table_name": table_name,
+        "entity_id": entity_id,
+        "before_json": before_json,
+        "after_json": after_json,
+        "note": note,
+    }
+    for k, v in defaults.items():
+        if k in row:
+            row[k] = v
+    append_rows_by_header("audit_logs", header, [row])
+
+
+def _find_existing_operation_ids(store_id: str, vendor_id: str, record_date: date) -> dict:
+    result = {
+        "stocktake_id": "",
+        "po_id": "",
+        "delivery_date": None,
+    }
+
+    target_date = str(record_date)
+
+    stocktakes_df = read_table("stocktakes")
+    if not stocktakes_df.empty and {"store_id", "vendor_id", "stocktake_date", "stocktake_id"}.issubset(stocktakes_df.columns):
+        work = stocktakes_df.copy()
+        work["stocktake_date_str"] = work["stocktake_date"].astype(str).str[:10]
+        work = work[
+            (work["store_id"].astype(str).str.strip() == str(store_id).strip())
+            & (work["vendor_id"].astype(str).str.strip() == str(vendor_id).strip())
+            & (work["stocktake_date_str"] == target_date)
+        ].copy()
+        if not work.empty:
+            sort_cols = [c for c in ["updated_at", "created_at", "stocktake_id"] if c in work.columns]
+            if sort_cols:
+                work = work.sort_values(sort_cols, ascending=True)
+            result["stocktake_id"] = _norm(work.iloc[-1].get("stocktake_id", ""))
+
+    po_df = read_table("purchase_orders")
+    if not po_df.empty and {"store_id", "vendor_id", "order_date", "po_id"}.issubset(po_df.columns):
+        work = po_df.copy()
+        work["order_date_str"] = work["order_date"].astype(str).str[:10]
+        work = work[
+            (work["store_id"].astype(str).str.strip() == str(store_id).strip())
+            & (work["vendor_id"].astype(str).str.strip() == str(vendor_id).strip())
+            & (work["order_date_str"] == target_date)
+        ].copy()
+        if not work.empty:
+            sort_cols = [c for c in ["updated_at", "created_at", "po_id"] if c in work.columns]
+            if sort_cols:
+                work = work.sort_values(sort_cols, ascending=True)
+            hit = work.iloc[-1]
+            result["po_id"] = _norm(hit.get("po_id", ""))
+            result["delivery_date"] = _parse_date(hit.get("delivery_date")) or _parse_date(hit.get("expected_date"))
+
+    return result
+
+
+def _get_existing_stock_map(stocktake_id: str) -> dict[str, float]:
+    if not stocktake_id:
+        return {}
+
+    stock_lines_df = read_table("stocktake_lines")
+    if stock_lines_df.empty or "stocktake_id" not in stock_lines_df.columns:
+        return {}
+
+    work = stock_lines_df[
+        stock_lines_df["stocktake_id"].astype(str).str.strip() == str(stocktake_id).strip()
+    ].copy()
+
+    result = {}
+    for _, row in work.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        if not item_id:
+            continue
+        result[item_id] = _safe_float(row.get("stock_qty", row.get("qty", 0)))
+    return result
+
+
+def _get_existing_order_maps(po_id: str) -> tuple[dict[str, float], dict[str, str]]:
+    if not po_id:
+        return {}, {}
+
+    pol_df = read_table("purchase_order_lines")
+    if pol_df.empty or "po_id" not in pol_df.columns:
+        return {}, {}
+
+    work = pol_df[
+        pol_df["po_id"].astype(str).str.strip() == str(po_id).strip()
+    ].copy()
+
+    qty_map = {}
+    unit_map = {}
+
+    for _, row in work.iterrows():
+        item_id = _norm(row.get("item_id", ""))
+        if not item_id:
+            continue
+        qty_map[item_id] = _safe_float(row.get("order_qty", row.get("qty", 0)))
+        unit_map[item_id] = _norm(row.get("order_unit", row.get("unit_id", "")))
+    return qty_map, unit_map
+
+
+def _upsert_detail_rows_by_parent(
+    sheet_name: str,
+    parent_field: str,
+    parent_id: str,
+    line_id_field: str,
+    item_rows: list[dict],
+    allocate_key: str,
+):
+    """
+    同一張主單下，依 item_id 做 upsert：
+    - 已存在：直接覆寫該列
+    - 不存在：新增
+    """
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet(sheet_name)
+    header = [_norm(x) for x in ws.row_values(1)]
+    values = ws.get_all_values()
+    if not values:
+        raise ValueError(f"{sheet_name} 為空")
+
+    row_maps = []
+    for row_num, row in enumerate(values[1:], start=2):
+        row_values = list(row) + [""] * (len(header) - len(row))
+        row_values = row_values[:len(header)]
+        row_maps.append((row_num, {col: row_values[idx] for idx, col in enumerate(header)}))
+
+    existing_by_item = {}
+    for row_num, row_dict in row_maps:
+        if _norm(row_dict.get(parent_field, "")) != _norm(parent_id):
+            continue
+        item_id = _norm(row_dict.get("item_id", ""))
+        if item_id:
+            existing_by_item[item_id] = (row_num, row_dict)
+
+    add_rows = []
+    new_id_list = []
+
+    need_new = [r for r in item_rows if _norm(r.get("item_id", "")) not in existing_by_item]
+    if need_new:
+        allocated = allocate_ids({allocate_key: len(need_new)})
+        new_id_list = allocated.get(allocate_key, [])
+
+    new_idx = 0
+    for item_row in item_rows:
+        item_id = _norm(item_row.get("item_id", ""))
+        if not item_id:
+            continue
+
+        if item_id in existing_by_item:
+            row_num, row_dict = existing_by_item[item_id]
+            current = dict(row_dict)
+            for key, value in item_row.items():
+                if key in current:
+                    current[key] = "" if value is None else value
+            end_col = _sheet_col_to_letter(len(header))
+            ws.update(
+                f"A{row_num}:{end_col}{row_num}",
+                [[current.get(col, "") for col in header]],
+                value_input_option="USER_ENTERED",
+            )
+        else:
+            row_dict = {c: "" for c in header}
+            if line_id_field in row_dict and new_idx < len(new_id_list):
+                row_dict[line_id_field] = new_id_list[new_idx]
+                new_idx += 1
+            for key, value in item_row.items():
+                if key in row_dict:
+                    row_dict[key] = "" if value is None else value
+            add_rows.append(row_dict)
+
+    if add_rows:
+        append_rows_by_header(sheet_name, header, add_rows)
 # ============================================================
 # [E1] Select Store / 選擇分店頁
 # 你之後如果要改：
@@ -311,7 +585,7 @@ def page_select_vendor():
         st.session_state.step = "analysis"
         st.rerun()
 
-    if st.button("📜 查看分店歷史紀錄", use_container_width=True):
+    if st.button("📜 查看歷史叫貨紀錄", use_container_width=True):
         st.session_state.step = "view_history"
         st.rerun()
 
@@ -455,6 +729,30 @@ def page_order_entry():
 
     vendor_items = vendor_items.reset_index(drop=True)
 
+    existing_ids = _find_existing_operation_ids(
+        store_id=st.session_state.store_id,
+        vendor_id=st.session_state.vendor_id,
+        record_date=st.session_state.record_date,
+    )
+    existing_stock_map = _get_existing_stock_map(existing_ids.get("stocktake_id", ""))
+    existing_order_qty_map, existing_order_unit_map = _get_existing_order_maps(existing_ids.get("po_id", ""))
+    existing_delivery_option = _weekday_option_from_date(
+        existing_ids.get("delivery_date"),
+        st.session_state.record_date + timedelta(days=1),
+    )
+
+    is_edit_mode = bool(existing_ids.get("stocktake_id") or existing_ids.get("po_id"))
+    if is_edit_mode:
+        st.info("ℹ️ 這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
+        edit_lines = [f"作業日期：{st.session_state.record_date}"]
+        if existing_ids.get("stocktake_id"):
+            edit_lines.append(f"庫存單號：{existing_ids.get('stocktake_id')}")
+        if existing_ids.get("po_id"):
+            edit_lines.append(f"叫貨單號：{existing_ids.get('po_id')}")
+        if existing_ids.get("delivery_date"):
+            edit_lines.append(f"原到貨日：{existing_ids.get('delivery_date')}")
+        st.caption("｜".join(edit_lines))
+
     latest_metrics_df = _build_latest_item_metrics_df(
         store_id=st.session_state.store_id,
         as_of_date=st.session_state.record_date,
@@ -482,15 +780,18 @@ def page_order_entry():
             st.session_state.record_date,
         )
 
-        current_stock_qty = _get_latest_stock_qty_in_display_unit(
-            stocktakes_df=stocktakes_df,
-            stocktake_lines_df=stocktake_lines_df,
-            items_df=vendor_items,
-            conversions_df=conversions_df,
-            store_id=st.session_state.store_id,
-            item_id=item_id,
-            display_unit=stock_unit,
-        )
+        current_stock_qty = existing_stock_map.get(item_id)
+        if current_stock_qty is None:
+            current_stock_qty = _get_latest_stock_qty_in_display_unit(
+                stocktakes_df=stocktakes_df,
+                stocktake_lines_df=stocktake_lines_df,
+                items_df=vendor_items,
+                conversions_df=conversions_df,
+                store_id=st.session_state.store_id,
+                item_id=item_id,
+                display_unit=stock_unit,
+                as_of_date=st.session_state.record_date,
+            )
 
         metric = latest_metrics_map.get(item_id, {})
         period_purchase = _safe_float(metric.get("期間進貨", 0))
@@ -530,6 +831,8 @@ def page_order_entry():
             "daily_avg": round(daily_avg, 1),
             "suggest_qty": suggest_qty,
             "status_hint": status_hint,
+            "existing_order_qty": round(_safe_float(existing_order_qty_map.get(item_id, 0)), 1),
+            "existing_order_unit": _norm(existing_order_unit_map.get(item_id, "")) or order_unit,
         }
 
     ref_df = None
@@ -599,16 +902,16 @@ def page_order_entry():
                     min_value=0.0,
                     step=0.1,
                     format="%g",
-                    value=0.0,
+                    value=float(meta["existing_order_qty"]),
                     key=f"order_{item_id}",
                     label_visibility="collapsed",
                 )
                 selected_order_unit = st.selectbox(
                     "進貨單位",
                     options=meta["orderable_unit_options"],
-                    index=meta["orderable_unit_options"].index(order_unit)
-                    if order_unit in meta["orderable_unit_options"]
-                    else 0,
+                    index=meta["orderable_unit_options"].index(meta["existing_order_unit"])
+                    if meta["existing_order_unit"] in meta["orderable_unit_options"]
+                    else (meta["orderable_unit_options"].index(order_unit) if order_unit in meta["orderable_unit_options"] else 0),
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
@@ -623,6 +926,17 @@ def page_order_entry():
                     "unit_price": float(meta["price"]),
                 }
             )
+
+        st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
+
+        selected_delivery_weekday = st.selectbox(
+            "到貨星期",
+            options=WEEKDAY_OPTIONS,
+            index=WEEKDAY_OPTIONS.index(existing_delivery_option) if existing_delivery_option in WEEKDAY_OPTIONS else 0,
+            key="delivery_weekday_option",
+        )
+        delivery_date = _delivery_date_from_weekday(st.session_state.record_date, selected_delivery_weekday)
+        st.caption(f"本次到貨日：{delivery_date.strftime('%Y-%m-%d')}（{WEEKDAY_LABELS[delivery_date.weekday()]}）")
 
         submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
@@ -678,12 +992,15 @@ def page_order_entry():
                     store_id=st.session_state.store_id,
                     vendor_id=st.session_state.vendor_id,
                     record_date=st.session_state.record_date,
+                    delivery_date=delivery_date,
+                    existing_stocktake_id=existing_ids.get("stocktake_id", ""),
+                    existing_po_id=existing_ids.get("po_id", ""),
                     is_initial_stock=is_initial_stock,
                 )
     
-                st.success(
-                    f"✅ 已儲存；{('並建立叫貨單：' + po_id) if po_id else '本次無叫貨品項'}"
-                )
+                action_text = "✅ 已修改完成" if is_edit_mode else "✅ 已儲存完成"
+                tail_text = ('並建立/更新叫貨單：' + po_id) if po_id else '本次無叫貨品項'
+                st.success(f"{action_text}；{tail_text}")
                 st.session_state.step = "select_vendor"
                 st.rerun()
     
@@ -724,27 +1041,20 @@ def _save_order_entry(
     store_id,
     vendor_id,
     record_date,
-    is_initial_stock: bool,
+    delivery_date,
+    existing_stocktake_id: str = "",
+    existing_po_id: str = "",
+    is_initial_stock: bool = False,
 ):
     now = _now_ts()
     prices_df = read_table("prices")
 
-    # ============================================================
-    # 1. 叫貨資料：只保留 > 0 的列
-    # ============================================================
     order_rows = [r for r in submit_rows if _safe_float(r["order_qty"]) > 0]
-
-    # ============================================================
-    # 2. 盤點資料：
-    #    現在規則改為「畫面預載上次庫存，送出值就是本次正式庫存」
-    #    所以這裡直接吃 submit_rows，不再做上一筆覆蓋邏輯
-    # ============================================================
     stocktake_rows = []
     for r in submit_rows:
         item_id = _norm(r.get("item_id", ""))
         if not item_id:
             continue
-
         stocktake_rows.append(
             {
                 "item_id": item_id,
@@ -754,49 +1064,54 @@ def _save_order_entry(
             }
         )
 
-    # ============================================================
-    # 3. 申請 ID
-    # ============================================================
-    id_need = {
-        "stocktakes": 1 if stocktake_rows else 0,
-        "stocktake_lines": len(stocktake_rows),
-        "purchase_orders": 1 if order_rows else 0,
-        "purchase_order_lines": len(order_rows),
-    }
-    id_map = allocate_ids(id_need)
+    po_id = _norm(existing_po_id)
+    stocktake_id = _norm(existing_stocktake_id)
 
     # ============================================================
-    # 4. 寫入 stocktakes / stocktake_lines
+    # 1. stocktakes / stocktake_lines
+    #    若同日同廠商已有資料，直接覆寫；否則新增。
     # ============================================================
     if stocktake_rows:
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
 
-        stocktake_id = id_map["stocktakes"][0]
-        stocktake_main_row = {c: "" for c in stocktake_header}
-
-        defaults = {
-            "stocktake_id": stocktake_id,
-            "store_id": store_id,
-            "vendor_id": vendor_id,
-            "stocktake_date": str(record_date),
-            "stocktake_type": "initial" if is_initial_stock else "regular",
-            "status": "done",
-            "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
-            "created_at": now,
-            "created_by": "SYSTEM",
-        }
-
-        for k, v in defaults.items():
-            if k in stocktake_main_row:
-                stocktake_main_row[k] = v
-
-        append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
+        if stocktake_id:
+            _update_row_by_id(
+                "stocktakes",
+                "stocktake_id",
+                stocktake_id,
+                {
+                    "store_id": store_id,
+                    "vendor_id": vendor_id,
+                    "stocktake_date": str(record_date),
+                    "status": "done",
+                    "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
+                    "updated_at": now,
+                    "updated_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+                },
+            )
+        else:
+            id_map = allocate_ids({"stocktakes": 1})
+            stocktake_id = id_map["stocktakes"][0]
+            stocktake_main_row = {c: "" for c in stocktake_header}
+            defaults = {
+                "stocktake_id": stocktake_id,
+                "store_id": store_id,
+                "vendor_id": vendor_id,
+                "stocktake_date": str(record_date),
+                "stocktake_type": "initial" if is_initial_stock else "regular",
+                "status": "done",
+                "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
+                "created_at": now,
+                "created_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+            }
+            for k, v in defaults.items():
+                if k in stocktake_main_row:
+                    stocktake_main_row[k] = v
+            append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
 
         stock_line_rows = []
-        for idx, r in enumerate(stocktake_rows):
-            stocktake_line_id = id_map["stocktake_lines"][idx]
-
+        for r in stocktake_rows:
             try:
                 stock_base_qty, stock_base_unit = convert_to_base(
                     item_id=r["item_id"],
@@ -811,7 +1126,6 @@ def _save_order_entry(
 
             row_dict = {c: "" for c in stl_header}
             defaults_line = {
-                "stocktake_line_id": stocktake_line_id,
                 "stocktake_id": stocktake_id,
                 "store_id": store_id,
                 "vendor_id": vendor_id,
@@ -821,109 +1135,162 @@ def _save_order_entry(
                 "stock_qty": str(r["stock_qty"]),
                 "unit_id": r["stock_unit"],
                 "stock_unit": r["stock_unit"],
+                "stock_unit_id": r["stock_unit"],
                 "base_qty": str(round(stock_base_qty, 3)),
                 "base_unit": stock_base_unit,
+                "updated_at": now,
                 "created_at": now,
-                "created_by": "SYSTEM",
             }
-
             for k, v in defaults_line.items():
                 if k in row_dict:
                     row_dict[k] = v
-
             stock_line_rows.append(row_dict)
 
-        append_rows_by_header("stocktake_lines", stl_header, stock_line_rows)
+        _upsert_detail_rows_by_parent(
+            sheet_name="stocktake_lines",
+            parent_field="stocktake_id",
+            parent_id=stocktake_id,
+            line_id_field="stocktake_line_id",
+            item_rows=stock_line_rows,
+            allocate_key="stocktake_lines",
+        )
+        _write_audit_log(
+            action="update_stocktake" if existing_stocktake_id else "create_stocktake",
+            table_name="stocktakes",
+            entity_id=stocktake_id,
+            note=f"store={store_id}, vendor={vendor_id}, date={record_date}",
+        )
 
     # ============================================================
-    # 5. 寫入 purchase_orders / purchase_order_lines
+    # 2. purchase_orders / purchase_order_lines
+    #    若同日同廠商已有資料，直接覆寫；若原本有單但這次全為 0，則視為清空叫貨。
     # ============================================================
-    po_id = ""
+    po_header = get_header("purchase_orders")
+    pol_header = get_header("purchase_order_lines")
 
-    if order_rows:
-        po_header = get_header("purchase_orders")
-        pol_header = get_header("purchase_order_lines")
-
+    if po_id:
+        status_value = "draft" if order_rows else "cancelled"
+        _update_row_by_id(
+            "purchase_orders",
+            "po_id",
+            po_id,
+            {
+                "store_id": store_id,
+                "vendor_id": vendor_id,
+                "po_date": str(record_date),
+                "order_date": str(record_date),
+                "expected_date": str(delivery_date),
+                "delivery_date": str(delivery_date),
+                "status": status_value,
+                "updated_at": now,
+                "updated_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+            },
+        )
+    elif order_rows:
+        id_map = allocate_ids({"purchase_orders": 1})
         po_id = id_map["purchase_orders"][0]
         po_row = {c: "" for c in po_header}
-
         defaults_po = {
             "po_id": po_id,
+            "po_date": str(record_date),
             "store_id": store_id,
             "vendor_id": vendor_id,
             "order_date": str(record_date),
-            "delivery_date": str(record_date),  # 這次先不動日期規則
+            "expected_date": str(delivery_date),
+            "delivery_date": str(delivery_date),
             "status": "draft",
             "created_at": now,
-            "created_by": "SYSTEM",
+            "created_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
         }
-
         for k, v in defaults_po.items():
             if k in po_row:
                 po_row[k] = v
-
         append_rows_by_header("purchase_orders", po_header, [po_row])
 
+    if po_id:
         po_line_rows = []
-        for idx, r in enumerate(order_rows):
-            po_line_id = id_map["purchase_order_lines"][idx]
+        existing_qty_map, existing_unit_map = _get_existing_order_maps(po_id)
+        target_item_ids = {_norm(r.get("item_id", "")) for r in submit_rows if _norm(r.get("item_id", ""))}
 
-            try:
-                order_base_qty, order_base_unit = convert_to_base(
+        for r in submit_rows:
+            if _norm(r.get("item_id", "")) not in target_item_ids:
+                continue
+
+            order_qty = _safe_float(r.get("order_qty", 0))
+            order_unit = _norm(r.get("order_unit", ""))
+            item_name = r.get("item_name", "")
+
+            if order_qty > 0:
+                try:
+                    order_base_qty, order_base_unit = convert_to_base(
+                        item_id=r["item_id"],
+                        qty=order_qty,
+                        from_unit=order_unit,
+                        items_df=vendor_items,
+                        conversions_df=conversions_df,
+                        as_of_date=record_date,
+                    )
+                except Exception as e:
+                    raise ValueError(f"{item_name} 叫貨單位換算失敗：{e}")
+
+                base_unit_cost = get_base_unit_cost(
                     item_id=r["item_id"],
-                    qty=r["order_qty"],
-                    from_unit=r["order_unit"],
+                    target_date=record_date,
                     items_df=vendor_items,
+                    prices_df=prices_df,
                     conversions_df=conversions_df,
-                    as_of_date=record_date,
                 )
-            except Exception as e:
-                raise ValueError(f"{r['item_name']} 叫貨單位換算失敗：{e}")
+                if base_unit_cost is None or float(base_unit_cost) <= 0:
+                    raise ValueError(f"{item_name} 缺少有效價格設定，無法計算叫貨金額。")
 
-            base_unit_cost = get_base_unit_cost(
-                item_id=r["item_id"],
-                target_date=record_date,
-                items_df=vendor_items,
-                prices_df=prices_df,
-                conversions_df=conversions_df,
-            )
-            if base_unit_cost is None or float(base_unit_cost) <= 0:
-                raise ValueError(f"{r['item_name']} 缺少有效價格設定，無法計算叫貨金額。")
-
-            line_amount = round(float(order_base_qty) * float(base_unit_cost), 1)
-            order_unit_price = round(
-                line_amount / float(r["order_qty"]),
-                4,
-            ) if float(r["order_qty"]) > 0 else 0
+                line_amount = round(float(order_base_qty) * float(base_unit_cost), 1)
+                order_unit_price = round(line_amount / float(order_qty), 4) if float(order_qty) > 0 else 0
+            else:
+                order_base_qty = 0
+                order_base_unit = ""
+                line_amount = 0
+                order_unit_price = 0
+                if not order_unit:
+                    order_unit = _norm(existing_unit_map.get(r["item_id"], ""))
 
             row_dict = {c: "" for c in pol_header}
             defaults_pol = {
-                "po_line_id": po_line_id,
                 "po_id": po_id,
                 "store_id": store_id,
                 "vendor_id": vendor_id,
                 "item_id": r["item_id"],
-                "item_name": r["item_name"],
-                "qty": str(r["order_qty"]),
-                "order_qty": str(r["order_qty"]),
-                "unit_id": r["order_unit"],
-                "order_unit": r["order_unit"],
+                "item_name": item_name,
+                "qty": str(order_qty),
+                "order_qty": str(order_qty),
+                "unit_id": order_unit,
+                "order_unit": order_unit,
                 "base_qty": str(round(order_base_qty, 3)),
                 "base_unit": order_base_unit,
                 "unit_price": str(order_unit_price),
                 "amount": str(line_amount),
-                "line_amount": str(line_amount),
+                "delivery_date": str(delivery_date),
+                "updated_at": now,
                 "created_at": now,
-                "created_by": "SYSTEM",
             }
-
             for k, v in defaults_pol.items():
                 if k in row_dict:
                     row_dict[k] = v
-
             po_line_rows.append(row_dict)
 
-        append_rows_by_header("purchase_order_lines", pol_header, po_line_rows)
+        _upsert_detail_rows_by_parent(
+            sheet_name="purchase_order_lines",
+            parent_field="po_id",
+            parent_id=po_id,
+            line_id_field="po_line_id",
+            item_rows=po_line_rows,
+            allocate_key="purchase_order_lines",
+        )
+        _write_audit_log(
+            action="update_purchase_order" if existing_po_id else "create_purchase_order",
+            table_name="purchase_orders",
+            entity_id=po_id,
+            note=f"store={store_id}, vendor={vendor_id}, order_date={record_date}, delivery_date={delivery_date}",
+        )
 
     bust_cache()
     return po_id
@@ -948,9 +1315,6 @@ def _save_order_entry(
 def page_order_message_detail():
     st.title("🧾 叫貨明細")
 
-    # ========================================================
-    # 1. 先確認目前分店
-    # ========================================================
     store_id = st.session_state.get("store_id", "")
     store_name = st.session_state.get("store_name", "")
 
@@ -958,18 +1322,14 @@ def page_order_message_detail():
         st.warning("請先選擇分店")
         return
 
-    # ========================================================
-    # 2. 選擇日期（單日）
-    # ========================================================
     selected_date = st.date_input(
         "日期",
         value=date.today(),
         key="order_message_detail_date",
     )
+    next_day = selected_date + timedelta(days=1)
+    prev_day = selected_date - timedelta(days=1)
 
-    # ========================================================
-    # 3. 讀取資料
-    # ========================================================
     po_df = read_table("purchase_orders")
     pol_df = read_table("purchase_order_lines")
     vendors_df = read_table("vendors")
@@ -979,152 +1339,116 @@ def page_order_message_detail():
         st.info("目前沒有叫貨資料")
         return
 
-    # ========================================================
-    # 4. 日期格式整理
-    # ========================================================
+    po_df = po_df.copy()
     if "order_date" not in po_df.columns:
         st.error("purchase_orders 缺少 order_date 欄位")
         return
 
-    po_df = po_df.copy()
-    po_df["order_date"] = pd.to_datetime(po_df["order_date"], errors="coerce").dt.date
+    po_df["order_date_dt"] = pd.to_datetime(po_df["order_date"], errors="coerce").dt.date
+    if "delivery_date" in po_df.columns:
+        po_df["delivery_date_dt"] = pd.to_datetime(po_df["delivery_date"], errors="coerce").dt.date
+    elif "expected_date" in po_df.columns:
+        po_df["delivery_date_dt"] = pd.to_datetime(po_df["expected_date"], errors="coerce").dt.date
+    else:
+        po_df["delivery_date_dt"] = po_df["order_date_dt"]
 
-    # ========================================================
-    # 5. 篩出指定分店＋指定日期的主單
-    # ========================================================
     if "store_id" not in po_df.columns or "po_id" not in po_df.columns:
         st.error("purchase_orders 缺少 store_id 或 po_id 欄位")
         return
 
-    po_today = po_df[
-        (po_df["store_id"].astype(str) == str(store_id))
-        & (po_df["order_date"] == selected_date)
+    po_df["store_id"] = po_df["store_id"].astype(str).str.strip()
+    po_df["po_id"] = po_df["po_id"].astype(str).str.strip()
+    base_mask = po_df["store_id"] == str(store_id).strip()
+
+    same_day_pos = po_df[
+        base_mask
+        & (po_df["order_date_dt"] == selected_date)
+        & (po_df["delivery_date_dt"].isin([selected_date, next_day]))
     ].copy()
+
+    reminder_pos = po_df[
+        base_mask
+        & (po_df["order_date_dt"] == prev_day)
+        & (po_df["delivery_date_dt"] == next_day)
+    ].copy()
+
+    po_today = pd.concat([same_day_pos, reminder_pos], ignore_index=True)
+    po_today = po_today.drop_duplicates(subset=["po_id"], keep="first")
 
     if po_today.empty:
         st.info("這一天沒有叫貨紀錄")
         return
 
-    # ========================================================
-    # 6. 篩出明細
-    # ========================================================
     if "po_id" not in pol_df.columns:
         st.error("purchase_order_lines 缺少 po_id 欄位")
         return
 
     po_ids = po_today["po_id"].astype(str).tolist()
-
     pol_df = pol_df.copy()
-    pol_df["po_id"] = pol_df["po_id"].astype(str)
-
+    pol_df["po_id"] = pol_df["po_id"].astype(str).str.strip()
     lines_today = pol_df[pol_df["po_id"].isin(po_ids)].copy()
 
     if lines_today.empty:
         st.info("這一天沒有叫貨明細")
         return
 
-    # ========================================================
-    # 7. 建立廠商名稱對照
-    #    顯示優先沿用系統既有規則
-    # ========================================================
-    vendor_map = dict(
-        zip(
-            vendors_df["vendor_id"].astype(str),
-            vendors_df["vendor_name_zh"].fillna("").astype(str),
-        )
-    )
-    # ========================================================
-    # 8. 建立品項名稱對照
-    #    顯示優先：item_name_zh > item_name > item_id
-    # ========================================================
-    item_name_col = None
-    if "item_name_zh" in items_df.columns:
-        item_name_col = "item_name_zh"
-    elif "item_name" in items_df.columns:
-        item_name_col = "item_name"
+    vendor_name_col = "vendor_name_zh" if "vendor_name_zh" in vendors_df.columns else "vendor_name"
+    vendor_map = {}
+    if not vendors_df.empty and "vendor_id" in vendors_df.columns:
+        for _, r in vendors_df.iterrows():
+            vid = str(r.get("vendor_id", "")).strip()
+            display_name = str(r.get(vendor_name_col, "")).strip() if vendor_name_col in vendors_df.columns else ""
+            if not display_name:
+                display_name = str(r.get("vendor_name", "")).strip() or vid
+            vendor_map[vid] = display_name
 
+    item_name_col = "item_name_zh" if "item_name_zh" in items_df.columns else ("item_name" if "item_name" in items_df.columns else None)
     item_map = {}
     if "item_id" in items_df.columns:
         for _, r in items_df.iterrows():
-            iid = str(r.get("item_id", ""))
-            display_name = ""
-            if item_name_col:
-                display_name = str(r.get(item_name_col, "")).strip()
-            if not display_name:
-                display_name = iid
-            item_map[iid] = display_name
-
-    # ========================================================
-    # 9. 合併主單與明細
-    # ========================================================
-    po_today["po_id"] = po_today["po_id"].astype(str)
+            iid = str(r.get("item_id", "")).strip()
+            display_name = str(r.get(item_name_col, "")).strip() if item_name_col else ""
+            item_map[iid] = display_name or iid
 
     merged = lines_today.merge(
-        po_today[["po_id", "vendor_id"]],
+        po_today[["po_id", "vendor_id", "delivery_date_dt"]],
         on="po_id",
         how="left",
         suffixes=("", "_po"),
     )
 
-    # 找實際可用的 vendor_id 欄位
     vendor_id_col = None
-    if "vendor_id_po" in merged.columns:
-        vendor_id_col = "vendor_id_po"
-    elif "vendor_id_y" in merged.columns:
-        vendor_id_col = "vendor_id_y"
-    elif "vendor_id" in merged.columns:
-        vendor_id_col = "vendor_id"
-    elif "vendor_id_x" in merged.columns:
-        vendor_id_col = "vendor_id_x"
-
+    for c in ["vendor_id_po", "vendor_id_y", "vendor_id", "vendor_id_x"]:
+        if c in merged.columns:
+            vendor_id_col = c
+            break
     if vendor_id_col is None:
         st.error("合併後找不到 vendor_id 欄位")
         return
 
-    merged["vendor_name"] = (
-        merged[vendor_id_col].astype(str).str.strip().map(vendor_map).fillna("未分類廠商")
-    )
-    merged["item_name"] = (
-        merged["item_id"].astype(str).map(item_map).fillna(merged["item_id"].astype(str))
-    )
-    # ========================================================
-    # 10. 抓數量 / 單位欄位
-    # ========================================================
+    merged["vendor_name"] = merged[vendor_id_col].astype(str).str.strip().map(vendor_map).fillna("未分類廠商")
+    merged["item_name"] = merged["item_id"].astype(str).str.strip().map(item_map).fillna(merged["item_id"].astype(str))
+
     qty_col = "order_qty" if "order_qty" in merged.columns else "qty"
     unit_col = "order_unit" if "order_unit" in merged.columns else "unit_id"
-
-    if qty_col not in merged.columns:
-        st.error("purchase_order_lines 缺少 order_qty / qty 欄位")
+    if qty_col not in merged.columns or unit_col not in merged.columns:
+        st.error("purchase_order_lines 缺少數量或單位欄位")
         return
 
-    if unit_col not in merged.columns:
-        st.error("purchase_order_lines 缺少 order_unit / unit_id 欄位")
+    merged[qty_col] = pd.to_numeric(merged[qty_col], errors="coerce").fillna(0)
+    merged = merged[merged[qty_col] > 0].copy()
+    if merged.empty:
+        st.info("這一天目前沒有需要顯示的品項")
         return
 
-    # ========================================================
-    # 11. 數量格式整理
-    # ========================================================
     def _fmt_qty(v):
         try:
             v = float(v)
-            if v.is_integer():
-                return str(int(v))
-            return f"{v:.1f}"
+            return str(int(v)) if v.is_integer() else f"{v:.1f}"
         except Exception:
             return str(v)
 
-    # ========================================================
-    # 12. 產生 LINE 訊息內容
-    # 格式範例：
-    # 3/16（一）
-    # 昶翔
-    # 師大
-    # 義大利麵(熟) 3箱
-    # 青醬 1箱
-    # 禮拜二到，謝謝
-    # ========================================================
     def _fmt_line_date(d):
-        """把日期格式化成 3/16（一）"""
         try:
             weekday_map = ["一", "二", "三", "四", "五", "六", "日"]
             return f"{d.month}/{d.day}（{weekday_map[d.weekday()]}）"
@@ -1132,78 +1456,58 @@ def page_order_message_detail():
             return str(d)
 
     def _get_store_short_name(name: str) -> str:
-        """把分店名稱縮成 LINE 常用短名稱，例如：師大店 -> 師大"""
         name = str(name or "").strip()
-        if name.endswith("店"):
-            return name[:-1]
-        return name
+        return name[:-1] if name.endswith("店") else name
 
     def _simplify_line_item_name(name: str) -> str:
-        """整理品項名稱，讓 LINE 訊息更好讀"""
         text = str(name or "").strip()
         text = text.replace(" / ", " ")
         text = text.replace("/熟", "(熟)")
         text = text.replace("/生", "(生)")
         return text
 
+    def _fmt_arrival_text(arrival_date_value):
+        weekday_map_for_arrival = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
+        try:
+            if pd.isna(arrival_date_value):
+                return "謝謝"
+            return f"禮拜{weekday_map_for_arrival[arrival_date_value.weekday()]}到，謝謝"
+        except Exception:
+            return "謝謝"
+
     lines = []
-
     store_short_name = _get_store_short_name(store_name)
-    date_text = _fmt_line_date(selected_date)
-
-    weekday_map_for_arrival = {
-        0: "一",
-        1: "二",
-        2: "三",
-        3: "四",
-        4: "五",
-        5: "六",
-        6: "日",
-    }
-    try:
-        arrival_date = selected_date + timedelta(days=1)
-        arrival_text = f"禮拜{weekday_map_for_arrival[arrival_date.weekday()]}到，謝謝"
-    except Exception:
-        arrival_text = "謝謝"
-
-    # 最上方先放日期
-    lines.append(date_text)
+    lines.append(_fmt_line_date(selected_date))
     lines.append("")
 
-    # 逐廠商產生一段
-    for vendor_name, group in merged.groupby("vendor_name", sort=False):
-        show_vendor = str(vendor_name).strip() if str(vendor_name).strip() else "未分類廠商"
+    merged = merged.sort_values(
+        by=["vendor_name", "delivery_date_dt", "item_name"],
+        ascending=[True, True, True],
+        na_position="last",
+    ).reset_index(drop=True)
 
-        # 每個廠商都要顯示廠商名稱
+    for (vendor_name, delivery_dt), group in merged.groupby(["vendor_name", "delivery_date_dt"], sort=False, dropna=False):
+        show_vendor = str(vendor_name).strip() if str(vendor_name).strip() else "未分類廠商"
         lines.append(show_vendor)
 
-        # 分店短名稱
         if store_short_name:
             lines.append(store_short_name)
 
-        # 品項明細
         for _, r in group.iterrows():
             item_name = _simplify_line_item_name(r.get("item_name", ""))
             qty = _fmt_qty(r.get(qty_col, ""))
             unit = str(r.get(unit_col, "")).strip()
             lines.append(f"{item_name} {qty}{unit}")
 
-        # 每個廠商段落最後補到貨文字
-        lines.append(arrival_text)
-
-        # 廠商與廠商之間留空行
+        lines.append(_fmt_arrival_text(delivery_dt))
         lines.append("")
 
     line_message = "\n".join(lines).strip()
 
-    # ========================================================
-    # 13. 顯示
-    # ========================================================
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
 
     c1, c2 = st.columns(2)
-
     with c1:
         if st.button("📤 發送到 LINE", type="primary", use_container_width=True):
             ok = send_line_message(line_message)
