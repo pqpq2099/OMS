@@ -59,26 +59,72 @@ from utils.utils_units import convert_to_base
 def send_line_message(line_message: str) -> bool:
     """
     把文字訊息推送到 LINE 群組。
-    需要先在 Streamlit secrets 設定：
-    1. LINE_CHANNEL_ACCESS_TOKEN
-    2. LINE_GROUP_ID
+    同時相容兩種 Streamlit secrets 寫法：
+
+    方案 A：扁平寫法
+    LINE_CHANNEL_ACCESS_TOKEN = "xxx"
+    LINE_GROUP_ID = "xxx"
+
+    方案 B：巢狀寫法
+    [line_bot]
+    LINE_CHANNEL_ACCESS_TOKEN = "xxx"
+
+    [line_groups]
+    LINE_GROUP_ID = "xxx"
     """
     try:
+        # ------------------------------------------------------------
+        # 先讀扁平寫法
+        # ------------------------------------------------------------
         channel_access_token = str(
             st.secrets.get("LINE_CHANNEL_ACCESS_TOKEN", "")
         ).strip()
+
         group_id = str(
             st.secrets.get("LINE_GROUP_ID", "")
         ).strip()
 
+        # ------------------------------------------------------------
+        # 若扁平寫法讀不到，再讀巢狀寫法
+        # ------------------------------------------------------------
         if not channel_access_token:
-            st.error("缺少 LINE_CHANNEL_ACCESS_TOKEN，請先到 Streamlit secrets 設定。")
+            try:
+                line_bot_cfg = st.secrets.get("line_bot", {})
+                channel_access_token = str(
+                    line_bot_cfg.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+                ).strip()
+            except Exception:
+                channel_access_token = ""
+
+        if not group_id:
+            try:
+                line_groups_cfg = st.secrets.get("line_groups", {})
+                group_id = str(
+                    line_groups_cfg.get("LINE_GROUP_ID", "")
+                ).strip()
+            except Exception:
+                group_id = ""
+
+        # ------------------------------------------------------------
+        # 驗證必要設定
+        # ------------------------------------------------------------
+        if not channel_access_token:
+            st.error(
+                "缺少 LINE_CHANNEL_ACCESS_TOKEN。請檢查 Streamlit secrets，"
+                "支援扁平寫法或 [line_bot] 巢狀寫法。"
+            )
             return False
 
         if not group_id:
-            st.error("缺少 LINE_GROUP_ID，請先到 Streamlit secrets 設定。")
+            st.error(
+                "缺少 LINE_GROUP_ID。請檢查 Streamlit secrets，"
+                "支援扁平寫法或 [line_groups] 巢狀寫法。"
+            )
             return False
 
+        # ------------------------------------------------------------
+        # 呼叫 LINE Push API
+        # ------------------------------------------------------------
         url = "https://api.line.me/v2/bot/message/push"
 
         headers = {
@@ -112,7 +158,6 @@ def send_line_message(line_message: str) -> bool:
     except Exception as e:
         st.error(f"發送 LINE 時發生錯誤：{e}")
         return False
-
 # ============================================================
 # [B1] 盤點引擎輔助函式
 # 這一區放：抓上一筆庫存、建立本次新庫存
