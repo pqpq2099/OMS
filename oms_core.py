@@ -23,6 +23,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
+import copy
 
 import gspread
 import pandas as pd
@@ -369,55 +370,61 @@ def get_spreadsheet():
 # [C2] Sheet Read / Write
 # 這一區放：讀表、抓表頭、寫入資料、清快取
 # ============================================================
-@st.cache_data(show_spinner=False, ttl=120)
-def read_table(sheet_name: str) -> pd.DataFrame:
+def _get_runtime_table_cache() -> dict:
+    """
+    取得本次使用者 session 的表格快取。
+    目的：
+    1. 同一次操作流程中，避免同一張表被重複打到 Google Sheets。
+    2. 當 Google API 暫時 429 時，優先回傳最近一次成功資料，降低整頁爆掉機率。
+    """
+    return st.session_state.setdefault("_runtime_table_cache", {})
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _read_table_remote(sheet_name: str) -> pd.DataFrame:
     sh = get_spreadsheet()
     if sh is None:
         return pd.DataFrame()
 
-    try:
-        ws = sh.worksheet(sheet_name)
-        values = ws.get_all_values()
+    ws = sh.worksheet(sheet_name)
+    values = ws.get_all_values()
 
-        # 連表頭都沒有
-        if not values:
-            return pd.DataFrame()
-
-        header = [_norm(c) for c in values[0]]
-        rows = values[1:]
-
-        # 只有表頭，沒有資料列
-        if not rows:
-            return pd.DataFrame(columns=header)
-
-        normalized_rows = []
-        for row in rows:
-            row = list(row)
-
-            # 補齊不足欄位
-            if len(row) < len(header):
-                row = row + [""] * (len(header) - len(row))
-            else:
-                row = row[:len(header)]
-
-            normalized_rows.append(row)
-
-        df = pd.DataFrame(normalized_rows, columns=header)
-
-        # 移除整列都空白的資料，但保留表頭
-        if not df.empty:
-            df = df[
-                df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
-            ].reset_index(drop=True)
-
-        return df
-
-    except Exception as e:
-        st.warning(f"{sheet_name} 讀取失敗：{e}")
+    # 連表頭都沒有
+    if not values:
         return pd.DataFrame()
 
+    header = [_norm(c) for c in values[0]]
+    rows = values[1:]
 
-def get_header(sheet_name: str) -> list[str]:
+    # 只有表頭，沒有資料列
+    if not rows:
+        return pd.DataFrame(columns=header)
+
+    normalized_rows = []
+    for row in rows:
+        row = list(row)
+
+        # 補齊不足欄位
+        if len(row) < len(header):
+            row = row + [""] * (len(header) - len(row))
+        else:
+            row = row[:len(header)]
+
+        normalized_rows.append(row)
+
+    df = pd.DataFrame(normalized_rows, columns=header)
+
+    # 移除整列都空白的資料，但保留表頭
+    if not df.empty:
+        df = df[
+            df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
+        ].reset_index(drop=True)
+
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _get_header_remote(sheet_name: str) -> list[str]:
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
@@ -427,6 +434,64 @@ def get_header(sheet_name: str) -> list[str]:
     if not header:
         raise ValueError(f"{sheet_name} 沒有 header")
     return [_norm(h) for h in header]
+
+
+def read_table(sheet_name: str, force_refresh: bool = False) -> pd.DataFrame:
+    """
+    讀取 Google Sheet 表格。
+    這裡採兩層快取：
+    1. Streamlit cache_data：跨 rerun 短時間共用
+    2. session_state runtime cache：同一位使用者當前操作流程直接重用
+
+    另外當 Google API 暫時 429 / timeout 時：
+    - 若 session 內已有最近一次成功資料，優先回傳舊資料
+    - 目的不是永久吃舊資料，而是避免單次畫面整頁炸掉
+    """
+    cache = _get_runtime_table_cache()
+    cache_key = _norm(sheet_name)
+
+    if force_refresh:
+        cache.pop(cache_key, None)
+        _read_table_remote.clear()
+
+    if cache_key in cache:
+        return cache[cache_key].copy()
+
+    try:
+        df = _read_table_remote(sheet_name)
+        cache[cache_key] = df.copy()
+        return df.copy()
+    except Exception as e:
+        old_df = cache.get(cache_key)
+        if old_df is not None:
+            st.warning(f"{sheet_name} 讀取失敗，已改用暫存資料：{e}")
+            return old_df.copy()
+
+        st.warning(f"{sheet_name} 讀取失敗：{e}")
+        return pd.DataFrame()
+
+
+def get_header(sheet_name: str, force_refresh: bool = False) -> list[str]:
+    cache = st.session_state.setdefault("_runtime_header_cache", {})
+    cache_key = _norm(sheet_name)
+
+    if force_refresh:
+        cache.pop(cache_key, None)
+        _get_header_remote.clear()
+
+    if cache_key in cache:
+        return list(cache[cache_key])
+
+    try:
+        header = _get_header_remote(sheet_name)
+        cache[cache_key] = list(header)
+        return list(header)
+    except Exception as e:
+        old_header = cache.get(cache_key)
+        if old_header is not None:
+            st.warning(f"{sheet_name} header 讀取失敗，已改用暫存資料：{e}")
+            return list(old_header)
+        raise
 
 
 def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
@@ -443,7 +508,14 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
 
 
 def bust_cache():
-    read_table.clear()
+    """
+    清除資料快取。
+    只要有寫入 / 更新 / 刪除後，都應呼叫這裡，避免畫面繼續看到舊資料。
+    """
+    _read_table_remote.clear()
+    _get_header_remote.clear()
+    st.session_state.pop("_runtime_table_cache", None)
+    st.session_state.pop("_runtime_header_cache", None)
 
 
 # ============================================================
@@ -700,6 +772,7 @@ def _get_latest_stock_qty_in_display_unit(
     store_id: str,
     item_id: str,
     display_unit: str,
+    as_of_date: date | None = None,
 ):
     if stocktakes_df.empty or stocktake_lines_df.empty:
         return 0.0
@@ -726,6 +799,10 @@ def _get_latest_stock_qty_in_display_unit(
         return 0.0
 
     merged["__date"] = merged["stocktake_date"].apply(_parse_date)
+    if as_of_date is not None:
+        merged = merged[merged["__date"].notna() & (merged["__date"] <= as_of_date)].copy()
+        if merged.empty:
+            return 0.0
     merged = merged.sort_values("__date", ascending=True)
     latest = merged.iloc[-1].to_dict()
 
@@ -787,13 +864,17 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         rename_map["vendor_id"] = "po_vendor_id"
     if "order_date" in po_keep.columns:
         rename_map["order_date"] = "po_order_date"
+    if "delivery_date" in po_keep.columns:
+        rename_map["delivery_date"] = "po_delivery_date"
+    if "expected_date" in po_keep.columns:
+        rename_map["expected_date"] = "po_expected_date"
     if "status" in po_keep.columns:
         rename_map["status"] = "po_status"
 
     po_keep = po_keep.rename(columns=rename_map)
 
     keep_cols = ["po_id"]
-    for c in ["po_store_id", "po_vendor_id", "po_order_date", "po_status"]:
+    for c in ["po_store_id", "po_vendor_id", "po_order_date", "po_delivery_date", "po_expected_date", "po_status"]:
         if c in po_keep.columns:
             keep_cols.append(c)
 
@@ -802,6 +883,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     merged["store_id"] = _coalesce_columns(merged, ["po_store_id", "store_id"], default="")
     merged["vendor_id"] = _coalesce_columns(merged, ["po_vendor_id", "vendor_id"], default="")
     merged["order_date"] = _coalesce_columns(merged, ["po_order_date", "order_date"], default="")
+    merged["delivery_date"] = _coalesce_columns(merged, ["delivery_date", "po_delivery_date", "po_expected_date"], default="")
     merged["status"] = _coalesce_columns(merged, ["po_status", "status"], default="")
 
     if not vendors_df.empty and "vendor_id" in vendors_df.columns:
@@ -845,6 +927,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     )
 
     merged["order_date_dt"] = merged["order_date"].apply(_parse_date)
+    merged["delivery_date_dt"] = merged["delivery_date"].apply(_parse_date)
 
     merged["order_qty_num"] = pd.to_numeric(
         _coalesce_columns(merged, ["order_qty", "qty"], default=0),
@@ -1305,7 +1388,8 @@ def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFra
 
 def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
     po_df = _build_purchase_detail_df()
-    if po_df.empty or "store_id" not in po_df.columns or "order_date_dt" not in po_df.columns:
+    date_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
+    if po_df.empty or "store_id" not in po_df.columns or date_field not in po_df.columns:
         return pd.DataFrame()
 
     po_work = po_df[
@@ -1313,9 +1397,9 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
     ].copy()
 
     po_work = po_work[
-        po_work["order_date_dt"].notna()
-        & (po_work["order_date_dt"] >= start_date)
-        & (po_work["order_date_dt"] <= end_date)
+        po_work[date_field].notna()
+        & (po_work[date_field] >= start_date)
+        & (po_work[date_field] <= end_date)
     ].copy()
 
     if po_work.empty:

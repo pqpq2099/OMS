@@ -37,6 +37,7 @@ from pages.page_reports import (
     page_analysis,
     page_cost_debug,
     page_export,
+    page_stock_order_compare,
     page_view_history,
 )
 
@@ -44,6 +45,7 @@ from pages.page_purchase_settings import page_purchase_settings
 from pages.page_user_admin import page_user_admin
 from pages.page_store_admin import page_store_admin
 from pages.page_login import page_login, render_login_sidebar
+from pages.page_account_settings import page_account_settings
 
 st.set_page_config(page_title="營運管理系統", layout="centered")
 
@@ -512,8 +514,8 @@ def render_sidebar():
             st.session_state.step = "order_message_detail"
             st.rerun()
 
-        if st.button("📋 當日庫存叫貨紀錄", width="stretch", key="sb_daily_stock_order_record"):
-            st.session_state.step = "daily_stock_order_record"
+        if st.button("📄 庫存＋叫貨對照表", width="stretch", key="sb_stock_order_compare"):
+            st.session_state.step = "stock_order_compare"
             st.rerun()
 
         st.markdown("---")
@@ -527,15 +529,10 @@ def render_sidebar():
             st.session_state.step = "analysis"
             st.rerun()
 
-        if st.button("📦 分店歷史", width="stretch", key="sb_view_history"):
+        if st.button("📦 歷史叫貨紀錄", width="stretch", key="sb_view_history"):
             st.session_state.step = "view_history"
             st.rerun()
-
-        if role in ["owner", "admin"]:
-            if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
-                st.session_state.step = "cost_debug"
-                st.rerun()
-
+        
         if st.button("📤 資料匯出", width="stretch", key="sb_export"):
             st.session_state.step = "export"
             st.rerun()
@@ -550,6 +547,11 @@ def render_sidebar():
         if role in ["owner", "admin"]:
             if st.button("🛒 採購設定", width="stretch", key="sb_purchase_settings"):
                 st.session_state.step = "purchase_settings"
+                st.rerun()
+                
+        if role in ["owner", "admin"]:
+            if st.button("🧮 成本檢查", width="stretch", key="sb_cost_debug"):
+                st.session_state.step = "cost_debug"
                 st.rerun()
 
             if st.button("🏬 分店管理", width="stretch", key="sb_store_admin"):
@@ -567,6 +569,10 @@ def render_sidebar():
             if st.button("👥 使用者管理", width="stretch", key="sb_user_admin"):
                 st.session_state.step = "user_admin"
                 st.rerun()
+
+        if st.button("🙍 個人帳號管理", width="stretch", key="sb_account_settings"):
+            st.session_state.step = "account_settings"
+            st.rerun()
 
         st.markdown("---")
 
@@ -634,6 +640,9 @@ def router():
     elif step == "export":
         page_export()
 
+    elif step == "stock_order_compare":
+        page_stock_order_compare()
+
     elif step == "analysis":
         page_analysis()
 
@@ -664,6 +673,9 @@ def router():
 
     elif step == "user_admin":
         page_user_admin()
+
+    elif step == "account_settings":
+        page_account_settings()
 
     elif step == "purchase_settings":
         page_purchase_settings()

@@ -1,0 +1,37 @@
+# ORIVIA OMS 檔案功能對照
+
+- `app.py`：ORIVIA OMS 主程式入口。功能：系統初始化、登入狀態檢查、Sidebar 導航列、頁面 Router 與全域樣式控制。
+- `core/__init__.py`：core 模組初始化。功能：標記 core 為 Python 套件。
+- `core/audit_writer.py`：Audit Log 寫入工具。功能：統一寫入 audit_logs，記錄關鍵操作前後變化。
+- `core/id_generator.py`：ID 產生器模組。功能：根據 id_sequences 規則產生各資料表所需的流水號。
+- `core/write_pipeline.py`：寫入流程控制模組。功能：封裝資料寫入前後的驗證、清洗與執行流程。
+- `data/__init__.py`：data 模組初始化。功能：標記 data 為 Python 套件。
+- `data/data_queries.py`：資料查詢模組。功能：提供查詢型資料整理與報表用資料組裝。
+- `data/data_reader.py`：資料讀取模組。功能：集中處理 Google Sheets / DataFrame 的讀取邏輯。
+- `data/data_writer.py`：資料寫入模組。功能：集中處理各資料表的新增、更新與回寫流程。
+- `data/repository_gsheets.py`：Google Sheets Repository。功能：與 Google Sheets 連線、讀寫、格式轉換。
+- `oms_core.py`：ORIVIA OMS 核心整合模組。功能：整合共用工具、資料讀寫包裝、舊版相容函式與跨頁面共用邏輯。
+- `pages/__init__.py`：pages 模組初始化。功能：標記 pages 為 Python 套件。
+- `pages/page_login.py`：登入頁面。功能：帳號登入、權限載入、登入狀態建立。
+- `pages/page_order_entry.py`：叫貨與庫存作業頁。功能：選擇分店、選擇廠商、進行庫存與叫貨輸入、產出 LINE 明細。
+- `pages/page_password_tool.py`：密碼工具頁。功能：產生或檢查密碼 hash，供管理與測試使用。
+- `pages/page_purchase_settings.py`：採購設定頁。功能：維護廠商、品項、價格、單位等採購主資料入口。
+- `pages/page_reports.py`：報表與分析頁。功能：顯示叫貨明細、進銷存分析、進貨分析與相關報表。
+- `pages/page_stocktake.py`：盤點頁。功能：執行盤點相關輸入、檢視與提交流程。
+- `pages/page_store_admin.py`：分店管理頁。功能：維護分店主檔與相關設定。
+- `pages/page_user_admin.py`：使用者與權限管理頁。功能：使用者列表、帳號編輯、分店權限、升遷與角色調整、角色權限表。
+- `services/__init__.py`：services 模組初始化。功能：標記 services 為 Python 套件。
+- `services/service_order.py`：叫貨流程服務層。功能：處理叫貨頁所需的商業邏輯、驗證與資料整理。
+- `services/service_purchase.py`：採購設定服務層。功能：處理採購主資料相關驗證與操作邏輯。
+- `services/service_reports.py`：報表服務層。功能：組裝分析頁所需的計算與報表資料。
+- `services/service_stocktake.py`：盤點服務層。功能：處理盤點邏輯、驗證與資料寫入前整理。
+- `services/service_users.py`：使用者管理服務層。功能：處理帳號、角色、分店範圍與權限相關邏輯。
+- `tests/__init__.py`：tests 模組初始化。功能：標記 tests 為 Python 套件。
+- `tests/audit_smoke_test.py`：Audit 快速測試。功能：驗證 audit log 寫入流程是否可正常執行。
+- `tests/check_headers.py`：表頭檢查測試。功能：檢查資料表表頭是否與程式預期一致。
+- `tests/quick_connect_test.py`：快速連線測試。功能：測試系統是否可正常連到 Google Sheets。
+- `tests/write_pipeline_smoke_test.py`：寫入流程快速測試。功能：檢查 write pipeline 的基本可用性。
+- `utils/__init__.py`：utils 模組初始化。功能：標記 utils 為 Python 套件。
+- `utils/utils_format.py`：格式工具模組。功能：處理顯示格式、日期、數字與文字整理。
+- `utils/utils_helpers.py`：通用輔助工具模組。功能：放置多頁面共用的小工具函式。
+- `utils/utils_units.py`：單位換算工具模組。功能：處理 base unit、叫貨單位與換算比率。
