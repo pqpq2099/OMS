@@ -1353,13 +1353,30 @@ def _save_order_entry(
         existing_qty_map, existing_unit_map = _get_existing_order_maps(po_id)
         target_item_ids = {_norm(r.get("item_id", "")) for r in submit_rows if _norm(r.get("item_id", ""))}
 
+        existing_line_item_ids = {
+            _norm(k) for k in list(existing_qty_map.keys()) + list(existing_unit_map.keys()) if _norm(k)
+        }
+
         for r in submit_rows:
-            if _norm(r.get("item_id", "")) not in target_item_ids:
+            item_id = _norm(r.get("item_id", ""))
+            if item_id not in target_item_ids:
                 continue
 
             order_qty = _safe_float(r.get("order_qty", 0))
             order_unit = _norm(r.get("order_unit", ""))
             item_name = r.get("item_name", "")
+
+            # ------------------------------------------------------------
+            # 寫入降載防呆：
+            # 只有兩種情況才需要處理 purchase_order_lines：
+            # 1. 本次真的有叫貨量 (>0)
+            # 2. 這個品項原本就已存在叫貨明細，需要允許覆寫成 0
+            #    （例如：修改訂單、把原本叫貨清掉）
+            # 若原本沒有這筆明細，且本次也沒有叫貨，就直接跳過，
+            # 避免為大量 0 值品項建立無意義明細，造成寫入次數暴增。
+            # ------------------------------------------------------------
+            if order_qty <= 0 and item_id not in existing_line_item_ids:
+                continue
 
             if order_qty > 0:
                 try:
