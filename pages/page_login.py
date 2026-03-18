@@ -203,7 +203,7 @@ def render_login_sidebar():
 
     if st.sidebar.button("登出", use_container_width=True, key="btn_logout"):
         logout()
-        )
+        st.rerun()
 
 
 # ============================================================
