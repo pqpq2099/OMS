@@ -317,12 +317,15 @@ def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: d
             current[key] = "" if value is None else value
 
     new_row = [current.get(col, "") for col in header]
-    end_col = _sheet_col_to_letter(len(header))
-    ws.update(
-        f"A{target_row_num}:{end_col}{target_row_num}",
-        [new_row],
-        value_input_option="USER_ENTERED",
-    )
+    old_row = row_values[:len(header)]
+
+    if new_row != old_row:
+        end_col = _sheet_col_to_letter(len(header))
+        ws.update(
+            f"A{target_row_num}:{end_col}{target_row_num}",
+            [new_row],
+            value_input_option="USER_ENTERED",
+        )
 
 
 def _write_audit_log(action: str, table_name: str, entity_id: str, note: str, before_json: str = "{}", after_json: str = "{}"):
@@ -506,7 +509,6 @@ def _upsert_detail_rows_by_parent(
 
             if new_values != old_values:
                 end_col = _sheet_col_to_letter(len(header))
-                print(f"detail update row={row_num}")
                 ws.update(
                     f"A{row_num}:{end_col}{row_num}",
                     [new_values],
