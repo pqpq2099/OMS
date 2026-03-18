@@ -283,19 +283,64 @@ def _sheet_col_to_letter(n: int) -> str:
     return result
 
 
-def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: dict) -> bool:
+
+
+def _normalize_compare_value(value):
+    """把資料整理成適合比較的格式，避免型態差異造成誤判。"""
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+    if text == "":
+        return ""
+
+    try:
+        num = float(text)
+        if num.is_integer():
+            return str(int(num))
+        return str(num)
+    except Exception:
+        return text
+
+
+def _rows_equal_for_compare(old_map: dict, new_map: dict, header: list[str], ignore_fields: set[str] | None = None) -> bool:
+    """比較兩列資料是否真的有業務內容差異。"""
+    ignore_fields = ignore_fields or set()
+    for col in header:
+        if col in ignore_fields:
+            continue
+        old_v = _normalize_compare_value(old_map.get(col, ""))
+        new_v = _normalize_compare_value(new_map.get(col, ""))
+        if old_v != new_v:
+            return False
+    return True
+
+def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: dict):
+    """
+    更新主表單筆資料。
+    只有當業務內容真的有變更時，才會寫回 Google Sheets。
+    回傳值：
+    - True  = 有實際更新
+    - False = 資料內容相同，略過寫入
+    """
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
 
     ws = sh.worksheet(sheet_name)
     header = [_norm(x) for x in ws.row_values(1)]
+    if not header:
+        raise ValueError(f"{sheet_name} 缺少表頭")
+
     if id_field not in header:
-        raise ValueError(f"{sheet_name} 缺少欄位：{id_field}")
+        raise ValueError(f"{sheet_name} 缺少 {id_field}")
 
     values = ws.get_all_values()
-    target_row_num = None
+    if not values:
+        raise ValueError(f"{sheet_name} 為空")
+
     id_idx = header.index(id_field)
+    target_row_num = None
     for row_num, row in enumerate(values[1:], start=2):
         cell = row[id_idx] if id_idx < len(row) else ""
         if _norm(cell) == _norm(entity_id):
@@ -312,18 +357,23 @@ def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: d
         row_values = row_values[:len(header)]
 
     current = {col: row_values[idx] for idx, col in enumerate(header)}
+    candidate = dict(current)
     for key, value in updates.items():
-        if key in current:
-            current[key] = "" if value is None else value
+        if key in candidate:
+            candidate[key] = "" if value is None else value
 
-    new_row = [current.get(col, "") for col in header]
+    compare_ignore_fields = {"updated_at", "updated_by", "created_at", "created_by"}
+    if _rows_equal_for_compare(current, candidate, header, compare_ignore_fields):
+        return False
+
+    new_row = [candidate.get(col, "") for col in header]
     end_col = _sheet_col_to_letter(len(header))
     ws.update(
         f"A{target_row_num}:{end_col}{target_row_num}",
         [new_row],
         value_input_option="USER_ENTERED",
     )
-
+    return True
 
 def _write_audit_log(action: str, table_name: str, entity_id: str, note: str, before_json: str = "{}", after_json: str = "{}"):
     try:
@@ -451,11 +501,15 @@ def _upsert_detail_rows_by_parent(
     line_id_field: str,
     item_rows: list[dict],
     allocate_key: str,
-) -> bool:
+):
     """
     同一張主單下，依 item_id 做 upsert：
-    - 已存在：直接覆寫該列
+    - 已存在：只有內容真的變更才覆寫該列
     - 不存在：新增
+
+    回傳值：
+    - True  = 有新增或更新
+    - False = 全部內容相同，略過寫入
     """
     sh = get_spreadsheet()
     if sh is None:
@@ -483,7 +537,7 @@ def _upsert_detail_rows_by_parent(
 
     add_rows = []
     new_id_list = []
-    has_changes = False
+    has_changed = False
 
     need_new = [r for r in item_rows if _norm(r.get("item_id", "")) not in existing_by_item]
     if need_new:
@@ -491,6 +545,8 @@ def _upsert_detail_rows_by_parent(
         new_id_list = allocated.get(allocate_key, [])
 
     new_idx = 0
+    compare_ignore_fields = {"updated_at", "updated_by", "created_at", "created_by"}
+
     for item_row in item_rows:
         item_id = _norm(item_row.get("item_id", ""))
         if not item_id:
@@ -499,15 +555,24 @@ def _upsert_detail_rows_by_parent(
         if item_id in existing_by_item:
             row_num, row_dict = existing_by_item[item_id]
             current = dict(row_dict)
+            candidate = dict(row_dict)
             for key, value in item_row.items():
-                if key in current:
-                    current[key] = "" if value is None else value
+                if key not in candidate:
+                    continue
+                if key in {"created_at", "created_by"}:
+                    continue
+                candidate[key] = "" if value is None else value
+
+            if _rows_equal_for_compare(current, candidate, header, compare_ignore_fields):
+                continue
+
             end_col = _sheet_col_to_letter(len(header))
             ws.update(
                 f"A{row_num}:{end_col}{row_num}",
-                [[current.get(col, "") for col in header]],
+                [[candidate.get(col, "") for col in header]],
                 value_input_option="USER_ENTERED",
             )
+            has_changed = True
         else:
             row_dict = {c: "" for c in header}
             if line_id_field in row_dict and new_idx < len(new_id_list):
@@ -520,9 +585,10 @@ def _upsert_detail_rows_by_parent(
 
     if add_rows:
         append_rows_by_header(sheet_name, header, add_rows)
-        has_changes = True
+        has_changed = True
 
-    return has_changes
+    return has_changed
+
 # ============================================================
 # [E1] Select Store / 選擇分店頁
 # 你之後如果要改：
@@ -1111,6 +1177,7 @@ def _save_order_entry(
     is_initial_stock: bool = False,
 ):
     now = _now_ts()
+    user_id = _norm(st.session_state.get("login_user_id", "")) or "SYSTEM"
     prices_df = read_table("prices")
 
     order_rows = [r for r in submit_rows if _safe_float(r["order_qty"]) > 0]
@@ -1131,6 +1198,11 @@ def _save_order_entry(
     po_id = _norm(existing_po_id)
     stocktake_id = _norm(existing_stocktake_id)
 
+    stocktake_main_changed = False
+    stocktake_line_changed = False
+    po_main_changed = False
+    po_line_changed = False
+
     # ============================================================
     # 1. stocktakes / stocktake_lines
     #    若同日同廠商已有資料，直接覆寫；否則新增。
@@ -1138,8 +1210,6 @@ def _save_order_entry(
     if stocktake_rows:
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
-        stocktake_main_changed = False
-        stocktake_lines_changed = False
 
         if stocktake_id:
             stocktake_main_changed = _update_row_by_id(
@@ -1153,7 +1223,7 @@ def _save_order_entry(
                     "status": "done",
                     "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
                     "updated_at": now,
-                    "updated_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+                    "updated_by": user_id,
                 },
             )
         else:
@@ -1169,7 +1239,7 @@ def _save_order_entry(
                 "status": "done",
                 "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
                 "created_at": now,
-                "created_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+                "created_by": user_id,
             }
             for k, v in defaults.items():
                 if k in stocktake_main_row:
@@ -1206,14 +1276,16 @@ def _save_order_entry(
                 "base_qty": str(round(stock_base_qty, 3)),
                 "base_unit": stock_base_unit,
                 "updated_at": now,
+                "updated_by": user_id,
                 "created_at": now,
+                "created_by": user_id,
             }
             for k, v in defaults_line.items():
                 if k in row_dict:
                     row_dict[k] = v
             stock_line_rows.append(row_dict)
 
-        stocktake_lines_changed = _upsert_detail_rows_by_parent(
+        stocktake_line_changed = _upsert_detail_rows_by_parent(
             sheet_name="stocktake_lines",
             parent_field="stocktake_id",
             parent_id=stocktake_id,
@@ -1221,7 +1293,7 @@ def _save_order_entry(
             item_rows=stock_line_rows,
             allocate_key="stocktake_lines",
         )
-        if stocktake_main_changed or stocktake_lines_changed:
+        if stocktake_main_changed or stocktake_line_changed:
             _write_audit_log(
                 action="update_stocktake" if existing_stocktake_id else "create_stocktake",
                 table_name="stocktakes",
@@ -1235,9 +1307,6 @@ def _save_order_entry(
     # ============================================================
     po_header = get_header("purchase_orders")
     pol_header = get_header("purchase_order_lines")
-
-    po_main_changed = False
-    po_lines_changed = False
 
     if po_id:
         status_value = "draft" if order_rows else "cancelled"
@@ -1254,7 +1323,7 @@ def _save_order_entry(
                 "delivery_date": str(delivery_date),
                 "status": status_value,
                 "updated_at": now,
-                "updated_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+                "updated_by": user_id,
             },
         )
     elif order_rows:
@@ -1271,7 +1340,7 @@ def _save_order_entry(
             "delivery_date": str(delivery_date),
             "status": "draft",
             "created_at": now,
-            "created_by": _norm(st.session_state.get("login_user_id", "")) or "SYSTEM",
+            "created_by": user_id,
         }
         for k, v in defaults_po.items():
             if k in po_row:
@@ -1342,14 +1411,16 @@ def _save_order_entry(
                 "amount": str(line_amount),
                 "delivery_date": str(delivery_date),
                 "updated_at": now,
+                "updated_by": user_id,
                 "created_at": now,
+                "created_by": user_id,
             }
             for k, v in defaults_pol.items():
                 if k in row_dict:
                     row_dict[k] = v
             po_line_rows.append(row_dict)
 
-        po_lines_changed = _upsert_detail_rows_by_parent(
+        po_line_changed = _upsert_detail_rows_by_parent(
             sheet_name="purchase_order_lines",
             parent_field="po_id",
             parent_id=po_id,
@@ -1357,7 +1428,7 @@ def _save_order_entry(
             item_rows=po_line_rows,
             allocate_key="purchase_order_lines",
         )
-        if po_main_changed or po_lines_changed:
+        if po_main_changed or po_line_changed:
             _write_audit_log(
                 action="update_purchase_order" if existing_po_id else "create_purchase_order",
                 table_name="purchase_orders",
