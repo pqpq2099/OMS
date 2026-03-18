@@ -220,10 +220,12 @@ def _page_owner_first_setup(owner_row: pd.Series):
     st.write(f"帳號：`{_norm_text(owner_row.get('account_code'))}`")
     st.write(f"名稱：{_norm_text(owner_row.get('display_name'))}")
 
-    new_password = st.text_input("請設定密碼", type="password", key="owner_init_pw")
-    confirm_password = st.text_input("再次輸入密碼", type="password", key="owner_init_pw2")
+    with st.form("owner_first_setup_form"):
+        new_password = st.text_input("請設定密碼", type="password", key="owner_init_pw")
+        confirm_password = st.text_input("再次輸入密碼", type="password", key="owner_init_pw2")
+        submitted = st.form_submit_button("完成初始化", use_container_width=True)
 
-    if st.button("完成初始化", use_container_width=True, key="btn_owner_init"):
+    if submitted:
         if not new_password or not confirm_password:
             st.error("請完整輸入密碼與確認密碼。")
             return
@@ -250,7 +252,6 @@ def _page_owner_first_setup(owner_row: pd.Series):
         except Exception as e:
             st.error(f"初始化失敗：{e}")
 
-
 # ============================================================
 # [C] 強制修改密碼
 # ============================================================
@@ -262,10 +263,12 @@ def _page_force_change_password():
     st.title("🔐 請先修改密碼")
     st.warning("此帳號為初始密碼或臨時密碼，請先修改後再使用系統。")
 
-    new_password = st.text_input("新密碼", type="password", key="force_pw_1")
-    confirm_password = st.text_input("再次輸入新密碼", type="password", key="force_pw_2")
+    with st.form("force_change_password_form"):
+        new_password = st.text_input("新密碼", type="password", key="force_pw_1")
+        confirm_password = st.text_input("再次輸入新密碼", type="password", key="force_pw_2")
+        submitted = st.form_submit_button("更新密碼", use_container_width=True)
 
-    if st.button("更新密碼", use_container_width=True, key="btn_force_change_pw"):
+    if submitted:
         if "login_user" not in st.session_state:
             st.error("登入狀態遺失，請重新登入。")
             return
@@ -302,13 +305,15 @@ def _page_force_change_password():
 # [D] 一般登入頁
 # ============================================================
 def _page_normal_login():
-    """一般登入畫面。"""
+    """一般登入畫面（支援 Enter 直接登入）。"""
     st.title("🔑 系統登入")
 
-    account = st.text_input("帳號", key="login_account_input")
-    password = st.text_input("密碼", type="password", key="login_password_input")
+    with st.form("login_form"):
+        account = st.text_input("帳號", key="login_account_input")
+        password = st.text_input("密碼", type="password", key="login_password_input")
+        submitted = st.form_submit_button("登入", use_container_width=True)
 
-    if st.button("登入", use_container_width=True, key="btn_login_submit"):
+    if submitted:
         users_df = _load_users_df()
 
         if users_df.empty:
