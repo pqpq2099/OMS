@@ -502,6 +502,7 @@ def _upsert_detail_rows_by_parent(
                 if key in current:
                     current[key] = "" if value is None else value
             end_col = _sheet_col_to_letter(len(header))
+            print(f"detail update row={row_num}")
             ws.update(
                 f"A{row_num}:{end_col}{row_num}",
                 [[current.get(col, "") for col in header]],
