@@ -28,6 +28,7 @@ Google Sheet
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import hashlib
 
 import pandas as pd
@@ -40,8 +41,8 @@ from oms_core import get_spreadsheet, read_table
 # [A] 基本工具
 # ============================================================
 def _now_ts() -> str:
-    """回傳目前時間字串。"""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """回傳台灣時間字串（Asia/Taipei）。"""
+    return datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _norm_text(value) -> str:
