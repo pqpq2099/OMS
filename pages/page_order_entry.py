@@ -501,13 +501,17 @@ def _upsert_detail_rows_by_parent(
             for key, value in item_row.items():
                 if key in current:
                     current[key] = "" if value is None else value
-            end_col = _sheet_col_to_letter(len(header))
-            print(f"detail update row={row_num}")
-            ws.update(
-                f"A{row_num}:{end_col}{row_num}",
-                [[current.get(col, "") for col in header]],
-                value_input_option="USER_ENTERED",
-            )
+            new_values = [current.get(col, "") for col in header]
+            old_values = [row_dict.get(col, "") for col in header]
+
+            if new_values != old_values:
+                end_col = _sheet_col_to_letter(len(header))
+                print(f"detail update row={row_num}")
+                ws.update(
+                    f"A{row_num}:{end_col}{row_num}",
+                    [new_values],
+                    value_input_option="USER_ENTERED",
+                )
         else:
             row_dict = {c: "" for c in header}
             if line_id_field in row_dict and new_idx < len(new_id_list):
