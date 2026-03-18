@@ -1069,9 +1069,6 @@ def page_order_entry():
     
             except Exception as e:
                 st.error(f"❌ 儲存失敗：{e}")
-                if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_after_save_error"):
-                    st.session_state.step = "select_vendor"
-                    st.rerun()
                 return
 
     if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_entry"):
