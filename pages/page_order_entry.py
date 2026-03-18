@@ -283,7 +283,7 @@ def _sheet_col_to_letter(n: int) -> str:
     return result
 
 
-def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: dict):
+def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: dict) -> bool:
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
@@ -317,15 +317,12 @@ def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: d
             current[key] = "" if value is None else value
 
     new_row = [current.get(col, "") for col in header]
-    old_row = row_values[:len(header)]
-
-    if new_row != old_row:
-        end_col = _sheet_col_to_letter(len(header))
-        ws.update(
-            f"A{target_row_num}:{end_col}{target_row_num}",
-            [new_row],
-            value_input_option="USER_ENTERED",
-        )
+    end_col = _sheet_col_to_letter(len(header))
+    ws.update(
+        f"A{target_row_num}:{end_col}{target_row_num}",
+        [new_row],
+        value_input_option="USER_ENTERED",
+    )
 
 
 def _write_audit_log(action: str, table_name: str, entity_id: str, note: str, before_json: str = "{}", after_json: str = "{}"):
@@ -454,7 +451,7 @@ def _upsert_detail_rows_by_parent(
     line_id_field: str,
     item_rows: list[dict],
     allocate_key: str,
-):
+) -> bool:
     """
     同一張主單下，依 item_id 做 upsert：
     - 已存在：直接覆寫該列
@@ -486,6 +483,7 @@ def _upsert_detail_rows_by_parent(
 
     add_rows = []
     new_id_list = []
+    has_changes = False
 
     need_new = [r for r in item_rows if _norm(r.get("item_id", "")) not in existing_by_item]
     if need_new:
@@ -504,16 +502,12 @@ def _upsert_detail_rows_by_parent(
             for key, value in item_row.items():
                 if key in current:
                     current[key] = "" if value is None else value
-            new_values = [current.get(col, "") for col in header]
-            old_values = [row_dict.get(col, "") for col in header]
-
-            if new_values != old_values:
-                end_col = _sheet_col_to_letter(len(header))
-                ws.update(
-                    f"A{row_num}:{end_col}{row_num}",
-                    [new_values],
-                    value_input_option="USER_ENTERED",
-                )
+            end_col = _sheet_col_to_letter(len(header))
+            ws.update(
+                f"A{row_num}:{end_col}{row_num}",
+                [[current.get(col, "") for col in header]],
+                value_input_option="USER_ENTERED",
+            )
         else:
             row_dict = {c: "" for c in header}
             if line_id_field in row_dict and new_idx < len(new_id_list):
@@ -526,6 +520,9 @@ def _upsert_detail_rows_by_parent(
 
     if add_rows:
         append_rows_by_header(sheet_name, header, add_rows)
+        has_changes = True
+
+    return has_changes
 # ============================================================
 # [E1] Select Store / 選擇分店頁
 # 你之後如果要改：
@@ -1141,9 +1138,11 @@ def _save_order_entry(
     if stocktake_rows:
         stocktake_header = get_header("stocktakes")
         stl_header = get_header("stocktake_lines")
+        stocktake_main_changed = False
+        stocktake_lines_changed = False
 
         if stocktake_id:
-            _update_row_by_id(
+            stocktake_main_changed = _update_row_by_id(
                 "stocktakes",
                 "stocktake_id",
                 stocktake_id,
@@ -1176,6 +1175,7 @@ def _save_order_entry(
                 if k in stocktake_main_row:
                     stocktake_main_row[k] = v
             append_rows_by_header("stocktakes", stocktake_header, [stocktake_main_row])
+            stocktake_main_changed = True
 
         stock_line_rows = []
         for r in stocktake_rows:
@@ -1213,7 +1213,7 @@ def _save_order_entry(
                     row_dict[k] = v
             stock_line_rows.append(row_dict)
 
-        _upsert_detail_rows_by_parent(
+        stocktake_lines_changed = _upsert_detail_rows_by_parent(
             sheet_name="stocktake_lines",
             parent_field="stocktake_id",
             parent_id=stocktake_id,
@@ -1221,12 +1221,13 @@ def _save_order_entry(
             item_rows=stock_line_rows,
             allocate_key="stocktake_lines",
         )
-        _write_audit_log(
-            action="update_stocktake" if existing_stocktake_id else "create_stocktake",
-            table_name="stocktakes",
-            entity_id=stocktake_id,
-            note=f"store={store_id}, vendor={vendor_id}, date={record_date}",
-        )
+        if stocktake_main_changed or stocktake_lines_changed:
+            _write_audit_log(
+                action="update_stocktake" if existing_stocktake_id else "create_stocktake",
+                table_name="stocktakes",
+                entity_id=stocktake_id,
+                note=f"store={store_id}, vendor={vendor_id}, date={record_date}",
+            )
 
     # ============================================================
     # 2. purchase_orders / purchase_order_lines
@@ -1235,9 +1236,12 @@ def _save_order_entry(
     po_header = get_header("purchase_orders")
     pol_header = get_header("purchase_order_lines")
 
+    po_main_changed = False
+    po_lines_changed = False
+
     if po_id:
         status_value = "draft" if order_rows else "cancelled"
-        _update_row_by_id(
+        po_main_changed = _update_row_by_id(
             "purchase_orders",
             "po_id",
             po_id,
@@ -1273,6 +1277,7 @@ def _save_order_entry(
             if k in po_row:
                 po_row[k] = v
         append_rows_by_header("purchase_orders", po_header, [po_row])
+        po_main_changed = True
 
     if po_id:
         po_line_rows = []
@@ -1344,7 +1349,7 @@ def _save_order_entry(
                     row_dict[k] = v
             po_line_rows.append(row_dict)
 
-        _upsert_detail_rows_by_parent(
+        po_lines_changed = _upsert_detail_rows_by_parent(
             sheet_name="purchase_order_lines",
             parent_field="po_id",
             parent_id=po_id,
@@ -1352,12 +1357,13 @@ def _save_order_entry(
             item_rows=po_line_rows,
             allocate_key="purchase_order_lines",
         )
-        _write_audit_log(
-            action="update_purchase_order" if existing_po_id else "create_purchase_order",
-            table_name="purchase_orders",
-            entity_id=po_id,
-            note=f"store={store_id}, vendor={vendor_id}, order_date={record_date}, delivery_date={delivery_date}",
-        )
+        if po_main_changed or po_lines_changed:
+            _write_audit_log(
+                action="update_purchase_order" if existing_po_id else "create_purchase_order",
+                table_name="purchase_orders",
+                entity_id=po_id,
+                note=f"store={store_id}, vendor={vendor_id}, order_date={record_date}, delivery_date={delivery_date}",
+            )
 
     bust_cache()
     return po_id
