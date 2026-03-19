@@ -51,9 +51,67 @@ from oms_core import (
     bust_cache,
     get_header,
     get_spreadsheet,
+    get_table_versions,
     read_table,
 )
 from utils.utils_units import convert_to_base
+
+
+_ORDER_PAGE_TABLES = (
+    "stores",
+    "vendors",
+    "items",
+    "prices",
+    "unit_conversions",
+    "stocktakes",
+    "stocktake_lines",
+    "purchase_orders",
+    "purchase_order_lines",
+)
+
+_SELECTOR_TABLES = ("stores", "vendors", "items")
+
+
+def _load_selector_tables() -> dict[str, pd.DataFrame]:
+    """分店/廠商選擇頁集中快取，降低切頁 rerun 時的讀取量。"""
+    versions = get_table_versions(_SELECTOR_TABLES)
+    cache = st.session_state.get("_selector_tables_cache")
+    if isinstance(cache, dict) and cache.get("versions") == versions:
+        data = cache.get("data", {})
+        if data:
+            return {k: v.copy() for k, v in data.items()}
+
+    data = {name: read_table(name) for name in _SELECTOR_TABLES}
+    st.session_state["_selector_tables_cache"] = {
+        "versions": versions,
+        "data": {k: v.copy() for k, v in data.items()},
+    }
+    return {k: v.copy() for k, v in data.items()}
+
+
+def _clear_selector_tables_cache():
+    st.session_state.pop("_selector_tables_cache", None)
+
+
+def _load_order_page_tables() -> dict[str, pd.DataFrame]:
+    """集中載入叫貨頁常用資料，減少 rerun 時重複 read_table。"""
+    versions = get_table_versions(_ORDER_PAGE_TABLES)
+    cache = st.session_state.get("_order_page_tables_cache")
+    if isinstance(cache, dict) and cache.get("versions") == versions:
+        data = cache.get("data", {})
+        if data:
+            return {k: v.copy() for k, v in data.items()}
+
+    data = {name: read_table(name) for name in _ORDER_PAGE_TABLES}
+    st.session_state["_order_page_tables_cache"] = {
+        "versions": versions,
+        "data": {k: v.copy() for k, v in data.items()},
+    }
+    return {k: v.copy() for k, v in data.items()}
+
+
+def _clear_order_page_tables_cache():
+    st.session_state.pop("_order_page_tables_cache", None)
 
 
 def send_line_message(line_message: str) -> bool:
@@ -604,7 +662,8 @@ def page_select_store():
     )
     st.title("🏠 選擇分店")
 
-    stores_df = _get_active_df(read_table("stores"))
+    selector_tables = _load_selector_tables()
+    stores_df = _get_active_df(selector_tables["stores"])
     if stores_df.empty:
         st.warning("⚠️ 分店資料讀取失敗")
         return
@@ -656,13 +715,16 @@ def page_select_vendor():
     )
     st.title(f"🏢 {st.session_state.store_name}")
 
-    st.session_state.record_date = st.date_input(
+    selected_record_date = st.date_input(
         "🗓️ 作業日期",
-        value=st.session_state.record_date,
+        value=st.session_state.get("record_date", date.today()),
+        key="select_vendor_record_date",
     )
+    st.session_state.record_date = selected_record_date
 
-    vendors_df = _get_active_df(read_table("vendors"))
-    items_df = _get_active_df(read_table("items"))
+    selector_tables = _load_selector_tables()
+    vendors_df = _get_active_df(selector_tables["vendors"])
+    items_df = _get_active_df(selector_tables["items"])
 
     if vendors_df.empty or items_df.empty:
         st.warning("⚠️ 廠商或品項資料讀取失敗")
@@ -832,13 +894,14 @@ def page_order_entry():
 
     st.title(f"📝 {st.session_state.vendor_name}")
 
-    items_df = _get_active_df(read_table("items"))
-    prices_df = read_table("prices")
-    conversions_df = _get_active_df(read_table("unit_conversions"))
-    stocktakes_df = read_table("stocktakes")
-    stocktake_lines_df = read_table("stocktake_lines")
-    po_df = read_table("purchase_orders")
-    pol_df = read_table("purchase_order_lines")
+    page_tables = _load_order_page_tables()
+    items_df = _get_active_df(page_tables["items"])
+    prices_df = page_tables["prices"]
+    conversions_df = _get_active_df(page_tables["unit_conversions"])
+    stocktakes_df = page_tables["stocktakes"]
+    stocktake_lines_df = page_tables["stocktake_lines"]
+    po_df = page_tables["purchase_orders"]
+    pol_df = page_tables["purchase_order_lines"]
 
     if items_df.empty:
         st.warning("⚠️ 品項資料讀取失敗")
@@ -970,8 +1033,6 @@ def page_order_entry():
 
     ref_df = None
     if ref_rows:
-        import pandas as pd
-
         ref_df = pd.DataFrame(ref_rows).sort_values(["品項名稱"]).reset_index(drop=True)
 
     with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
@@ -1491,10 +1552,11 @@ def page_order_message_detail():
     next_day = selected_date + timedelta(days=1)
     prev_day = selected_date - timedelta(days=1)
 
-    po_df = read_table("purchase_orders")
-    pol_df = read_table("purchase_order_lines")
-    vendors_df = read_table("vendors")
-    items_df = read_table("items")
+    page_tables = _load_order_page_tables()
+    po_df = page_tables["purchase_orders"]
+    pol_df = page_tables["purchase_order_lines"]
+    vendors_df = page_tables["vendors"]
+    items_df = page_tables["items"]
 
     if po_df.empty or pol_df.empty:
         st.info("目前沒有叫貨資料")
@@ -1775,12 +1837,13 @@ def page_daily_stock_order_record():
         key="daily_record_date",
     )
 
-    vendors_df = _get_active_df(read_table("vendors"))
-    items_df = _get_active_df(read_table("items"))
-    stocktakes_df = read_table("stocktakes")
-    stocktake_lines_df = read_table("stocktake_lines")
-    po_df = read_table("purchase_orders")
-    pol_df = read_table("purchase_order_lines")
+    page_tables = _load_order_page_tables()
+    vendors_df = _get_active_df(page_tables["vendors"])
+    items_df = _get_active_df(page_tables["items"])
+    stocktakes_df = page_tables["stocktakes"]
+    stocktake_lines_df = page_tables["stocktake_lines"]
+    po_df = page_tables["purchase_orders"]
+    pol_df = page_tables["purchase_order_lines"]
 
     if vendors_df.empty or items_df.empty:
         st.warning("⚠️ 廠商或品項資料讀取失敗")
