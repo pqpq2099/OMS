@@ -956,6 +956,12 @@ def page_order_entry():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
+        latest_metrics_df = latest_metrics_df.copy()
+        if "vendor_id" in latest_metrics_df.columns:
+            latest_metrics_df["vendor_id"] = latest_metrics_df["vendor_id"].astype(str).str.strip()
+            latest_metrics_df = latest_metrics_df[
+                latest_metrics_df["vendor_id"] == str(st.session_state.vendor_id).strip()
+            ].copy()
         for _, m in latest_metrics_df.iterrows():
             latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
 
@@ -2048,6 +2054,12 @@ def page_daily_stock_order_record():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
+        latest_metrics_df = latest_metrics_df.copy()
+        if "vendor_id" in latest_metrics_df.columns:
+            latest_metrics_df["vendor_id"] = latest_metrics_df["vendor_id"].astype(str).str.strip()
+            latest_metrics_df = latest_metrics_df[
+                latest_metrics_df["vendor_id"] == str(vendor_id).strip()
+            ].copy()
         for _, m in latest_metrics_df.iterrows():
             latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
 
