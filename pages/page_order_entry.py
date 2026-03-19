@@ -992,16 +992,21 @@ def page_order_entry():
         metric = latest_metrics_map.get(item_id, {})
         period_purchase = _safe_float(metric.get("期間進貨", 0))
         period_usage = _safe_float(metric.get("期間消耗", 0))
+        last_order_qty = _safe_float(metric.get("這次叫貨", 0))
         daily_avg = _safe_float(metric.get("日平均", 0))
         total_stock_ref = _safe_float(metric.get("庫存合計", 0))
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
-        if period_purchase > 0 or period_usage > 0 or total_stock_ref > 0 or current_stock_qty > 0:
+        # 上方參考表優先顯示「最近一次叫貨量」；
+        # 若核心報表尚未形成完整區間，也至少能看到上一筆可參考叫貨。
+        last_order_ref = last_order_qty if last_order_qty > 0 else period_purchase
+
+        if last_order_ref > 0 or period_usage > 0 or current_stock_qty > 0:
             ref_rows.append(
                 {
                     "品項名稱": item_name,
-                    "上次叫貨": round(period_purchase, 1),
+                    "上次叫貨": round(last_order_ref, 1),
                     "期間消耗": round(period_usage, 1),
                 }
             )
@@ -1549,8 +1554,8 @@ def page_order_message_detail():
         value=date.today(),
         key="order_message_detail_date",
     )
-    next_day = selected_date + timedelta(days=1)
-    prev_day = selected_date - timedelta(days=1)
+    # 叫貨明細頁一律只顯示「今天到貨」的資料。
+    # 不再提前顯示隔天到貨，也不再補抓前一天建立、今天才到貨以外的混合提醒邏輯。
 
     page_tables = _load_order_page_tables()
     po_df = page_tables["purchase_orders"]
