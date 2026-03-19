@@ -380,8 +380,59 @@ def _get_runtime_table_cache() -> dict:
     return st.session_state.setdefault("_runtime_table_cache", {})
 
 
+def _get_runtime_header_cache() -> dict:
+    """取得本次使用者 session 的表頭快取。"""
+    return st.session_state.setdefault("_runtime_header_cache", {})
+
+
+def _get_table_version_map() -> dict:
+    """每張表各自的快取版本號。"""
+    return st.session_state.setdefault("_table_cache_versions", {})
+
+
+def get_table_version(sheet_name: str) -> int:
+    versions = _get_table_version_map()
+    key = _norm(sheet_name)
+    return int(versions.get(key, 0))
+
+
+def get_table_versions(sheet_names: list[str] | tuple[str, ...]) -> tuple[int, ...]:
+    return tuple(get_table_version(name) for name in sheet_names)
+
+
+
+def _table_versions_signature(sheet_names: list[str] | tuple[str, ...]) -> tuple[tuple[str, int], ...]:
+    """把多張表目前版本整理成可比較的簽章，供衍生資料快取使用。"""
+    return tuple((str(name).strip(), get_table_version(name)) for name in sheet_names)
+
+
+def _get_runtime_df_cache() -> dict:
+    """取得 session 內衍生 DataFrame 快取。"""
+    return st.session_state.setdefault("_runtime_df_cache", {})
+
+
+def _session_df_cache_get(cache_key: str, signature) -> pd.DataFrame | None:
+    """若簽章相同，直接回傳衍生 DataFrame 快取。"""
+    cache = _get_runtime_df_cache()
+    hit = cache.get(cache_key)
+    if isinstance(hit, dict) and hit.get("signature") == signature:
+        df = hit.get("df")
+        if isinstance(df, pd.DataFrame):
+            return df.copy()
+    return None
+
+
+def _session_df_cache_set(cache_key: str, signature, df: pd.DataFrame):
+    """寫入 session 內衍生 DataFrame 快取。"""
+    cache = _get_runtime_df_cache()
+    cache[cache_key] = {
+        "signature": signature,
+        "df": df.copy(),
+    }
+
+
 @st.cache_data(show_spinner=False, ttl=300)
-def _read_table_remote(sheet_name: str) -> pd.DataFrame:
+def _read_table_remote(sheet_name: str, version: int = 0) -> pd.DataFrame:
     sh = get_spreadsheet()
     if sh is None:
         return pd.DataFrame()
@@ -424,7 +475,7 @@ def _read_table_remote(sheet_name: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _get_header_remote(sheet_name: str) -> list[str]:
+def _get_header_remote(sheet_name: str, version: int = 0) -> list[str]:
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
@@ -451,18 +502,27 @@ def read_table(sheet_name: str, force_refresh: bool = False) -> pd.DataFrame:
     cache_key = _norm(sheet_name)
 
     if force_refresh:
+        current_version = get_table_version(sheet_name) + 1
+        _get_table_version_map()[cache_key] = current_version
         cache.pop(cache_key, None)
-        _read_table_remote.clear()
+    else:
+        current_version = get_table_version(sheet_name)
 
-    if cache_key in cache:
-        return cache[cache_key].copy()
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict) and cached.get("version") == current_version:
+        return cached.get("df", pd.DataFrame()).copy()
 
     try:
-        df = _read_table_remote(sheet_name)
-        cache[cache_key] = df.copy()
+        df = _read_table_remote(sheet_name, current_version)
+        cache[cache_key] = {"version": current_version, "df": df.copy()}
         return df.copy()
     except Exception as e:
-        old_df = cache.get(cache_key)
+        old_df = None
+        if isinstance(cached, dict):
+            old_df = cached.get("df")
+        elif cached is not None:
+            old_df = cached
+
         if old_df is not None:
             st.warning(f"{sheet_name} 讀取失敗，已改用暫存資料：{e}")
             return old_df.copy()
@@ -471,27 +531,37 @@ def read_table(sheet_name: str, force_refresh: bool = False) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+
 def get_header(sheet_name: str, force_refresh: bool = False) -> list[str]:
-    cache = st.session_state.setdefault("_runtime_header_cache", {})
+    cache = _get_runtime_header_cache()
     cache_key = _norm(sheet_name)
 
     if force_refresh:
+        current_version = get_table_version(sheet_name) + 1
+        _get_table_version_map()[cache_key] = current_version
         cache.pop(cache_key, None)
-        _get_header_remote.clear()
+    else:
+        current_version = get_table_version(sheet_name)
 
-    if cache_key in cache:
-        return list(cache[cache_key])
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict) and cached.get("version") == current_version:
+        return list(cached.get("header", []))
 
     try:
-        header = _get_header_remote(sheet_name)
-        cache[cache_key] = list(header)
+        header = _get_header_remote(sheet_name, current_version)
+        cache[cache_key] = {"version": current_version, "header": list(header)}
         return list(header)
     except Exception as e:
-        old_header = cache.get(cache_key)
+        old_header = None
+        if isinstance(cached, dict):
+            old_header = cached.get("header")
+        elif cached is not None:
+            old_header = cached
         if old_header is not None:
             st.warning(f"{sheet_name} header 讀取失敗，已改用暫存資料：{e}")
             return list(old_header)
         raise
+
 
 
 def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
@@ -507,15 +577,134 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
     ws.append_rows(values, value_input_option="USER_ENTERED")
 
 
-def bust_cache():
+def get_row_index_map(sheet_name: str, key_field: str, force_refresh: bool = False) -> dict[str, int]:
+    """建立 key -> Google Sheet 列號的快取映射，避免重複整張掃描。"""
+    cache = st.session_state.setdefault("_runtime_row_index_cache", {})
+    cache_key = f"{_norm(sheet_name)}::{_norm(key_field)}"
+    current_version = get_table_version(sheet_name)
+
+    if force_refresh:
+        cache.pop(cache_key, None)
+
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict) and cached.get("version") == current_version:
+        return dict(cached.get("mapping", {}))
+
+    df = read_table(sheet_name)
+    mapping: dict[str, int] = {}
+    if not df.empty and key_field in df.columns:
+        keys = df[key_field].astype(str).str.strip().tolist()
+        for idx, key in enumerate(keys, start=2):
+            if key and key not in mapping:
+                mapping[key] = idx
+
+    cache[cache_key] = {"version": current_version, "mapping": dict(mapping)}
+    return dict(mapping)
+
+
+
+def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates: dict):
+    """依指定鍵值更新單筆資料，避免逐格 update_cell 或整張表重寫。"""
+    key_value = _norm(key_value)
+    if not key_value:
+        raise ValueError(f"{sheet_name}.{key_field} 不可為空")
+
+    header = get_header(sheet_name)
+    if not header:
+        raise ValueError(f"{sheet_name} 沒有 header")
+
+    row_map = get_row_index_map(sheet_name, key_field)
+    row_idx = row_map.get(key_value)
+    if row_idx is None:
+        raise ValueError(f"找不到 {sheet_name}.{key_field} = {key_value}")
+
+    df = read_table(sheet_name)
+    if key_field not in df.columns:
+        raise ValueError(f"{sheet_name} 缺少欄位 {key_field}")
+
+    mask = df[key_field].astype(str).str.strip() == key_value
+    if not mask.any():
+        raise ValueError(f"找不到 {sheet_name}.{key_field} = {key_value}")
+
+    row = df.loc[mask].iloc[0].to_dict()
+    for col in header:
+        row.setdefault(col, "")
+    for field, value in (updates or {}).items():
+        if field not in row:
+            row[field] = ""
+        row[field] = "" if value is None else value
+
+    values = [[row.get(col, "") for col in header]]
+
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet(sheet_name)
+    def _col_letter(n: int) -> str:
+        result = ''
+        while n > 0:
+            n, rem = divmod(n - 1, 26)
+            result = chr(65 + rem) + result
+        return result
+
+    end_col = _col_letter(len(header))
+    ws.update(f"A{row_idx}:{end_col}{row_idx}", values)
+    bust_cache(sheet_name)
+
+
+def bust_cache(sheet_names: str | list[str] | tuple[str, ...] | None = None):
     """
     清除資料快取。
-    只要有寫入 / 更新 / 刪除後，都應呼叫這裡，避免畫面繼續看到舊資料。
+
+    規則：
+    1. 不指定表名：維持舊行為，全部清掉
+    2. 指定表名：只讓該表版本號 +1，並清除該表的 session 快取
     """
-    _read_table_remote.clear()
-    _get_header_remote.clear()
-    st.session_state.pop("_runtime_table_cache", None)
-    st.session_state.pop("_runtime_header_cache", None)
+    if not sheet_names:
+        _read_table_remote.clear()
+        _get_header_remote.clear()
+        st.session_state.pop("_runtime_table_cache", None)
+        st.session_state.pop("_runtime_header_cache", None)
+        st.session_state.pop("_runtime_row_index_cache", None)
+        st.session_state.pop("_runtime_df_cache", None)
+        st.session_state.pop("_table_cache_versions", None)
+        return
+
+    if isinstance(sheet_names, str):
+        targets = [sheet_names]
+    else:
+        targets = list(sheet_names)
+
+    table_cache = _get_runtime_table_cache()
+    header_cache = _get_runtime_header_cache()
+    row_index_cache = st.session_state.setdefault("_runtime_row_index_cache", {})
+    versions = _get_table_version_map()
+
+    df_cache = st.session_state.setdefault("_runtime_df_cache", {})
+    for name in targets:
+        key = _norm(name)
+        versions[key] = int(versions.get(key, 0)) + 1
+        table_cache.pop(key, None)
+        header_cache.pop(key, None)
+        prefix = f"{key}::"
+        stale_keys = [k for k in list(row_index_cache.keys()) if str(k).startswith(prefix)]
+        for stale_key in stale_keys:
+            row_index_cache.pop(stale_key, None)
+
+        stale_df_keys = []
+        for cache_key, payload in list(df_cache.items()):
+            sig = payload.get("signature") if isinstance(payload, dict) else None
+            if not sig:
+                continue
+            try:
+                if any(str(sheet_name).strip() == key for sheet_name, _version in sig):
+                    stale_df_keys.append(cache_key)
+            except Exception:
+                continue
+        for stale_df_key in stale_df_keys:
+            df_cache.pop(stale_df_key, None)
+
 
 
 # ============================================================
@@ -1167,19 +1356,34 @@ def _sum_purchase_qty_in_display_unit(
 # 這一區放：進銷存摘要、最新品項指標、進貨摘要
 # ============================================================
 def _build_inventory_history_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
+    signature = (
+        str(store_id).strip(),
+        str(start_date),
+        str(end_date),
+        _table_versions_signature(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors", "stores", "unit_conversions")),
+    )
+    cache_key = f"derived::inventory_history_summary::{str(store_id).strip()}::{start_date}::{end_date}"
+    cached = _session_df_cache_get(cache_key, signature)
+    if cached is not None:
+        return cached
+
     stock_df = _build_stock_detail_df()
     po_df = _build_purchase_detail_df()
     conversions_df = _get_active_df(read_table("unit_conversions"))
 
     if stock_df.empty or "store_id" not in stock_df.columns:
-        return pd.DataFrame()
+        out = pd.DataFrame()
+        _session_df_cache_set(cache_key, signature, out)
+        return out
 
     stock_work = stock_df[
         stock_df["store_id"].astype(str).str.strip() == str(store_id).strip()
     ].copy()
 
     if stock_work.empty or "stocktake_date_dt" not in stock_work.columns:
-        return pd.DataFrame()
+        out = pd.DataFrame()
+        _session_df_cache_set(cache_key, signature, out)
+        return out
 
     stock_work = stock_work[stock_work["stocktake_date_dt"].notna()].copy()
 
@@ -1195,7 +1399,9 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
     ].copy()
 
     if target_stock.empty:
-        return pd.DataFrame()
+        out = pd.DataFrame()
+        _session_df_cache_set(cache_key, signature, out)
+        return out
 
     po_work = pd.DataFrame()
     if not po_df.empty and "store_id" in po_df.columns and "order_date_dt" in po_df.columns:
@@ -1366,10 +1572,21 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
     out["日期_dt"] = pd.to_datetime(out["日期"], errors="coerce")
     out["日期顯示"] = out["日期_dt"].dt.strftime("%m-%d")
     out = out.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True]).reset_index(drop=True)
+    _session_df_cache_set(cache_key, signature, out)
     return out
 
 
 def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFrame:
+    signature = (
+        str(store_id).strip(),
+        str(as_of_date),
+        _table_versions_signature(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors", "stores", "unit_conversions")),
+    )
+    cache_key = f"derived::latest_item_metrics::{str(store_id).strip()}::{as_of_date}"
+    cached = _session_df_cache_get(cache_key, signature)
+    if cached is not None:
+        return cached
+
     hist_df = _build_inventory_history_summary_df(
         store_id=store_id,
         start_date=date(2000, 1, 1),
@@ -1377,12 +1594,15 @@ def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFra
     )
 
     if hist_df.empty:
-        return pd.DataFrame()
+        out = pd.DataFrame()
+        _session_df_cache_set(cache_key, signature, out)
+        return out
 
     work = hist_df.copy()
     work = work.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True])
     latest = work.groupby("item_id", as_index=False).head(1).copy()
     latest = latest.sort_values(["display_order_num", "品項"], ascending=[True, True]).reset_index(drop=True)
+    _session_df_cache_set(cache_key, signature, latest)
     return latest
 
 

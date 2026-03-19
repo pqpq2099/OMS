@@ -36,6 +36,7 @@ from oms_core import (
     _parse_date,
     _safe_float,
     get_base_unit_cost,
+    get_table_versions,
     read_table,
     render_report_dataframe,
     send_line_message,
@@ -48,6 +49,30 @@ try:
     HAS_PLOTLY = True
 except Exception:
     HAS_PLOTLY = False
+
+
+_REPORT_SHARED_TABLES = ("items", "vendors", "stores", "prices", "unit_conversions")
+
+
+def _load_report_shared_tables() -> dict[str, pd.DataFrame]:
+    """報表頁共用主資料，減少同頁多處重複 read_table。"""
+    versions = get_table_versions(_REPORT_SHARED_TABLES)
+    cache = st.session_state.get("_reports_shared_tables_cache")
+    if isinstance(cache, dict) and cache.get("versions") == versions:
+        data = cache.get("data", {})
+        if data:
+            return {k: v.copy() for k, v in data.items()}
+
+    data = {name: read_table(name) for name in _REPORT_SHARED_TABLES}
+    st.session_state["_reports_shared_tables_cache"] = {
+        "versions": versions,
+        "data": {k: v.copy() for k, v in data.items()},
+    }
+    return {k: v.copy() for k, v in data.items()}
+
+
+def _clear_report_shared_tables_cache():
+    st.session_state.pop("_reports_shared_tables_cache", None)
 
 
 # ============================================================
@@ -66,8 +91,9 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
     if "廠商" in hist_df.columns:
         return hist_df
 
-    items_df = read_table("items")
-    vendors_df = read_table("vendors")
+    shared_tables = _load_report_shared_tables()
+    items_df = shared_tables["items"]
+    vendors_df = shared_tables["vendors"]
 
     if items_df.empty or vendors_df.empty:
         hist_df["廠商"] = "-"
@@ -132,8 +158,9 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
     if "廠商" in hist_df.columns:
         return hist_df
 
-    items_df = read_table("items")
-    vendors_df = read_table("vendors")
+    shared_tables = _load_report_shared_tables()
+    items_df = shared_tables["items"]
+    vendors_df = shared_tables["vendors"]
 
     if items_df.empty or vendors_df.empty:
         hist_df["廠商"] = "-"
@@ -198,7 +225,7 @@ def _display_mode_selector(key: str) -> str:
     )
 
 def _get_store_scope_options():
-    stores_df = read_table("stores")
+    stores_df = _load_report_shared_tables()["stores"]
     if stores_df.empty or "store_id" not in stores_df.columns:
         fallback_id = str(st.session_state.get("store_id", "")).strip()
         fallback_name = str(st.session_state.get("store_name", fallback_id)).strip()
@@ -490,8 +517,9 @@ def page_view_history():
         key="hist_vendor_filter",
     )
 
-    items_df = read_table("items").copy()
-    vendors_df = read_table("vendors").copy()
+    shared_tables = _load_report_shared_tables()
+    items_df = shared_tables["items"].copy()
+    vendors_df = shared_tables["vendors"].copy()
 
     item_values = []
 
@@ -875,9 +903,10 @@ def page_analysis():
         if "這次庫存" not in work_stock.columns:
             work_stock["這次庫存"] = 0
 
-        items_df = read_table("items")
-        prices_df = read_table("prices")
-        conversions_df = _get_active_df(read_table("unit_conversions"))
+        shared_tables = _load_report_shared_tables()
+        items_df = shared_tables["items"]
+        prices_df = shared_tables["prices"]
+        conversions_df = _get_active_df(shared_tables["unit_conversions"])
 
         work_stock["這次庫存"] = pd.to_numeric(
             work_stock["這次庫存"], errors="coerce"
@@ -1043,9 +1072,10 @@ def page_analysis():
 def page_cost_debug():
     st.title("🧮 成本檢查")
 
-    items_df = _get_active_df(read_table("items"))
-    prices_df = read_table("prices")
-    conversions_df = _get_active_df(read_table("unit_conversions"))
+    shared_tables = _load_report_shared_tables()
+    items_df = _get_active_df(shared_tables["items"])
+    prices_df = shared_tables["prices"]
+    conversions_df = _get_active_df(shared_tables["unit_conversions"])
 
     if items_df.empty:
         st.warning("⚠️ items 資料讀取失敗")

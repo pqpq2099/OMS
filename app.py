@@ -23,6 +23,7 @@ from oms_core import (
     get_header,
     get_spreadsheet,
     read_table,
+    get_table_versions,
 )
 
 from pages.page_order_entry import (
@@ -67,6 +68,12 @@ st.set_page_config(page_title="營運管理系統", layout="centered")
 def _read_login_enabled_setting() -> str:
     """從 settings 讀取 login_enabled，預設為 1（啟用登入）。"""
     try:
+        versions = get_table_versions(("settings",))
+        cache = st.session_state.get("_settings_login_enabled_cache")
+        if isinstance(cache, dict) and cache.get("versions") == versions:
+            value = str(cache.get("value", "1")).strip()
+            return value if value in {"0", "1"} else "1"
+
         settings_df = read_table("settings").copy()
         if settings_df.empty:
             return "1"
@@ -96,7 +103,12 @@ def _read_login_enabled_setting() -> str:
             return "1"
 
         value = str(hit.iloc[0][value_col]).strip()
-        return value if value in {"0", "1"} else "1"
+        final_value = value if value in {"0", "1"} else "1"
+        st.session_state["_settings_login_enabled_cache"] = {
+            "versions": versions,
+            "value": final_value,
+        }
+        return final_value
 
     except Exception:
         return "1"

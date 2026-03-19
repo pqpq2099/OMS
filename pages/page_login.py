@@ -34,7 +34,12 @@ import hashlib
 import pandas as pd
 import streamlit as st
 
-from oms_core import get_spreadsheet, read_table
+from oms_core import (
+    get_spreadsheet,
+    read_table,
+    get_table_versions,
+    update_row_by_match,
+)
 
 
 # ============================================================
@@ -68,9 +73,33 @@ def _sha256(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
+_LOGIN_TABLES = ("users",)
+
+
+def _load_login_tables() -> dict[str, pd.DataFrame]:
+    """登入頁主資料集中快取，減少重複 rerun 時的讀取成本。"""
+    versions = get_table_versions(_LOGIN_TABLES)
+    cache = st.session_state.get("_login_tables_cache")
+    if isinstance(cache, dict) and cache.get("versions") == versions:
+        data = cache.get("data", {})
+        if data:
+            return {k: v.copy() for k, v in data.items()}
+
+    data = {name: read_table(name) for name in _LOGIN_TABLES}
+    st.session_state["_login_tables_cache"] = {
+        "versions": versions,
+        "data": {k: v.copy() for k, v in data.items()},
+    }
+    return {k: v.copy() for k, v in data.items()}
+
+
+def _clear_login_tables_cache():
+    st.session_state.pop("_login_tables_cache", None)
+
+
 def _load_users_df() -> pd.DataFrame:
     """讀取 users 表，並補齊常用欄位。"""
-    df = read_table("users").copy()
+    df = _load_login_tables()["users"].copy()
 
     if df.empty:
         return df
@@ -95,56 +124,10 @@ def _load_users_df() -> pd.DataFrame:
     return df
 
 
-def _find_row_index_by_user_id(user_id: str) -> int | None:
-    """
-    在 Google Sheet 的 users 分頁中，找到對應 user_id 的實際列號。
-    例如：第 2 列、第 3 列...
-    """
-    sh = get_spreadsheet()
-    ws = sh.worksheet("users")
-    values = ws.get_all_values()
-
-    if not values:
-        return None
-
-    headers = values[0]
-    if "user_id" not in headers:
-        return None
-
-    user_col_idx = headers.index("user_id")
-
-    for row_idx, row in enumerate(values[1:], start=2):
-        cell_value = row[user_col_idx] if user_col_idx < len(row) else ""
-        if _norm_text(cell_value) == _norm_text(user_id):
-            return row_idx
-
-    return None
-
-
 def _update_user_fields(user_id: str, updates: dict):
-    """
-    直接更新 users 表中的某一筆使用者資料。
-    使用 user_id 當唯一識別鍵。
-    """
-    sh = get_spreadsheet()
-    ws = sh.worksheet("users")
-    values = ws.get_all_values()
-
-    if not values:
-        raise ValueError("users 分頁為空，無法更新資料。")
-
-    headers = values[0]
-    row_idx = _find_row_index_by_user_id(user_id)
-
-    if row_idx is None:
-        raise ValueError(f"找不到 user_id：{user_id}")
-
-    for field, value in updates.items():
-        if field not in headers:
-            continue
-
-        col_idx = headers.index(field) + 1
-        ws.update_cell(row_idx, col_idx, value)
+    """直接更新 users 表中的某一筆使用者資料。"""
+    update_row_by_match("users", "user_id", user_id, updates)
+    _clear_login_tables_cache()
 
 
 def _set_login_session(user_row: pd.Series):

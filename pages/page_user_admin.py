@@ -44,8 +44,9 @@ from oms_core import (
     append_rows_by_header,
     get_header,
     allocate_ids,
-    get_spreadsheet,
     bust_cache,
+    get_table_versions,
+    update_row_by_match,
 )
 
 
@@ -101,6 +102,30 @@ PROMOTION_ROLE_ORDER = [
 ]
 
 
+_USER_ADMIN_TABLES = ("users", "roles", "stores")
+
+
+def _load_user_admin_tables() -> dict[str, pd.DataFrame]:
+    """使用者管理頁集中快取主資料，降低 tab 切換時的重複讀取。"""
+    versions = get_table_versions(_USER_ADMIN_TABLES)
+    cache = st.session_state.get("_user_admin_tables_cache")
+    if isinstance(cache, dict) and cache.get("versions") == versions:
+        data = cache.get("data", {})
+        if data:
+            return {k: v.copy() for k, v in data.items()}
+
+    data = {name: read_table(name) for name in _USER_ADMIN_TABLES}
+    st.session_state["_user_admin_tables_cache"] = {
+        "versions": versions,
+        "data": {k: v.copy() for k, v in data.items()},
+    }
+    return {k: v.copy() for k, v in data.items()}
+
+
+def _clear_user_admin_tables_cache():
+    st.session_state.pop("_user_admin_tables_cache", None)
+
+
 # ============================================================
 # [U1] 欄位安全輔助
 # ============================================================
@@ -144,30 +169,13 @@ def _safe_active_series(df: pd.DataFrame, col: str = "is_active") -> pd.Series:
 
 
 def _write_back_users_df(users_df: pd.DataFrame):
-    """依 users 原始 header，將整張 users 表寫回 Google Sheet。"""
-    users_header = get_header("users")
-    work = users_df.copy()
-
-    for col in users_header:
-        if col not in work.columns:
-            work[col] = ""
-
-    work = work[users_header].copy()
-    rows = [users_header] + work.fillna("").astype(str).values.tolist()
-
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-
-    ws = sh.worksheet("users")
-    ws.clear()
-    ws.update(rows)
-    bust_cache()
+    """保留舊介面名稱，但改為由單筆更新工具接手。"""
+    raise NotImplementedError("請改用 _update_user_fields_by_user_id 單筆更新。")
 
 
 def _load_users_df() -> pd.DataFrame:
     """讀取 users 並補齊欄位。"""
-    users_df = read_table("users").copy()
+    users_df = _load_user_admin_tables()["users"].copy()
 
     if users_df.empty:
         users_df = pd.DataFrame(columns=[
@@ -225,12 +233,12 @@ def _update_user_fields_by_user_id(user_id: str, updates: dict):
     if not mask.any():
         raise ValueError(f"找不到 user_id：{user_id}")
 
+    normalized_updates = {}
     for field, value in updates.items():
-        if field not in users_df.columns:
-            users_df[field] = ""
-        users_df.loc[mask, field] = value
+        normalized_updates[field] = value
 
-    _write_back_users_df(users_df)
+    update_row_by_match("users", "user_id", user_id, normalized_updates)
+    _clear_user_admin_tables_cache()
 
 
 def _count_active_store_managers(users_df: pd.DataFrame, store_scope: str, exclude_user_id: str = "") -> int:
@@ -495,9 +503,10 @@ def page_user_admin():
         st.error("你沒有權限進入此頁。")
         return
 
+    page_tables = _load_user_admin_tables()
     users_df = _load_users_df()
-    roles_df = _ensure_columns(read_table("roles"), ["role_id", "role_name", "role_name_zh", "is_active"])
-    stores_df = _ensure_columns(read_table("stores"), ["store_id", "store_code", "store_name", "store_name_zh", "is_active"])
+    roles_df = _ensure_columns(page_tables["roles"], ["role_id", "role_name", "role_name_zh", "is_active"])
+    stores_df = _ensure_columns(page_tables["stores"], ["store_id", "store_code", "store_name", "store_name_zh", "is_active"])
 
     # 依既有穩定規則：Owner 不顯示在使用者清單與重設清單中
     managed_users_df = users_df[users_df["role_id"] != "owner"].copy().reset_index(drop=True)
