@@ -956,14 +956,10 @@ def page_order_entry():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
-        latest_metrics_df = latest_metrics_df.copy()
-        if "vendor_id" in latest_metrics_df.columns:
-            latest_metrics_df["vendor_id"] = latest_metrics_df["vendor_id"].astype(str).str.strip()
-            latest_metrics_df = latest_metrics_df[
-                latest_metrics_df["vendor_id"] == str(st.session_state.vendor_id).strip()
-            ].copy()
         for _, m in latest_metrics_df.iterrows():
-            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
+            metric_item_id = _norm(m.get("item_id", ""))
+            metric_vendor_id = _norm(m.get("vendor_id", ""))
+            latest_metrics_map[(metric_item_id, metric_vendor_id)] = m.to_dict()
 
     ref_rows = []
     item_meta = {}
@@ -995,7 +991,7 @@ def page_order_entry():
                 as_of_date=st.session_state.record_date,
             )
 
-        metric = latest_metrics_map.get(item_id, {})
+        metric = latest_metrics_map.get((item_id, st.session_state.vendor_id), {})
         period_purchase = _safe_float(metric.get("期間進貨", 0))
         period_usage = _safe_float(metric.get("期間消耗", 0))
         last_order_qty = _safe_float(metric.get("這次叫貨", 0))
@@ -1004,9 +1000,8 @@ def page_order_entry():
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
-        # 上方參考表優先顯示「最近一次叫貨量」；
-        # 若核心報表尚未形成完整區間，也至少能看到上一筆可參考叫貨。
-        last_order_ref = last_order_qty if last_order_qty > 0 else period_purchase
+        # 上方參考表只顯示「上一區間叫貨量」，不帶入當天這次叫貨。
+        last_order_ref = period_purchase
 
         if last_order_ref > 0 or period_usage > 0 or current_stock_qty > 0:
             ref_rows.append(
@@ -2054,14 +2049,10 @@ def page_daily_stock_order_record():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
-        latest_metrics_df = latest_metrics_df.copy()
-        if "vendor_id" in latest_metrics_df.columns:
-            latest_metrics_df["vendor_id"] = latest_metrics_df["vendor_id"].astype(str).str.strip()
-            latest_metrics_df = latest_metrics_df[
-                latest_metrics_df["vendor_id"] == str(vendor_id).strip()
-            ].copy()
         for _, m in latest_metrics_df.iterrows():
-            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
+            metric_item_id = _norm(m.get("item_id", ""))
+            metric_vendor_id = _norm(m.get("vendor_id", ""))
+            latest_metrics_map[(metric_item_id, metric_vendor_id)] = m.to_dict()
 
     st.caption(f"{store_name}｜{selected_vendor_label}｜最近一筆紀錄")
 
@@ -2080,7 +2071,7 @@ def page_daily_stock_order_record():
         stock_unit_default = _norm(row.get("default_stock_unit", "")) or base_unit
         order_unit_default = _norm(row.get("default_order_unit", "")) or base_unit
 
-        metric = latest_metrics_map.get(item_id, {})
+        metric = latest_metrics_map.get((item_id, vendor_id), {})
         total_stock_ref = _safe_float(metric.get("庫存合計", 0))
         daily_avg = _safe_float(metric.get("日平均", 0))
         suggest_qty = round(daily_avg * 1.5, 1)
