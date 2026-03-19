@@ -323,7 +323,7 @@ def _delivery_date_from_weekday(record_date: date, weekday_option: str) -> date:
     """把下拉選到的星期幾，換算成最近一次「大於等於作業日」的到貨日。"""
     text = str(weekday_option or "").strip().replace("禮拜", "星期")
     if text not in WEEKDAY_OPTIONS:
-        return record_date + timedelta(days=1)
+        return record_date
 
     target_weekday = WEEKDAY_OPTIONS.index(text)
     current_weekday = record_date.weekday()
@@ -934,9 +934,8 @@ def page_order_entry():
     existing_order_qty_map, existing_order_unit_map = _get_existing_order_maps(existing_ids.get("po_id", ""))
     existing_delivery_option = _weekday_option_from_date(
         existing_ids.get("delivery_date"),
-        st.session_state.record_date + timedelta(days=1),
+        st.session_state.record_date,
     )
-
     is_edit_mode = bool(existing_ids.get("stocktake_id") or existing_ids.get("po_id"))
     if is_edit_mode:
         st.info("ℹ️ 這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
