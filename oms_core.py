@@ -1404,18 +1404,12 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         return out
 
     po_work = pd.DataFrame()
-    po_date_field = ""
-    if not po_df.empty and "store_id" in po_df.columns:
-        if "delivery_date_dt" in po_df.columns:
-            po_date_field = "delivery_date_dt"
-        elif "order_date_dt" in po_df.columns:
-            po_date_field = "order_date_dt"
-
-        if po_date_field:
-            po_work = po_df[
-                po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
-            ].copy()
-            po_work = po_work[po_work[po_date_field].notna()].copy()
+    po_date_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
+    if not po_df.empty and "store_id" in po_df.columns and po_date_field in po_df.columns:
+        po_work = po_df[
+            po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+        ].copy()
+        po_work = po_work[po_work[po_date_field].notna()].copy()
 
     result_rows = []
     # ========================================================
@@ -1523,10 +1517,10 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 curr_date=curr_date,
             )
 
-        # 第一次紀錄：不補前帳、不補前面進貨
+        # 第一次紀錄：沒有前次庫存時，仍保留本次叫貨參考
         if prev_date is None:
-            order_sum = 0.0
-            total_stock = 0.0
+            order_sum = current_order_qty
+            total_stock = round(prev_qty + order_sum, 1)
             usage = 0.0
             days = 0
             daily_avg = 0.0
@@ -1538,7 +1532,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 ].copy()
 
                 item_po = item_po[
-                    (item_po[po_date_field] > prev_date)
+                    (item_po[po_date_field] >= prev_date)
                     & (item_po[po_date_field] <= curr_date)
                 ]
 
