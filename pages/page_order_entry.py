@@ -1549,8 +1549,8 @@ def page_order_message_detail():
         value=date.today(),
         key="order_message_detail_date",
     )
-    next_day = selected_date + timedelta(days=1)
-    prev_day = selected_date - timedelta(days=1)
+    # 叫貨明細頁一律只顯示「今天到貨」的資料。
+    # 不再提前顯示隔天到貨，也不再補抓前一天建立、今天才到貨以外的混合提醒邏輯。
 
     page_tables = _load_order_page_tables()
     po_df = page_tables["purchase_orders"]
@@ -1583,19 +1583,11 @@ def page_order_message_detail():
     po_df["po_id"] = po_df["po_id"].astype(str).str.strip()
     base_mask = po_df["store_id"] == str(store_id).strip()
 
-    same_day_pos = po_df[
+    po_today = po_df[
         base_mask
-        & (po_df["order_date_dt"] == selected_date)
-        & (po_df["delivery_date_dt"].isin([selected_date, next_day]))
+        & (po_df["delivery_date_dt"] == selected_date)
     ].copy()
 
-    reminder_pos = po_df[
-        base_mask
-        & (po_df["order_date_dt"] == prev_day)
-        & (po_df["delivery_date_dt"] == next_day)
-    ].copy()
-
-    po_today = pd.concat([same_day_pos, reminder_pos], ignore_index=True)
     po_today = po_today.drop_duplicates(subset=["po_id"], keep="first")
 
     if po_today.empty:
