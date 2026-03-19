@@ -1549,11 +1549,9 @@ def page_order_message_detail():
         value=date.today(),
         key="order_message_detail_date",
     )
-    # 明細顯示規則：只顯示「這一天到貨」的資料。
-    # 例如：
-    # - 3/16（週一）叫貨，若設定 3/16 到貨，則 3/16 顯示。
-    # - 3/16（週一）叫貨，若設定 3/17 到貨，則延到 3/17 才顯示。
-    # - 3/16（週一）叫貨，若設定 3/20（週五）到貨，則 3/20 才顯示。
+    # 叫貨明細頁一律只顯示「今天到貨」的資料。
+    # 不再提前顯示隔天到貨，也不再補抓前一天建立、今天才到貨以外的混合提醒邏輯。
+
     page_tables = _load_order_page_tables()
     po_df = page_tables["purchase_orders"]
     pol_df = page_tables["purchase_order_lines"]
@@ -1585,13 +1583,11 @@ def page_order_message_detail():
     po_df["po_id"] = po_df["po_id"].astype(str).str.strip()
     base_mask = po_df["store_id"] == str(store_id).strip()
 
-    # 改為完全依「到貨日」判斷是否顯示。
-    # 不再混用「叫貨日＋隔天提醒」邏輯，避免：
-    # 週一叫、週二到的資料，提早在週一就被看到。
     po_today = po_df[
         base_mask
         & (po_df["delivery_date_dt"] == selected_date)
     ].copy()
+
     po_today = po_today.drop_duplicates(subset=["po_id"], keep="first")
 
     if po_today.empty:
