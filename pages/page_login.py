@@ -34,7 +34,7 @@ import hashlib
 import pandas as pd
 import streamlit as st
 
-from oms_core import read_table, update_sheet_row_by_key
+from oms_core import get_spreadsheet, read_table
 
 
 # ============================================================
@@ -95,14 +95,56 @@ def _load_users_df() -> pd.DataFrame:
     return df
 
 
+def _find_row_index_by_user_id(user_id: str) -> int | None:
+    """
+    在 Google Sheet 的 users 分頁中，找到對應 user_id 的實際列號。
+    例如：第 2 列、第 3 列...
+    """
+    sh = get_spreadsheet()
+    ws = sh.worksheet("users")
+    values = ws.get_all_values()
+
+    if not values:
+        return None
+
+    headers = values[0]
+    if "user_id" not in headers:
+        return None
+
+    user_col_idx = headers.index("user_id")
+
+    for row_idx, row in enumerate(values[1:], start=2):
+        cell_value = row[user_col_idx] if user_col_idx < len(row) else ""
+        if _norm_text(cell_value) == _norm_text(user_id):
+            return row_idx
+
+    return None
+
+
 def _update_user_fields(user_id: str, updates: dict):
-    """更新 users 表中的單一使用者資料。"""
-    return update_sheet_row_by_key(
-        sheet_name="users",
-        key_field="user_id",
-        key_value=user_id,
-        updates=updates,
-    )
+    """
+    直接更新 users 表中的某一筆使用者資料。
+    使用 user_id 當唯一識別鍵。
+    """
+    sh = get_spreadsheet()
+    ws = sh.worksheet("users")
+    values = ws.get_all_values()
+
+    if not values:
+        raise ValueError("users 分頁為空，無法更新資料。")
+
+    headers = values[0]
+    row_idx = _find_row_index_by_user_id(user_id)
+
+    if row_idx is None:
+        raise ValueError(f"找不到 user_id：{user_id}")
+
+    for field, value in updates.items():
+        if field not in headers:
+            continue
+
+        col_idx = headers.index(field) + 1
+        ws.update_cell(row_idx, col_idx, value)
 
 
 def _set_login_session(user_row: pd.Series):
@@ -262,7 +304,7 @@ def _page_force_change_password():
 # ============================================================
 # [D] 一般登入頁
 # ============================================================
-def _page_normal_login(users_df: pd.DataFrame):
+def _page_normal_login():
     """一般登入畫面（支援 Enter 直接登入）。"""
     st.title("🔑 系統登入")
 
@@ -272,6 +314,8 @@ def _page_normal_login(users_df: pd.DataFrame):
         submitted = st.form_submit_button("登入", use_container_width=True)
 
     if submitted:
+        users_df = _load_users_df()
+
         if users_df.empty:
             st.error("users 資料表為空，無法登入。")
             return
@@ -298,12 +342,11 @@ def _page_normal_login(users_df: pd.DataFrame):
             return
 
         try:
-            now_ts = _now_ts()
             _update_user_fields(
                 _norm_text(user_row.get("user_id")),
                 {
-                    "last_login_at": now_ts,
-                    "updated_at": now_ts,
+                    "last_login_at": _now_ts(),
+                    "updated_at": _now_ts(),
                 },
             )
         except Exception:
@@ -355,4 +398,4 @@ def page_login():
                 return
 
     # 3) 一般登入
-    _page_normal_login(users_df)
+    _page_normal_login()

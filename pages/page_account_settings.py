@@ -9,20 +9,19 @@
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 import hashlib
 
 import pandas as pd
 import streamlit as st
 
-from oms_core import get_header, get_spreadsheet, read_table, update_sheet_row_by_key
+from oms_core import get_spreadsheet, read_table
 
 
 # ============================================================
 # [A] 基本工具
 # ============================================================
 def _now_ts() -> str:
-    return datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _norm_text(value) -> str:
@@ -60,13 +59,36 @@ def _load_users_df() -> pd.DataFrame:
     return df
 
 
+def _find_user_sheet_row(user_id: str) -> tuple[object, int, list[str]]:
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+
+    ws = sh.worksheet("users")
+    values = ws.get_all_values()
+    if not values:
+        raise ValueError("users 分頁為空")
+
+    header = [str(x).strip() for x in values[0]]
+    if "user_id" not in header:
+        raise ValueError("users 缺少 user_id 欄位")
+
+    user_idx = header.index("user_id")
+    for row_no, row in enumerate(values[1:], start=2):
+        cell = row[user_idx] if user_idx < len(row) else ""
+        if _norm_text(cell) == _norm_text(user_id):
+            return ws, row_no, header
+
+    raise ValueError(f"找不到 user_id：{user_id}")
+
+
 def _update_user_fields(user_id: str, updates: dict):
-    return update_sheet_row_by_key(
-        sheet_name="users",
-        key_field="user_id",
-        key_value=user_id,
-        updates=updates,
-    )
+    ws, row_no, header = _find_user_sheet_row(user_id)
+    for field, value in updates.items():
+        if field not in header:
+            continue
+        col_no = header.index(field) + 1
+        ws.update_cell(row_no, col_no, value)
 
 
 def _append_audit_log(action: str, entity_id: str, note: str):
@@ -75,7 +97,10 @@ def _append_audit_log(action: str, entity_id: str, note: str):
         if sh is None:
             return
         ws = sh.worksheet("audit_logs")
-        header = get_header("audit_logs")
+        values = ws.get_all_values()
+        if not values:
+            return
+        header = [str(x).strip() for x in values[0]]
         row = {c: "" for c in header}
         row.update(
             {

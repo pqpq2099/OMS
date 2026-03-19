@@ -44,21 +44,199 @@ from pages.page_reports import (
 from pages.page_purchase_settings import page_purchase_settings
 from pages.page_user_admin import page_user_admin
 from pages.page_store_admin import page_store_admin
-from pages.page_login import page_login, render_login_sidebar
+from pages.page_login import (
+    page_login,
+    render_login_sidebar,
+    _load_users_df,
+    _norm_text,
+    _norm_10,
+    _sha256,
+)
 from pages.page_account_settings import page_account_settings
 
 st.set_page_config(page_title="營運管理系統", layout="centered")
 
+
+# ============================================================
+# [A0] 登入開關判斷
+# 用途：
+# 1. 從 settings 讀取 login_enabled
+# 2. 允許 owner/admin 在系統工具頁一鍵開關登入畫面
+# 3. 當 login_enabled = 0 時，自動以免登入模式進入系統
+# ============================================================
+def _read_login_enabled_setting() -> str:
+    """從 settings 讀取 login_enabled，預設為 1（啟用登入）。"""
+    try:
+        settings_df = read_table("settings").copy()
+        if settings_df.empty:
+            return "1"
+
+        settings_df.columns = [str(c).strip() for c in settings_df.columns]
+
+        key_col = None
+        value_col = None
+
+        for c in ["key", "setting_key", "name", "setting_name"]:
+            if c in settings_df.columns:
+                key_col = c
+                break
+
+        for c in ["value", "setting_value", "setting", "setting_val"]:
+            if c in settings_df.columns:
+                value_col = c
+                break
+
+        if not key_col or not value_col:
+            return "1"
+
+        hit = settings_df[
+            settings_df[key_col].astype(str).str.strip().str.lower() == "login_enabled"
+        ]
+        if hit.empty:
+            return "1"
+
+        value = str(hit.iloc[0][value_col]).strip()
+        return value if value in {"0", "1"} else "1"
+
+    except Exception:
+        return "1"
+
+
+def _clear_login_session_state():
+    """清除登入相關 session，切換登入模式後使用。"""
+    login_keys = [
+        "login_user",
+        "login_account_code",
+        "login_display_name",
+        "login_role_id",
+        "login_store_scope",
+        "force_change_password",
+        "login_bypass_mode",
+        "role",
+    ]
+    for key in login_keys:
+        st.session_state.pop(key, None)
+
+
+def _ensure_login_session_when_disabled():
+    """當 login_enabled = 0 時，自動建立免登入模式的 owner session。"""
+    st.session_state["login_user"] = "BYPASS_OWNER"
+    st.session_state["login_account_code"] = "bypass_owner"
+    st.session_state["login_display_name"] = "免登入模式"
+    st.session_state["login_role_id"] = "owner"
+    st.session_state["login_store_scope"] = "ALL"
+    st.session_state["force_change_password"] = False
+    st.session_state["login_bypass_mode"] = True
+    st.session_state["role"] = "owner"
+
+
+def _is_bypass_mode() -> bool:
+    """目前是否為免登入模式。"""
+    return bool(st.session_state.get("login_bypass_mode", False))
+
+
+def _has_locked_system_access() -> bool:
+    """只有在免登入模式下，才需要額外驗證系統維護 / 系統工具。"""
+    if not _is_bypass_mode():
+        return True
+    return bool(st.session_state.get("owner_gate_verified", False))
+
+
+def _clear_locked_system_access():
+    """清除系統維護 / 系統工具的額外驗證狀態。"""
+    for key in ["owner_gate_verified", "owner_gate_display_name", "owner_gate_user_id", "owner_gate_return_step"]:
+        st.session_state.pop(key, None)
+
+
+def _go_owner_verify(return_step: str):
+    """導向 Owner 驗證頁。"""
+    st.session_state["owner_gate_return_step"] = return_step
+    st.session_state["step"] = "owner_verify"
+    st.rerun()
+
+
+def _check_owner_password(account: str, password: str) -> tuple[bool, str]:
+    """驗證 owner 帳號密碼。"""
+    users_df = _load_users_df()
+    if users_df.empty:
+        return False, "users 資料表為空，無法驗證。"
+
+    work = users_df.copy()
+    work["account_code"] = work["account_code"].apply(_norm_text)
+    work["password_hash"] = work["password_hash"].apply(_norm_text)
+    work["role_id"] = work["role_id"].apply(lambda x: _norm_text(x).lower())
+    work["is_active"] = work["is_active"].apply(_norm_10)
+
+    target = work[
+        (work["account_code"] == _norm_text(account))
+        & (work["role_id"] == "owner")
+        & (work["is_active"] == 1)
+    ]
+
+    if target.empty:
+        return False, "此帳號不是啟用中的系統擁有者。"
+
+    user_row = target.iloc[0]
+    if _norm_text(user_row.get("password_hash")) != _sha256(password):
+        return False, "密碼錯誤。"
+
+    st.session_state["owner_gate_verified"] = True
+    st.session_state["owner_gate_display_name"] = _norm_text(user_row.get("display_name"))
+    st.session_state["owner_gate_user_id"] = _norm_text(user_row.get("user_id"))
+    return True, ""
+
+
+def _render_locked_system_login_required(page_title: str) -> bool:
+    """若目前為免登入模式，則在進入指定頁面前要求 owner 再驗證一次。"""
+    if _has_locked_system_access():
+        return True
+
+    st.warning(f"{page_title} 需要先登入系統擁有者帳號才能查看。")
+    if st.button("🔐 前往系統管理登入", width="stretch", key=f"goto_owner_verify_{page_title}"):
+        _go_owner_verify(st.session_state.get("step", "select_store"))
+    return False
+
+
+def page_owner_verify():
+    """免登入模式下，進入系統維護 / 系統工具前的 owner 驗證頁。"""
+    st.title("🔐 系統管理登入")
+    st.info("目前為免登入模式。只有系統擁有者登入後，才能查看系統維護與系統工具。")
+
+    with st.form("owner_verify_form"):
+        account = st.text_input("Owner 帳號", key="owner_verify_account")
+        password = st.text_input("Owner 密碼", type="password", key="owner_verify_password")
+        submitted = st.form_submit_button("登入並進入", use_container_width=True)
+
+    if submitted:
+        ok, err = _check_owner_password(account, password)
+        if not ok:
+            st.error(err)
+        else:
+            next_step = st.session_state.get("owner_gate_return_step", "select_store")
+            st.success("驗證成功。")
+            st.session_state["step"] = next_step
+            st.rerun()
+
+    if st.button("⬅️ 返回", width="stretch", key="back_from_owner_verify"):
+        st.session_state["step"] = "select_store"
+        st.rerun()
+
+
 # ============================================================
 # 登入檢查
 # ============================================================
-if "login_user" not in st.session_state:
-    page_login()
-    st.stop()
+LOGIN_ENABLED = _read_login_enabled_setting()
 
-if st.session_state.get("force_change_password", False):
-    page_login()
-    st.stop()
+if LOGIN_ENABLED == "0":
+    _ensure_login_session_when_disabled()
+else:
+    if "login_user" not in st.session_state:
+        page_login()
+        st.stop()
+
+    if st.session_state.get("force_change_password", False):
+        page_login()
+        st.stop()
 
 # ============================================================
 # [A1] Session State 初始化
@@ -280,6 +458,9 @@ def page_system_maintenance():
         st.error("你沒有權限進入此頁。")
         return
 
+    if not _render_locked_system_login_required("系統維護"):
+        return
+
     st.markdown("### 初始化營運資料")
     st.warning("此功能會清空庫存、叫貨與交易資料，並將對應序號重設回 1。主資料不會刪除。")
 
@@ -346,7 +527,43 @@ def page_system_tools():
         st.error("你沒有權限進入此頁。")
         return
 
+    if not _render_locked_system_login_required("系統工具"):
+        return
+
     st.info("這一頁保留給 Owner 放臨時測試、偵錯工具與未來的小型系統輔助功能。")
+
+    st.markdown("### 登入畫面開關")
+    current_login_enabled = get_setting_value("login_enabled", "1").strip()
+    if current_login_enabled not in {"0", "1"}:
+        current_login_enabled = "1"
+
+    bypass_mode = bool(st.session_state.get("login_bypass_mode", False))
+
+    if current_login_enabled == "1":
+        st.success("目前狀態：登入畫面啟用中")
+        toggle_label = "🔓 一鍵關閉登入畫面"
+        next_value = "0"
+        toggle_help = "關閉後，系統會略過帳號密碼，直接以免登入模式進入。"
+    else:
+        st.warning("目前狀態：登入畫面已關閉（免登入模式）")
+        toggle_label = "🔐 一鍵開啟登入畫面"
+        next_value = "1"
+        toggle_help = "開啟後，系統會恢復帳號密碼登入。"
+
+    st.caption(toggle_help)
+
+    if st.button(toggle_label, width="stretch", type="primary", key="toggle_login_enabled"):
+        try:
+            save_setting("login_enabled", next_value)
+            bust_cache()
+            _clear_login_session_state()
+            st.session_state.step = "select_store"
+            st.success("登入畫面設定已更新。")
+            st.rerun()
+        except Exception as e:
+            st.error(f"切換失敗：{e}")
+
+    st.markdown("---")
 
     if st.button("♻️ 重新整理快取", width="stretch"):
         bust_cache()
@@ -357,6 +574,7 @@ def page_system_tools():
     st.write(f"目前 step：{st.session_state.get('step', '')}")
     st.write(f"目前分店：{st.session_state.get('store_name', '')}")
     st.write(f"目前廠商：{st.session_state.get('vendor_name', '')}")
+    st.write(f"免登入模式：{'是' if bypass_mode else '否'}")
 
     if st.button("⬅️ 返回", width="stretch", key="back_from_system_tools"):
         st.session_state.step = "select_store"
@@ -598,13 +816,35 @@ def render_sidebar():
 
 
             if role == "owner":
-                if st.button("🛠 系統維護", width="stretch", key="sb_system_maintenance"):
-                    st.session_state.step = "system_maintenance"
-                    st.rerun()
+                if _is_bypass_mode():
+                    if _has_locked_system_access():
+                        verified_name = st.session_state.get("owner_gate_display_name", "")
+                        if verified_name:
+                            st.caption(f"已驗證：{verified_name}")
 
-                if st.button("🧰 系統工具", width="stretch", key="sb_system_tools"):
-                    st.session_state.step = "system_tools"
-                    st.rerun()
+                        if st.button("🛠 系統維護", width="stretch", key="sb_system_maintenance"):
+                            st.session_state.step = "system_maintenance"
+                            st.rerun()
+
+                        if st.button("🧰 系統工具", width="stretch", key="sb_system_tools"):
+                            st.session_state.step = "system_tools"
+                            st.rerun()
+
+                        if st.button("🔓 登出系統管理", width="stretch", key="sb_owner_gate_logout"):
+                            _clear_locked_system_access()
+                            st.session_state.step = "select_store"
+                            st.rerun()
+                    else:
+                        if st.button("🔐 系統管理登入", width="stretch", key="sb_owner_verify"):
+                            _go_owner_verify("system_tools")
+                else:
+                    if st.button("🛠 系統維護", width="stretch", key="sb_system_maintenance"):
+                        st.session_state.step = "system_maintenance"
+                        st.rerun()
+
+                    if st.button("🧰 系統工具", width="stretch", key="sb_system_tools"):
+                        st.session_state.step = "system_tools"
+                        st.rerun()
 
 # ============================================================
 # Router
@@ -661,6 +901,9 @@ def router():
     
     elif step == "system_info":
         page_system_info()
+
+    elif step == "owner_verify":
+        page_owner_verify()
 
     # ---------------------------
     # 入口先建立，功能待接
