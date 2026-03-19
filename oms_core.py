@@ -1404,11 +1404,18 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         return out
 
     po_work = pd.DataFrame()
-    if not po_df.empty and "store_id" in po_df.columns and "order_date_dt" in po_df.columns:
-        po_work = po_df[
-            po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
-        ].copy()
-        po_work = po_work[po_work["order_date_dt"].notna()].copy()
+    po_date_field = ""
+    if not po_df.empty and "store_id" in po_df.columns:
+        if "delivery_date_dt" in po_df.columns:
+            po_date_field = "delivery_date_dt"
+        elif "order_date_dt" in po_df.columns:
+            po_date_field = "order_date_dt"
+
+        if po_date_field:
+            po_work = po_df[
+                po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
+            ].copy()
+            po_work = po_work[po_work[po_date_field].notna()].copy()
 
     result_rows = []
     # ========================================================
@@ -1505,7 +1512,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         if not po_work.empty:
             item_po_same_day = po_work[
                 (po_work["item_id"].astype(str).str.strip() == item_id)
-                & (po_work["order_date_dt"] == curr_date)
+                & (po_work[po_date_field] == curr_date)
             ].copy()
 
             current_order_qty = _sum_purchase_qty_in_display_unit(
@@ -1531,8 +1538,8 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 ].copy()
 
                 item_po = item_po[
-                    (item_po["order_date_dt"] > prev_date)
-                    & (item_po["order_date_dt"] <= curr_date)
+                    (item_po[po_date_field] > prev_date)
+                    & (item_po[po_date_field] <= curr_date)
                 ]
 
                 order_sum = _sum_purchase_qty_in_display_unit(
