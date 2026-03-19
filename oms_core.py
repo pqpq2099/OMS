@@ -21,9 +21,11 @@ OMS 核心共用模組。
 from __future__ import annotations
 
 from datetime import date, datetime
+import time
 from pathlib import Path
 from typing import Optional
 import copy
+from typing import Iterable
 
 import gspread
 import pandas as pd
@@ -380,6 +382,30 @@ def _get_runtime_table_cache() -> dict:
     return st.session_state.setdefault("_runtime_table_cache", {})
 
 
+def _call_with_retry(func, *args, retries: int = 3, base_sleep: float = 0.8, **kwargs):
+    """Google Sheets 讀取/寫入重試。遇到 429 / 暫時性錯誤時，做短暫退避重試。"""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            message = str(e).lower()
+            is_retryable = any(token in message for token in [
+                "429",
+                "quota",
+                "rate limit",
+                "resource exhausted",
+                "timed out",
+                "internal error",
+                "try again",
+            ])
+            if (not is_retryable) or attempt >= retries - 1:
+                raise
+            time.sleep(base_sleep * (2 ** attempt))
+    raise last_error
+
+
 @st.cache_data(show_spinner=False, ttl=300)
 def _read_table_remote(sheet_name: str) -> pd.DataFrame:
     sh = get_spreadsheet()
@@ -387,7 +413,7 @@ def _read_table_remote(sheet_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     ws = sh.worksheet(sheet_name)
-    values = ws.get_all_values()
+    values = _call_with_retry(ws.get_all_values)
 
     # 連表頭都沒有
     if not values:
@@ -430,7 +456,7 @@ def _get_header_remote(sheet_name: str) -> list[str]:
         raise ValueError("Spreadsheet 未初始化")
 
     ws = sh.worksheet(sheet_name)
-    header = ws.row_values(1)
+    header = _call_with_retry(ws.row_values, 1)
     if not header:
         raise ValueError(f"{sheet_name} 沒有 header")
     return [_norm(h) for h in header]
@@ -504,18 +530,91 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
 
     ws = sh.worksheet(sheet_name)
     values = [[row.get(col, "") for col in header] for row in rows]
-    ws.append_rows(values, value_input_option="USER_ENTERED")
+    _call_with_retry(ws.append_rows, values, value_input_option="USER_ENTERED")
 
 
-def bust_cache():
+def update_sheet_row_by_key(
+    sheet_name: str,
+    key_field: str,
+    key_value: str,
+    updates: dict,
+) -> bool:
+    """
+    用唯一鍵更新單列資料。
+    作法：
+    1. 先透過 read_table 走快取取得資料，避免再次把整張表直接打到 API。
+    2. 在記憶體中修改目標列。
+    3. 一次用 batch_update 寫回需要變動的欄位，避免多次 update_cell。
+    """
+    normalized_key = _norm(key_field)
+    normalized_value = _norm(key_value)
+    if not normalized_key or not normalized_value:
+        raise ValueError("更新列失敗：key_field / key_value 不可為空")
+
+    df = read_table(sheet_name)
+    if df.empty:
+        raise ValueError(f"{sheet_name} 分頁為空，無法更新資料。")
+
+    if normalized_key not in df.columns:
+        raise ValueError(f"{sheet_name} 缺少欄位：{normalized_key}")
+
+    work = df.copy()
+    target_series = work[normalized_key].astype(str).apply(_norm)
+    hit = work[target_series == normalized_value]
+    if hit.empty:
+        raise ValueError(f"{sheet_name} 找不到 {normalized_key}={normalized_value}")
+
+    row_index = int(hit.index[0])
+    row_no = row_index + 2
+    valid_updates = { _norm(k): v for k, v in updates.items() if _norm(k) in work.columns }
+    if not valid_updates:
+        return False
+
+    sh = get_spreadsheet()
+    if sh is None:
+        raise ValueError("Spreadsheet 未初始化")
+    ws = sh.worksheet(sheet_name)
+
+    payload = []
+    for col_name, value in valid_updates.items():
+        col_no = work.columns.get_loc(col_name) + 1
+        payload.append({
+            "range": gspread.utils.rowcol_to_a1(row_no, col_no),
+            "values": [["" if value is None else value]],
+        })
+
+    _call_with_retry(ws.batch_update, payload, value_input_option="USER_ENTERED")
+    bust_cache([sheet_name])
+    return True
+
+
+def bust_cache(sheet_names: Iterable[str] | None = None):
     """
     清除資料快取。
-    只要有寫入 / 更新 / 刪除後，都應呼叫這裡，避免畫面繼續看到舊資料。
+    - 未指定 sheet_names：全清
+    - 有指定 sheet_names：只清除對應表格的 runtime cache
+
+    注意：Streamlit cache_data 目前無法只針對單一參數清除，
+    所以遠端 cache 仍會全清；但 session runtime cache 改為可指定表，
+    已能大幅降低其他表被一起失效的機率。
     """
+    normalized = []
+    if sheet_names is not None:
+        normalized = [_norm(x) for x in sheet_names if _norm(x)]
+
     _read_table_remote.clear()
     _get_header_remote.clear()
-    st.session_state.pop("_runtime_table_cache", None)
-    st.session_state.pop("_runtime_header_cache", None)
+
+    if not normalized:
+        st.session_state.pop("_runtime_table_cache", None)
+        st.session_state.pop("_runtime_header_cache", None)
+        return
+
+    table_cache = st.session_state.setdefault("_runtime_table_cache", {})
+    header_cache = st.session_state.setdefault("_runtime_header_cache", {})
+    for name in normalized:
+        table_cache.pop(name, None)
+        header_cache.pop(name, None)
 
 
 # ============================================================
