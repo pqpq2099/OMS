@@ -936,6 +936,7 @@ def page_order_entry():
         existing_ids.get("delivery_date"),
         st.session_state.record_date,
     )
+
     is_edit_mode = bool(existing_ids.get("stocktake_id") or existing_ids.get("po_id"))
     if is_edit_mode:
         st.info("ℹ️ 這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
@@ -996,7 +997,7 @@ def page_order_entry():
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
-        if period_purchase > 0 or period_usage > 0:
+        if period_purchase > 0 or period_usage > 0 or total_stock_ref > 0 or current_stock_qty > 0:
             ref_rows.append(
                 {
                     "品項名稱": item_name,
@@ -1548,8 +1549,8 @@ def page_order_message_detail():
         value=date.today(),
         key="order_message_detail_date",
     )
-    # 叫貨明細頁一律只顯示「今天到貨」的資料。
-    # 不再提前顯示隔天到貨，也不再補抓前一天建立、今天才到貨以外的混合提醒邏輯。
+    next_day = selected_date + timedelta(days=1)
+    prev_day = selected_date - timedelta(days=1)
 
     page_tables = _load_order_page_tables()
     po_df = page_tables["purchase_orders"]
