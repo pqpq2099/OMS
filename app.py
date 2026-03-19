@@ -49,16 +49,95 @@ from pages.page_account_settings import page_account_settings
 
 st.set_page_config(page_title="營運管理系統", layout="centered")
 
+
+# ============================================================
+# [A0] 登入開關判斷
+# 用途：
+# 1. 從 settings 讀取 login_enabled
+# 2. 允許 owner/admin 在系統工具頁一鍵開關登入畫面
+# 3. 當 login_enabled = 0 時，自動以免登入模式進入系統
+# ============================================================
+def _read_login_enabled_setting() -> str:
+    """從 settings 讀取 login_enabled，預設為 1（啟用登入）。"""
+    try:
+        settings_df = read_table("settings").copy()
+        if settings_df.empty:
+            return "1"
+
+        settings_df.columns = [str(c).strip() for c in settings_df.columns]
+
+        key_col = None
+        value_col = None
+
+        for c in ["key", "setting_key", "name", "setting_name"]:
+            if c in settings_df.columns:
+                key_col = c
+                break
+
+        for c in ["value", "setting_value", "setting", "setting_val"]:
+            if c in settings_df.columns:
+                value_col = c
+                break
+
+        if not key_col or not value_col:
+            return "1"
+
+        hit = settings_df[
+            settings_df[key_col].astype(str).str.strip().str.lower() == "login_enabled"
+        ]
+        if hit.empty:
+            return "1"
+
+        value = str(hit.iloc[0][value_col]).strip()
+        return value if value in {"0", "1"} else "1"
+
+    except Exception:
+        return "1"
+
+
+def _clear_login_session_state():
+    """清除登入相關 session，切換登入模式後使用。"""
+    login_keys = [
+        "login_user",
+        "login_account_code",
+        "login_display_name",
+        "login_role_id",
+        "login_store_scope",
+        "force_change_password",
+        "login_bypass_mode",
+        "role",
+    ]
+    for key in login_keys:
+        st.session_state.pop(key, None)
+
+
+def _ensure_login_session_when_disabled():
+    """當 login_enabled = 0 時，自動建立免登入模式的 owner session。"""
+    st.session_state["login_user"] = "BYPASS_OWNER"
+    st.session_state["login_account_code"] = "bypass_owner"
+    st.session_state["login_display_name"] = "免登入模式"
+    st.session_state["login_role_id"] = "owner"
+    st.session_state["login_store_scope"] = "ALL"
+    st.session_state["force_change_password"] = False
+    st.session_state["login_bypass_mode"] = True
+    st.session_state["role"] = "owner"
+
+
 # ============================================================
 # 登入檢查
 # ============================================================
-if "login_user" not in st.session_state:
-    page_login()
-    st.stop()
+LOGIN_ENABLED = _read_login_enabled_setting()
 
-if st.session_state.get("force_change_password", False):
-    page_login()
-    st.stop()
+if LOGIN_ENABLED == "0":
+    _ensure_login_session_when_disabled()
+else:
+    if "login_user" not in st.session_state:
+        page_login()
+        st.stop()
+
+    if st.session_state.get("force_change_password", False):
+        page_login()
+        st.stop()
 
 # ============================================================
 # [A1] Session State 初始化
@@ -348,6 +427,39 @@ def page_system_tools():
 
     st.info("這一頁保留給 Owner 放臨時測試、偵錯工具與未來的小型系統輔助功能。")
 
+    st.markdown("### 登入畫面開關")
+    current_login_enabled = get_setting_value("login_enabled", "1").strip()
+    if current_login_enabled not in {"0", "1"}:
+        current_login_enabled = "1"
+
+    bypass_mode = bool(st.session_state.get("login_bypass_mode", False))
+
+    if current_login_enabled == "1":
+        st.success("目前狀態：登入畫面啟用中")
+        toggle_label = "🔓 一鍵關閉登入畫面"
+        next_value = "0"
+        toggle_help = "關閉後，系統會略過帳號密碼，直接以免登入模式進入。"
+    else:
+        st.warning("目前狀態：登入畫面已關閉（免登入模式）")
+        toggle_label = "🔐 一鍵開啟登入畫面"
+        next_value = "1"
+        toggle_help = "開啟後，系統會恢復帳號密碼登入。"
+
+    st.caption(toggle_help)
+
+    if st.button(toggle_label, width="stretch", type="primary", key="toggle_login_enabled"):
+        try:
+            save_setting("login_enabled", next_value)
+            bust_cache()
+            _clear_login_session_state()
+            st.session_state.step = "select_store"
+            st.success("登入畫面設定已更新。")
+            st.rerun()
+        except Exception as e:
+            st.error(f"切換失敗：{e}")
+
+    st.markdown("---")
+
     if st.button("♻️ 重新整理快取", width="stretch"):
         bust_cache()
         st.success("已清除 read_table 快取。")
@@ -357,6 +469,7 @@ def page_system_tools():
     st.write(f"目前 step：{st.session_state.get('step', '')}")
     st.write(f"目前分店：{st.session_state.get('store_name', '')}")
     st.write(f"目前廠商：{st.session_state.get('vendor_name', '')}")
+    st.write(f"免登入模式：{'是' if bypass_mode else '否'}")
 
     if st.button("⬅️ 返回", width="stretch", key="back_from_system_tools"):
         st.session_state.step = "select_store"
