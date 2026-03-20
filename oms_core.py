@@ -1526,8 +1526,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             )
             current_order_base_qty = _safe_float(item_po_same_day.get("order_base_qty_num", 0).sum())
 
-        # 第一次紀錄：上次庫存 / 期間進貨 / 消耗都應視為 0。
-        # 本次叫貨仍另外顯示在「這次叫貨」，但不能回灌到「期間進貨」。
+        # 第一次紀錄：期間進貨固定為 0，不把本次叫貨算進來
         if prev_date is None:
             order_sum = 0.0
             order_sum_base_qty = 0.0
@@ -1546,12 +1545,12 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                     & (po_work["vendor_id"].astype(str).str.strip() == vendor_id)
                 ].copy()
 
-                # 期間進貨只計算「前一次庫存之後，到本次庫存之前」已經到貨的量。
-                # 不可把本列自己的叫貨量誤算進期間進貨。
+                # 期間進貨：承接前一次庫存日當天已到貨的量，
+                # 但不把本次這一天自己的叫貨算進來。
                 item_po = item_po[
-                    (item_po[po_date_field] > prev_date)
+                    (item_po[po_date_field] >= prev_date)
                     & (item_po[po_date_field] < curr_date)
-                ].copy()
+                ]
 
                 order_sum = _sum_purchase_qty_in_display_unit(
                     item_po=item_po,
