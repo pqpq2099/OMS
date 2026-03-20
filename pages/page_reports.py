@@ -88,7 +88,7 @@ def _build_history_with_vendor(store_id: str, start_date: date, end_date: date):
     if hist_df.empty:
         return hist_df
 
-    if "廠商" in hist_df.columns:
+    if "廠商" in hist_df.columns and hist_df["廠商"].astype(str).str.strip().ne("").any():
         return hist_df
 
     shared_tables = _load_report_shared_tables()
@@ -155,7 +155,7 @@ def _build_analysis_with_vendor(store_id: str, start_date: date, end_date: date)
     if hist_df.empty:
         return hist_df
 
-    if "廠商" in hist_df.columns:
+    if "廠商" in hist_df.columns and hist_df["廠商"].astype(str).str.strip().ne("").any():
         return hist_df
 
     shared_tables = _load_report_shared_tables()
@@ -388,26 +388,25 @@ def page_stock_order_compare():
                 )
             )
 
-    if (
-        not items_df.empty
-        and not vendors_df.empty
-        and {"item_id", "default_vendor_id"}.issubset(items_df.columns)
-        and "vendor_id" in vendors_df.columns
-    ):
-        item_vendor = items_df[["item_id", "default_vendor_id"]].copy()
-        item_vendor["item_id"] = item_vendor["item_id"].astype(str).str.strip()
-        item_vendor["default_vendor_id"] = item_vendor["default_vendor_id"].astype(str).str.strip()
-
+    if not vendors_df.empty and "vendor_id" in vendors_df.columns:
         vendors_df = vendors_df.copy()
         vendors_df["vendor_id"] = vendors_df["vendor_id"].astype(str).str.strip()
         vendors_df["vendor_name_disp"] = vendors_df.apply(
             lambda r: _norm(r.get("vendor_name_zh", "")) or _norm(r.get("vendor_name", "")) or _norm(r.get("vendor_id", "")) or "-",
             axis=1,
         )
-
         vendor_map = dict(zip(vendors_df["vendor_id"], vendors_df["vendor_name_disp"]))
-        work = work.merge(item_vendor, on="item_id", how="left")
-        work["廠商"] = work["default_vendor_id"].astype(str).str.strip().map(vendor_map).fillna("-")
+
+        if "vendor_id" in work.columns:
+            work["廠商"] = work["vendor_id"].astype(str).str.strip().map(vendor_map).fillna("-")
+        elif not items_df.empty and {"item_id", "default_vendor_id"}.issubset(items_df.columns):
+            item_vendor = items_df[["item_id", "default_vendor_id"]].copy()
+            item_vendor["item_id"] = item_vendor["item_id"].astype(str).str.strip()
+            item_vendor["default_vendor_id"] = item_vendor["default_vendor_id"].astype(str).str.strip()
+            work = work.merge(item_vendor, on="item_id", how="left")
+            work["廠商"] = work["default_vendor_id"].astype(str).str.strip().map(vendor_map).fillna("-")
+        else:
+            work["廠商"] = "-"
     else:
         work["廠商"] = "-"
 
@@ -902,6 +901,8 @@ def page_analysis():
 
         if "這次庫存" not in work_stock.columns:
             work_stock["這次庫存"] = 0
+        if "這次庫存_base_qty" not in work_stock.columns:
+            work_stock["這次庫存_base_qty"] = 0
 
         shared_tables = _load_report_shared_tables()
         items_df = shared_tables["items"]
@@ -911,18 +912,27 @@ def page_analysis():
         work_stock["這次庫存"] = pd.to_numeric(
             work_stock["這次庫存"], errors="coerce"
         ).fillna(0)
+        work_stock["這次庫存_base_qty"] = pd.to_numeric(
+            work_stock["這次庫存_base_qty"], errors="coerce"
+        ).fillna(0)
 
         def _calc_stock_amount(row):
             item_id = _norm(row.get("item_id", ""))
-            qty = _safe_float(row.get("這次庫存", 0))
+            base_qty = _safe_float(row.get("這次庫存_base_qty", 0))
             row_date = row.get("日期")
 
-            if not item_id or qty == 0:
+            if not item_id:
                 return 0.0
 
             target_date = _parse_date(row_date)
             if target_date is None:
                 return 0.0
+
+            if base_qty == 0:
+                qty = _safe_float(row.get("這次庫存", 0))
+                if qty == 0:
+                    return 0.0
+                base_qty = qty
 
             base_unit_cost = get_base_unit_cost(
                 item_id=item_id,
@@ -935,7 +945,7 @@ def page_analysis():
             if base_unit_cost is None:
                 return 0.0
 
-            return round(qty * float(base_unit_cost), 2)
+            return round(base_qty * float(base_unit_cost), 2)
 
         work_stock["庫存總額"] = work_stock.apply(_calc_stock_amount, axis=1)
         total_stock_amount = float(

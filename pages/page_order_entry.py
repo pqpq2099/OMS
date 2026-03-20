@@ -323,7 +323,7 @@ def _delivery_date_from_weekday(record_date: date, weekday_option: str) -> date:
     """把下拉選到的星期幾，換算成最近一次「大於等於作業日」的到貨日。"""
     text = str(weekday_option or "").strip().replace("禮拜", "星期")
     if text not in WEEKDAY_OPTIONS:
-        return record_date + timedelta(days=1)
+        return record_date
 
     target_weekday = WEEKDAY_OPTIONS.index(text)
     current_weekday = record_date.weekday()
@@ -932,8 +932,9 @@ def page_order_entry():
     )
     existing_stock_map = _get_existing_stock_map(existing_ids.get("stocktake_id", ""))
     existing_order_qty_map, existing_order_unit_map = _get_existing_order_maps(existing_ids.get("po_id", ""))
+    existing_delivery_date = existing_ids.get("delivery_date")
     existing_delivery_option = _weekday_option_from_date(
-        existing_ids.get("delivery_date"),
+        existing_delivery_date,
         st.session_state.record_date + timedelta(days=1),
     )
 
@@ -956,6 +957,12 @@ def page_order_entry():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
+        latest_metrics_df = latest_metrics_df.copy()
+        if "vendor_id" in latest_metrics_df.columns:
+            latest_metrics_df["vendor_id"] = latest_metrics_df["vendor_id"].astype(str).str.strip()
+            latest_metrics_df = latest_metrics_df[
+                latest_metrics_df["vendor_id"] == str(st.session_state.vendor_id).strip()
+            ].copy()
         for _, m in latest_metrics_df.iterrows():
             latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
 
@@ -992,16 +999,21 @@ def page_order_entry():
         metric = latest_metrics_map.get(item_id, {})
         period_purchase = _safe_float(metric.get("期間進貨", 0))
         period_usage = _safe_float(metric.get("期間消耗", 0))
+        last_order_qty = _safe_float(metric.get("這次叫貨", 0))
         daily_avg = _safe_float(metric.get("日平均", 0))
         total_stock_ref = _safe_float(metric.get("庫存合計", 0))
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
-        if period_purchase > 0 or period_usage > 0:
+        # 上方參考表優先顯示「最近一次叫貨量」；
+        # 若核心報表尚未形成完整區間，也至少能看到上一筆可參考叫貨。
+        last_order_ref = last_order_qty if last_order_qty > 0 else period_purchase
+
+        if last_order_ref > 0 or period_usage > 0 or current_stock_qty > 0:
             ref_rows.append(
                 {
                     "品項名稱": item_name,
-                    "上次叫貨": round(period_purchase, 1),
+                    "上次叫貨": round(last_order_ref, 1),
                     "期間消耗": round(period_usage, 1),
                 }
             )
@@ -1549,8 +1561,8 @@ def page_order_message_detail():
         value=date.today(),
         key="order_message_detail_date",
     )
-    next_day = selected_date + timedelta(days=1)
-    prev_day = selected_date - timedelta(days=1)
+    # 叫貨明細頁一律只顯示「今天到貨」的資料。
+    # 不再提前顯示隔天到貨，也不再補抓前一天建立、今天才到貨以外的混合提醒邏輯。
 
     page_tables = _load_order_page_tables()
     po_df = page_tables["purchase_orders"]
@@ -1583,19 +1595,11 @@ def page_order_message_detail():
     po_df["po_id"] = po_df["po_id"].astype(str).str.strip()
     base_mask = po_df["store_id"] == str(store_id).strip()
 
-    same_day_pos = po_df[
+    po_today = po_df[
         base_mask
-        & (po_df["order_date_dt"] == selected_date)
-        & (po_df["delivery_date_dt"].isin([selected_date, next_day]))
+        & (po_df["delivery_date_dt"] == selected_date)
     ].copy()
 
-    reminder_pos = po_df[
-        base_mask
-        & (po_df["order_date_dt"] == prev_day)
-        & (po_df["delivery_date_dt"] == next_day)
-    ].copy()
-
-    po_today = pd.concat([same_day_pos, reminder_pos], ignore_index=True)
     po_today = po_today.drop_duplicates(subset=["po_id"], keep="first")
 
     if po_today.empty:
@@ -2051,6 +2055,12 @@ def page_daily_stock_order_record():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
+        latest_metrics_df = latest_metrics_df.copy()
+        if "vendor_id" in latest_metrics_df.columns:
+            latest_metrics_df["vendor_id"] = latest_metrics_df["vendor_id"].astype(str).str.strip()
+            latest_metrics_df = latest_metrics_df[
+                latest_metrics_df["vendor_id"] == str(vendor_id).strip()
+            ].copy()
         for _, m in latest_metrics_df.iterrows():
             latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
 
