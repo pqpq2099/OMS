@@ -956,16 +956,8 @@ def page_order_entry():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
-        latest_metrics_df = latest_metrics_df[
-            latest_metrics_df["日期_dt"].notna()
-            & (latest_metrics_df["日期_dt"].dt.date < st.session_state.record_date)
-        ].copy()
         for _, m in latest_metrics_df.iterrows():
-            metric_key = (
-                _norm(m.get("item_id", "")),
-                _norm(m.get("vendor_id", st.session_state.vendor_id)),
-            )
-            latest_metrics_map[metric_key] = m.to_dict()
+            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
 
     ref_rows = []
     item_meta = {}
@@ -997,7 +989,7 @@ def page_order_entry():
                 as_of_date=st.session_state.record_date,
             )
 
-        metric = latest_metrics_map.get((item_id, _norm(st.session_state.vendor_id)), {})
+        metric = latest_metrics_map.get(item_id, {})
         period_purchase = _safe_float(metric.get("期間進貨", 0))
         period_usage = _safe_float(metric.get("期間消耗", 0))
         daily_avg = _safe_float(metric.get("日平均", 0))
@@ -1009,7 +1001,6 @@ def page_order_entry():
             ref_rows.append(
                 {
                     "品項名稱": item_name,
-                    "單位": stock_unit or base_unit,
                     "上次叫貨": round(period_purchase, 1),
                     "期間消耗": round(period_usage, 1),
                 }
@@ -1050,7 +1041,6 @@ def page_order_entry():
         else:
             for col in ["上次叫貨", "期間消耗"]:
                 ref_df[col] = ref_df[col].map(lambda x: f"{x:.1f}")
-            ref_df = ref_df[[c for c in ["品項名稱", "單位", "上次叫貨", "期間消耗"] if c in ref_df.columns]]
             st.table(ref_df)
 
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
@@ -2061,16 +2051,8 @@ def page_daily_stock_order_record():
 
     latest_metrics_map = {}
     if not latest_metrics_df.empty:
-        latest_metrics_df = latest_metrics_df[
-            latest_metrics_df["日期_dt"].notna()
-            & (latest_metrics_df["日期_dt"].dt.date < selected_date)
-        ].copy()
         for _, m in latest_metrics_df.iterrows():
-            metric_key = (
-                _norm(m.get("item_id", "")),
-                _norm(m.get("vendor_id", vendor_id)),
-            )
-            latest_metrics_map[metric_key] = m.to_dict()
+            latest_metrics_map[_norm(m.get("item_id", ""))] = m.to_dict()
 
     st.caption(f"{store_name}｜{selected_vendor_label}｜最近一筆紀錄")
 
@@ -2089,7 +2071,7 @@ def page_daily_stock_order_record():
         stock_unit_default = _norm(row.get("default_stock_unit", "")) or base_unit
         order_unit_default = _norm(row.get("default_order_unit", "")) or base_unit
 
-        metric = latest_metrics_map.get((item_id, vendor_id), {})
+        metric = latest_metrics_map.get(item_id, {})
         total_stock_ref = _safe_float(metric.get("庫存合計", 0))
         daily_avg = _safe_float(metric.get("日平均", 0))
         suggest_qty = round(daily_avg * 1.5, 1)
