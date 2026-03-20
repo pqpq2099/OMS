@@ -1526,10 +1526,10 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             )
             current_order_base_qty = _safe_float(item_po_same_day.get("order_base_qty_num", 0).sum())
 
-        # 第一次紀錄：期間進貨固定為 0，不把本次叫貨算進來
+        # 第一次紀錄：沒有前次庫存時，仍保留本次叫貨參考
         if prev_date is None:
-            order_sum = 0.0
-            order_sum_base_qty = 0.0
+            order_sum = current_order_qty
+            order_sum_base_qty = current_order_base_qty
             total_stock = round(prev_qty + order_sum, 1)
             total_stock_base_qty = round(prev_base_qty + order_sum_base_qty, 4)
             usage = 0.0
@@ -1545,11 +1545,17 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                     & (po_work["vendor_id"].astype(str).str.strip() == vendor_id)
                 ].copy()
 
-                # 期間進貨：承接前一次庫存日當天已到貨的量，
-                # 但不把本次這一天自己的叫貨算進來。
+                # ====================================================
+                # 雙日期模型（最終版）
+                # 1. 庫存以 stocktake_date（盤點日）為主
+                # 2. 期間進貨以 delivery_date（實際到貨日）為主
+                # 3. 區間定義：大於前一次盤點日，且小於等於本次盤點日
+                #    例：03-16 叫貨、03-17 到貨，則 03-17 這列要吃到這筆進貨
+                # 4. 本次叫貨另由 current_order_qty 處理，不要混進期間進貨
+                # ====================================================
                 item_po = item_po[
-                    (item_po[po_date_field] >= prev_date)
-                    & (item_po[po_date_field] < curr_date)
+                    (item_po[po_date_field] > prev_date)
+                    & (item_po[po_date_field] <= curr_date)
                 ]
 
                 order_sum = _sum_purchase_qty_in_display_unit(
