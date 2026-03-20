@@ -1404,14 +1404,18 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         return out
 
     po_work = pd.DataFrame()
-    po_date_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
-    if not po_df.empty and "store_id" in po_df.columns and po_date_field in po_df.columns:
+    delivery_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
+    order_field = "order_date_dt" if "order_date_dt" in po_df.columns else delivery_field
+    if not po_df.empty and "store_id" in po_df.columns and delivery_field in po_df.columns:
         po_work = po_df[
             po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
         ].copy()
-        po_work = po_work[po_work[po_date_field].notna()].copy()
+        po_work = po_work[po_work[delivery_field].notna()].copy()
+        if order_field not in po_work.columns:
+            po_work[order_field] = po_work[delivery_field]
 
     result_rows = []
+
     # ========================================================
     # 同日同廠商同品項，只保留最後一張盤點單
     # 避免同一天重複建立 ST_000002 / ST_000003 時，報表重複顯示
@@ -1445,36 +1449,6 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         keep="last",
     ).copy()
 
-    # 同日＋同廠商＋同品項，只保留最後一張盤點單
-    if "stocktake_updated_at" not in target_stock.columns:
-        target_stock["stocktake_updated_at"] = ""
-    if "stocktake_created_at" not in target_stock.columns:
-        target_stock["stocktake_created_at"] = ""
-    
-    target_stock["__sort_updated"] = pd.to_datetime(
-        target_stock["stocktake_updated_at"], errors="coerce"
-    )
-    target_stock["__sort_created"] = pd.to_datetime(
-        target_stock["stocktake_created_at"], errors="coerce"
-    )
-    
-    target_stock = target_stock.sort_values(
-        [
-            "stocktake_date_dt",
-            "vendor_id",
-            "item_id",
-            "__sort_updated",
-            "__sort_created",
-            "stocktake_id",
-        ],
-        ascending=[True, True, True, True, True, True],
-    ).copy()
-    
-    target_stock = target_stock.drop_duplicates(
-        subset=["stocktake_date_dt", "vendor_id", "item_id"],
-        keep="last",
-    ).copy()
-    
     target_stock = target_stock.sort_values(
         ["stocktake_date_dt", "display_order_num", "item_name_disp"],
         ascending=[True, True, True]
@@ -1510,26 +1484,31 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
         current_order_qty = 0.0
         current_order_base_qty = 0.0
-        if not po_work.empty:
-            item_po_same_day = po_work[
+        if not po_work.empty and order_field in po_work.columns:
+            item_po_same_key_date = po_work[
                 (po_work["item_id"].astype(str).str.strip() == item_id)
                 & (po_work["vendor_id"].astype(str).str.strip() == vendor_id)
-                & (po_work[po_date_field] == curr_date)
+                & (po_work[order_field] == curr_date)
             ].copy()
 
             current_order_qty = _sum_purchase_qty_in_display_unit(
-                item_po=item_po_same_day,
+                item_po=item_po_same_key_date,
                 item_id=item_id,
                 display_unit=unit,
                 conversions_df=conversions_df,
                 curr_date=curr_date,
             )
-            current_order_base_qty = _safe_float(item_po_same_day.get("order_base_qty_num", 0).sum())
+            current_order_base_qty = _safe_float(item_po_same_key_date.get("order_base_qty_num", 0).sum())
 
-        # 第一次紀錄：沒有前次庫存時，仍保留本次叫貨參考
+        # ====================================================
+        # 核心規則：
+        # 1. 第一次庫存的「期間進貨」固定為 0，不可帶入本次叫貨
+        # 2. 期間進貨看的是「前一次庫存之後，到這次庫存日為止」實際到貨量
+        # 3. 這次叫貨顯示的是本次 key_date 對應建立的叫貨量（order_date）
+        # ====================================================
         if prev_date is None:
-            order_sum = current_order_qty
-            order_sum_base_qty = current_order_base_qty
+            order_sum = 0.0
+            order_sum_base_qty = 0.0
             total_stock = round(prev_qty + order_sum, 1)
             total_stock_base_qty = round(prev_base_qty + order_sum_base_qty, 4)
             usage = 0.0
@@ -1546,9 +1525,9 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 ].copy()
 
                 item_po = item_po[
-                    (item_po[po_date_field] >= prev_date)
-                    & (item_po[po_date_field] <= curr_date)
-                ]
+                    (item_po[delivery_field] > prev_date)
+                    & (item_po[delivery_field] <= curr_date)
+                ].copy()
 
                 order_sum = _sum_purchase_qty_in_display_unit(
                     item_po=item_po,
@@ -1593,6 +1572,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
     out = pd.DataFrame(result_rows)
     if out.empty:
+        _session_df_cache_set(cache_key, signature, out)
         return out
 
     out["日期_dt"] = pd.to_datetime(out["日期"], errors="coerce")
@@ -1600,7 +1580,6 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
     out = out.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True]).reset_index(drop=True)
     _session_df_cache_set(cache_key, signature, out)
     return out
-
 
 def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFrame:
     signature = (
