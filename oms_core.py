@@ -1404,11 +1404,12 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         return out
 
     po_work = pd.DataFrame()
-    if not po_df.empty and "store_id" in po_df.columns and "order_date_dt" in po_df.columns:
+    po_date_field = "delivery_date_dt" if (not po_df.empty and "delivery_date_dt" in po_df.columns) else "order_date_dt"
+    if not po_df.empty and "store_id" in po_df.columns and po_date_field in po_df.columns:
         po_work = po_df[
             po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
         ].copy()
-        po_work = po_work[po_work["order_date_dt"].notna()].copy()
+        po_work = po_work[po_work[po_date_field].notna()].copy()
 
     result_rows = []
     # ========================================================
@@ -1481,13 +1482,15 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
 
     for _, curr_row in target_stock.iterrows():
         item_id = _norm(curr_row.get("item_id", ""))
+        vendor_id = _norm(curr_row.get("vendor_id", ""))
         curr_date = curr_row.get("stocktake_date_dt")
         item_name = _norm(curr_row.get("item_name_disp", "")) or "未指定"
         display_order_num = _safe_float(curr_row.get("display_order_num", 999999))
         unit = _norm(curr_row.get("display_stock_unit", "")) or _norm(curr_row.get("base_unit", ""))
 
         item_stock_all = stock_work[
-            stock_work["item_id"].astype(str).str.strip() == item_id
+            (stock_work["item_id"].astype(str).str.strip() == item_id)
+            & (stock_work["vendor_id"].astype(str).str.strip() == vendor_id)
         ].copy()
 
         prev_stock = item_stock_all[item_stock_all["stocktake_date_dt"] < curr_date].sort_values("stocktake_date_dt")
@@ -1505,6 +1508,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         if not po_work.empty:
             item_po_same_day = po_work[
                 (po_work["item_id"].astype(str).str.strip() == item_id)
+                & (po_work["vendor_id"].astype(str).str.strip() == vendor_id)
                 & (po_work["order_date_dt"] == curr_date)
             ].copy()
 
@@ -1527,12 +1531,13 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
             order_sum = 0.0
             if not po_work.empty:
                 item_po = po_work[
-                    po_work["item_id"].astype(str).str.strip() == item_id
+                    (po_work["item_id"].astype(str).str.strip() == item_id)
+                    & (po_work["vendor_id"].astype(str).str.strip() == vendor_id)
                 ].copy()
 
                 item_po = item_po[
-                    (item_po["order_date_dt"] > prev_date)
-                    & (item_po["order_date_dt"] <= curr_date)
+                    (item_po[po_date_field] > prev_date)
+                    & (item_po[po_date_field] <= curr_date)
                 ]
 
                 order_sum = _sum_purchase_qty_in_display_unit(
@@ -1561,6 +1566,8 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 "日平均": daily_avg,
                 "天數": days,
                 "item_id": item_id,
+                "vendor_id": vendor_id,
+                "單位": unit,
                 "display_order_num": display_order_num,
             }
         )
@@ -1600,7 +1607,10 @@ def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFra
 
     work = hist_df.copy()
     work = work.sort_values(["日期_dt", "display_order_num", "品項"], ascending=[False, True, True])
-    latest = work.groupby("item_id", as_index=False).head(1).copy()
+    group_cols = [c for c in ["item_id", "vendor_id"] if c in work.columns]
+    if not group_cols:
+        group_cols = ["item_id"]
+    latest = work.groupby(group_cols, as_index=False).head(1).copy()
     latest = latest.sort_values(["display_order_num", "品項"], ascending=[True, True]).reset_index(drop=True)
     _session_df_cache_set(cache_key, signature, latest)
     return latest
