@@ -932,9 +932,10 @@ def page_order_entry():
     )
     existing_stock_map = _get_existing_stock_map(existing_ids.get("stocktake_id", ""))
     existing_order_qty_map, existing_order_unit_map = _get_existing_order_maps(existing_ids.get("po_id", ""))
+    existing_delivery_date = existing_ids.get("delivery_date")
     existing_delivery_option = _weekday_option_from_date(
-        existing_ids.get("delivery_date"),
-        st.session_state.record_date,
+        existing_delivery_date,
+        st.session_state.record_date + timedelta(days=1),
     )
 
     is_edit_mode = bool(existing_ids.get("stocktake_id") or existing_ids.get("po_id"))
@@ -1137,7 +1138,7 @@ def page_order_entry():
         selected_delivery_weekday = st.selectbox(
             "到貨星期",
             options=WEEKDAY_OPTIONS,
-            index=WEEKDAY_OPTIONS.index(existing_delivery_option) if existing_delivery_option in WEEKDAY_OPTIONS else ((st.session_state.record_date.weekday() + 1) % 7),
+            index=WEEKDAY_OPTIONS.index(existing_delivery_option) if existing_delivery_option in WEEKDAY_OPTIONS else 0,
             key="delivery_weekday_option",
         )
         delivery_date = _delivery_date_from_weekday(st.session_state.record_date, selected_delivery_weekday)
