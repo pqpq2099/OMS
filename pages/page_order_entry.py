@@ -1137,7 +1137,7 @@ def page_order_entry():
         selected_delivery_weekday = st.selectbox(
             "到貨星期",
             options=WEEKDAY_OPTIONS,
-            index=WEEKDAY_OPTIONS.index(existing_delivery_option) if existing_delivery_option in WEEKDAY_OPTIONS else 0,
+            index=WEEKDAY_OPTIONS.index(existing_delivery_option) if existing_delivery_option in WEEKDAY_OPTIONS else ((st.session_state.record_date.weekday() + 1) % 7),
             key="delivery_weekday_option",
         )
         delivery_date = _delivery_date_from_weekday(st.session_state.record_date, selected_delivery_weekday)
