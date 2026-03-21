@@ -54,7 +54,7 @@ from oms_core import (
     get_table_versions,
     read_table,
 )
-from utils.utils_units import convert_to_base
+from utils.utils_units import convert_to_base, convert_unit
 
 
 _ORDER_PAGE_TABLES = (
@@ -304,6 +304,80 @@ def _build_new_stock_map(
     return result
 
 
+def _convert_metric_base_to_stock_display_qty(
+    *,
+    item_id: str,
+    qty: float,
+    stock_unit: str,
+    base_unit: str,
+    conversions_df: pd.DataFrame,
+    as_of_date: date,
+) -> float:
+    qty = _safe_float(qty, 0)
+    item_id = _norm(item_id)
+    stock_unit = _norm(stock_unit)
+    base_unit = _norm(base_unit)
+
+    if not item_id or not stock_unit:
+        return round(qty, 1)
+
+    if qty == 0 or stock_unit == base_unit or not base_unit:
+        return round(qty, 1)
+
+    try:
+        converted = convert_unit(
+            item_id=item_id,
+            qty=qty,
+            from_unit=base_unit,
+            to_unit=stock_unit,
+            conversions_df=conversions_df,
+            as_of_date=as_of_date,
+        )
+        return round(converted, 1)
+    except Exception:
+        return round(qty, 1)
+
+
+def _convert_metric_base_to_order_display_qty(
+    *,
+    item_id: str,
+    qty: float,
+    order_unit: str,
+    base_unit: str,
+    conversions_df: pd.DataFrame,
+    as_of_date: date,
+) -> float:
+    qty = _safe_float(qty, 0)
+    item_id = _norm(item_id)
+    order_unit = _norm(order_unit)
+    base_unit = _norm(base_unit)
+
+    if not item_id or not order_unit:
+        return round(qty, 1)
+
+    if qty == 0 or order_unit == base_unit or not base_unit:
+        return round(qty, 1)
+
+    try:
+        converted = convert_unit(
+            item_id=item_id,
+            qty=qty,
+            from_unit=base_unit,
+            to_unit=order_unit,
+            conversions_df=conversions_df,
+            as_of_date=as_of_date,
+        )
+        return round(converted, 1)
+    except Exception:
+        return round(qty, 1)
+
+
+def _fmt_qty_with_unit(qty: float, unit: str) -> str:
+    qty = _safe_float(qty, 0)
+    unit = _norm(unit)
+    if unit:
+        return f"{qty:g}{unit}"
+    return f"{qty:g}"
 
 
 
@@ -1005,16 +1079,49 @@ def page_order_entry():
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
+        total_stock_display = _convert_metric_base_to_stock_display_qty(
+            item_id=item_id,
+            qty=total_stock_ref,
+            stock_unit=stock_unit,
+            base_unit=base_unit,
+            conversions_df=conversions_df,
+            as_of_date=st.session_state.record_date,
+        )
+        suggest_display = _convert_metric_base_to_stock_display_qty(
+            item_id=item_id,
+            qty=suggest_qty,
+            stock_unit=stock_unit,
+            base_unit=base_unit,
+            conversions_df=conversions_df,
+            as_of_date=st.session_state.record_date,
+        )
+        period_usage_display = _convert_metric_base_to_stock_display_qty(
+            item_id=item_id,
+            qty=period_usage,
+            stock_unit=stock_unit,
+            base_unit=base_unit,
+            conversions_df=conversions_df,
+            as_of_date=st.session_state.record_date,
+        )
+
         # 上方參考表優先顯示「最近一次叫貨量」；
         # 若核心報表尚未形成完整區間，也至少能看到上一筆可參考叫貨。
         last_order_ref = last_order_qty if last_order_qty > 0 else period_purchase
+        last_order_display = _convert_metric_base_to_order_display_qty(
+            item_id=item_id,
+            qty=last_order_ref,
+            order_unit=order_unit,
+            base_unit=base_unit,
+            conversions_df=conversions_df,
+            as_of_date=st.session_state.record_date,
+        )
 
         if last_order_ref > 0 or period_usage > 0 or current_stock_qty > 0:
             ref_rows.append(
                 {
                     "品項名稱": item_name,
-                    "上次叫貨": round(last_order_ref, 1),
-                    "期間消耗": round(period_usage, 1),
+                    "上次叫貨": _fmt_qty_with_unit(last_order_display, order_unit),
+                    "期間消耗": _fmt_qty_with_unit(period_usage_display, stock_unit),
                 }
             )
 
@@ -1036,8 +1143,10 @@ def page_order_entry():
             "price": round(price, 1),
             "current_stock_qty": round(current_stock_qty, 1),
             "total_stock_ref": round(total_stock_ref, 1),
+            "total_stock_display": round(total_stock_display, 1),
             "daily_avg": round(daily_avg, 1),
             "suggest_qty": suggest_qty,
+            "suggest_display": round(suggest_display, 1),
             "status_hint": status_hint,
             "existing_order_qty": round(_safe_float(existing_order_qty_map.get(item_id, 0)), 1),
             "existing_order_unit": _norm(existing_order_unit_map.get(item_id, "")) or order_unit,
@@ -1051,8 +1160,6 @@ def page_order_entry():
         if ref_df is None or ref_df.empty:
             st.caption("目前沒有可參考的資料")
         else:
-            for col in ["上次叫貨", "期間消耗"]:
-                ref_df[col] = ref_df[col].map(lambda x: f"{x:.1f}")
             st.table(ref_df)
 
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
@@ -1075,7 +1182,9 @@ def page_order_entry():
             order_unit = meta["order_unit"]
             current_stock_qty = _safe_float(meta["current_stock_qty"])
             total_stock_ref = _safe_float(meta["total_stock_ref"])
+            total_stock_display = _safe_float(meta.get("total_stock_display", total_stock_ref))
             suggest_qty = _safe_float(meta["suggest_qty"])
+            suggest_display = _safe_float(meta.get("suggest_display", suggest_qty))
             status_hint = _norm(meta["status_hint"])
 
             c1, c2, c3 = st.columns([6, 1, 1])
@@ -1084,7 +1193,7 @@ def page_order_entry():
                 st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
                 tail = f"　{status_hint}" if status_hint else ""
                 st.markdown(
-                f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
+                f"<div class='order-meta'>總庫存：{_fmt_qty_with_unit(total_stock_display, stock_unit)}　建議量：{_fmt_qty_with_unit(suggest_display, stock_unit)}{tail}</div>",
                 unsafe_allow_html=True,
             )
             with c2:
@@ -2086,6 +2195,22 @@ def page_daily_stock_order_record():
         daily_avg = _safe_float(metric.get("日平均", 0))
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _norm(_status_hint(total_stock_ref, daily_avg, suggest_qty))
+        total_stock_display = _convert_metric_base_to_stock_display_qty(
+            item_id=item_id,
+            qty=total_stock_ref,
+            stock_unit=stock_unit_default,
+            base_unit=base_unit,
+            conversions_df=page_tables["unit_conversions"] if "unit_conversions" in page_tables else pd.DataFrame(),
+            as_of_date=selected_date,
+        )
+        suggest_display = _convert_metric_base_to_stock_display_qty(
+            item_id=item_id,
+            qty=suggest_qty,
+            stock_unit=stock_unit_default,
+            base_unit=base_unit,
+            conversions_df=page_tables["unit_conversions"] if "unit_conversions" in page_tables else pd.DataFrame(),
+            as_of_date=selected_date,
+        )
 
         stock_info = stocktake_map.get(item_id, {})
         order_info = order_map.get(item_id, {})
@@ -2102,7 +2227,7 @@ def page_daily_stock_order_record():
             st.write(f"<b>{item_name}</b>", unsafe_allow_html=True)
             tail = f"　{status_hint}" if status_hint else ""
             st.markdown(
-                f"<div class='order-meta'>總庫存：{total_stock_ref:g}　建議量：{suggest_qty:g}{tail}</div>",
+                f"<div class='order-meta'>總庫存：{_fmt_qty_with_unit(total_stock_display, stock_unit_default)}　建議量：{_fmt_qty_with_unit(suggest_display, stock_unit_default)}{tail}</div>",
                 unsafe_allow_html=True,
             )
 
