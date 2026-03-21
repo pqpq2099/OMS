@@ -23,6 +23,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
+from utils.utils_units import convert_unit, get_base_unit
 from oms_core import (
     PLOTLY_CONFIG,
     _build_inventory_history_summary_df,
@@ -309,6 +310,47 @@ def _format_mmdd_column(df: pd.DataFrame, col: str) -> pd.DataFrame:
     return out
 
 
+def _convert_compare_qty_to_display_unit(
+    *,
+    qty: float,
+    item_id: str,
+    target_unit: str,
+    items_df: pd.DataFrame,
+    conversions_df: pd.DataFrame,
+    as_of_date: date,
+) -> float:
+    """
+    將對照表中的數量統一轉成指定顯示單位。
+    規則：
+    1. 對照表核心數量優先視為 base_qty
+    2. target_unit 若為空，回傳原值
+    3. 換算失敗時，保守回傳原值，避免整頁爆掉
+    """
+    qty = _safe_float(qty, 0)
+    item_id = _norm(item_id)
+    target_unit = _norm(target_unit)
+
+    if qty == 0 or not item_id or not target_unit:
+        return round(qty, 1)
+
+    try:
+        base_unit = get_base_unit(items_df, item_id)
+        if target_unit == base_unit:
+            return round(qty, 1)
+
+        converted = convert_unit(
+            item_id=item_id,
+            qty=qty,
+            from_unit=base_unit,
+            to_unit=target_unit,
+            conversions_df=conversions_df,
+            as_of_date=as_of_date,
+        )
+        return round(converted, 1)
+    except Exception:
+        return round(qty, 1)
+
+
 
 # ============================================================
 # [R0] 庫存＋叫貨對照表（極簡版）
@@ -364,6 +406,7 @@ def page_stock_order_compare():
 
     items_df = read_table("items")
     vendors_df = read_table("vendors")
+    conversions_df = _get_active_df(read_table("unit_conversions"))
 
     stock_unit_map = {}
     order_unit_map = {}
@@ -424,9 +467,39 @@ def page_stock_order_compare():
     work["庫存單位"] = work["item_id"].astype(str).str.strip().map(stock_unit_map).fillna("")
     work["叫貨單位"] = work["item_id"].astype(str).str.strip().map(order_unit_map).fillna("")
 
+    work["這次庫存_顯示值"] = work.apply(
+        lambda r: _convert_compare_qty_to_display_unit(
+            qty=r.get("這次庫存", 0),
+            item_id=r.get("item_id", ""),
+            target_unit=r.get("庫存單位", ""),
+            items_df=items_df,
+            conversions_df=conversions_df,
+            as_of_date=selected_date,
+        ),
+        axis=1,
+    )
+
+    work["這次叫貨_顯示值"] = work.apply(
+        lambda r: _convert_compare_qty_to_display_unit(
+            qty=r.get("這次叫貨", 0),
+            item_id=r.get("item_id", ""),
+            target_unit=r.get("叫貨單位", ""),
+            items_df=items_df,
+            conversions_df=conversions_df,
+            as_of_date=selected_date,
+        ),
+        axis=1,
+    )
+
     item_col = "品項" if "品項" in work.columns else "item_id"
-    preview = work[["廠商", item_col, "這次庫存", "庫存單位", "這次叫貨", "叫貨單位"]].copy()
-    preview = preview.rename(columns={item_col: "品項"})
+    preview = work[["廠商", item_col, "這次庫存_顯示值", "庫存單位", "這次叫貨_顯示值", "叫貨單位"]].copy()
+    preview = preview.rename(
+        columns={
+            item_col: "品項",
+            "這次庫存_顯示值": "這次庫存",
+            "這次叫貨_顯示值": "這次叫貨",
+        }
+    )
 
     preview["這次庫存"] = preview.apply(
         lambda r: f"{_safe_float(r['這次庫存']):g} {str(r['庫存單位']).strip()}".strip(),
