@@ -18,7 +18,7 @@ TEXT = {
     "full_report": "完整表格",
 
     # Reports
-    "title_stock_order_compare": "庫存＋叫貨對照表",
+    "title_stock_order_compare": "庫存 + 叫貨對照表",
     "title_view_history": "歷史叫貨紀錄",
     "title_export": "資料匯出",
     "title_analysis": "進銷存分析",

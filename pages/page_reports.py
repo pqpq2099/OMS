@@ -84,8 +84,8 @@ def page_view_history():
     c_h_date1, c_h_date2 = st.columns(2)
     h_start = c_h_date1.date_input(t("start_date"), value=date.today() - timedelta(days=30), key="hist_start_date")
     h_end = c_h_date2.date_input(t("end_date"), value=date.today(), key="hist_end_date")
-    display_mode = _display_mode_selector("hist_display_mode")
     shared_tables = load_report_shared_tables()
+    display_mode = DISPLAY_MODE_MOBILE
     base_model = build_history_page_view_model(st.session_state.store_id, h_start, h_end, ALL_VENDORS, ALL_ITEMS, display_mode, shared_tables)
     if base_model["hist_df"].empty:
         st.info(t("history_no_record"))
@@ -167,17 +167,17 @@ def page_analysis():
     c_date1, c_date2 = st.columns(2)
     start = c_date1.date_input(t("start_date"), value=date.today() - timedelta(days=14), key="ana_start")
     end = c_date2.date_input(t("end_date"), value=date.today(), key="ana_end")
-    display_mode = _display_mode_selector("analysis_display_mode")
     shared_tables = load_report_shared_tables()
-    base_model = build_analysis_page_view_model(st.session_state.store_id, start, end, ALL_VENDORS, display_mode, shared_tables)
-    if base_model["hist_df"].empty and base_model["purchase_filt"].empty:
+    preview_model = build_analysis_page_view_model(st.session_state.store_id, start, end, ALL_VENDORS, DISPLAY_MODE_MOBILE, shared_tables)
+    if preview_model["hist_df"].empty and preview_model["purchase_filt"].empty:
         st.warning(t("analysis_no_records"))
         if st.button(f"⬅️ {t('back_to_menu')}", use_container_width=True, key="back_from_analysis_no_data"):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
     st.markdown("---")
-    selected_vendor = st.selectbox(f"🏢 {t('select_vendor')}", options=base_model["vendor_options"], index=0, key="ana_vendor_filter")
+    selected_vendor = st.selectbox(f"🏢 {t('select_vendor')}", options=preview_model["vendor_options"], index=0, key="ana_vendor_filter")
+    display_mode = _display_mode_selector("analysis_display_mode")
     model = build_analysis_page_view_model(st.session_state.store_id, start, end, selected_vendor, display_mode, shared_tables)
     st.markdown("---")
     c_amt1, c_amt2 = st.columns(2)
