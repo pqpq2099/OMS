@@ -15,7 +15,7 @@ from pages.page_order_entry import _fmt_qty_with_unit
 
 
 WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
-WEEKDAY_OPTIONS = [f"星期{x}" for x in WEEKDAY_LABELS]
+WEEKDAY_OPTIONS = [f"週{x}" for x in WEEKDAY_LABELS]
 
 
 def page_select_store():
@@ -39,7 +39,7 @@ def page_select_store():
     for _, row in stores_df.iterrows():
         label = row["store_label"]
         store_id = str(row.get("store_id", "")).strip()
-        if st.button(label, key=f"store_{store_id}", use_container_width=True):
+        if st.button(f"📍 {label}", key=f"store_{store_id}", use_container_width=True):
             st.session_state.store_id = store_id
             st.session_state.store_name = label
             st.session_state.vendor_id = ""
@@ -56,7 +56,7 @@ def page_select_vendor():
     st.title(f"🏢 {st.session_state.store_name}")
 
     selected_record_date = st.date_input(
-        "作業日期",
+        "📅 作業日期",
         value=st.session_state.get("record_date", date.today()),
         key="select_vendor_record_date",
     )
@@ -84,7 +84,7 @@ def page_select_vendor():
         left = vendors.iloc[i]
         with cols[0]:
             if st.button(
-                f"{left['vendor_label']}",
+                f"📦 {left['vendor_label']}",
                 key=f"vendor_{left.get('vendor_id', '')}",
                 use_container_width=True,
             ):
@@ -97,7 +97,7 @@ def page_select_vendor():
             right = vendors.iloc[i + 1]
             with cols[1]:
                 if st.button(
-                    f"{right['vendor_label']}",
+                    f"📦 {right['vendor_label']}",
                     key=f"vendor_{right.get('vendor_id', '')}",
                     use_container_width=True,
                 ):
@@ -108,11 +108,11 @@ def page_select_vendor():
 
     st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
-    if st.button("🧾 產生今日進貨明細", type="primary", use_container_width=True):
+    if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.step = "order_message_detail"
         st.rerun()
 
-    if st.button("📈 期間進銷存分析", use_container_width=True):
+    if st.button("📊 期間進銷存分析", use_container_width=True):
         st.session_state.step = "analysis"
         st.rerun()
 
@@ -216,14 +216,14 @@ def page_order():
     vendor_items = view_model["vendor_items"]
     if vendor_items.empty:
         st.info("目前該廠商沒有可叫貨品項。")
-        if st.button("⬅️ 返回功能選單", use_container_width=True):
+        if st.button("返回廠商選擇", use_container_width=True):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
 
     existing_ids = view_model["existing_ids"]
     if view_model["is_edit_mode"]:
-        st.info("ℹ️ 這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
+        st.info("這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
         edit_lines = [f"作業日期：{st.session_state.record_date}"]
         if existing_ids.get("stocktake_id"):
             edit_lines.append(f"盤點單：{existing_ids.get('stocktake_id')}")
@@ -279,9 +279,8 @@ def page_order():
             with c1:
                 st.write(f"<b>{meta['item_name']}</b>", unsafe_allow_html=True)
                 info_parts = [
-                    f"上次叫貨 {_fmt_qty_with_unit(meta['last_order_display'], meta['order_unit'])}",
-                    f"日平均 {meta['daily_avg']:g}{meta['stock_unit']}",
-                    f"建議 {_fmt_qty_with_unit(meta['suggest_display'], meta['stock_unit'])}",
+                    f"總庫存：{_fmt_qty_with_unit(meta['current_stock_qty'], meta['stock_unit'])}",
+                    f"建議量：{_fmt_qty_with_unit(meta['suggest_display'], meta['stock_unit'])}",
                 ]
                 if meta["status_hint"]:
                     info_parts.append(meta["status_hint"])
@@ -307,7 +306,7 @@ def page_order():
 
             with c3:
                 order_input = st.number_input(
-                    "叫貨",
+                    "進",
                     min_value=0.0,
                     step=0.1,
                     format="%g",
@@ -316,7 +315,7 @@ def page_order():
                     label_visibility="collapsed",
                 )
                 selected_order_unit = st.selectbox(
-                    "叫貨單位",
+                    "進貨單位",
                     options=meta["orderable_unit_options"],
                     index=meta["orderable_unit_options"].index(meta["existing_order_unit"])
                     if meta["existing_order_unit"] in meta["orderable_unit_options"]
@@ -359,7 +358,7 @@ def page_order():
             f"本次到貨日：{delivery_date.strftime('%Y-%m-%d')}（{WEEKDAY_OPTIONS[delivery_date.weekday()]}）"
         )
 
-        submitted = st.form_submit_button("提交叫貨", use_container_width=True)
+        submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
         if submitted:
             errors = logic_order.validate_order_submission(
