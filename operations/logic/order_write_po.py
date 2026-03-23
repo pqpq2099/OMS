@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from oms_core import _norm, _safe_float, get_base_unit_cost
 from operations.logic.order_errors import UserDisplayError

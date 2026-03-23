@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from operations.logic.order_decision import (
     build_item_decision_data,

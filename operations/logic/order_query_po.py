@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from oms_core import _norm, _safe_float, read_table
 

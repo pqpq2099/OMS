@@ -1,4 +1,4 @@
-﻿class UserDisplayError(Exception):
+class UserDisplayError(Exception):
     pass
 
 
