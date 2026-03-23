@@ -26,10 +26,10 @@ from oms_core import (
     get_table_versions,
 )
 
-from pages.page_order_entry import (
+from operations.pages.page_order import (
     page_select_store,
     page_select_vendor,
-    page_order_entry,
+    page_order,
     page_order_message_detail,
     page_daily_stock_order_record,
 )
@@ -881,7 +881,7 @@ def router():
         page_select_vendor()
 
     elif step == "order_entry":
-        page_order_entry()
+        page_order()
 
     elif step == "daily_stock_order_record":
         page_daily_stock_order_record()
