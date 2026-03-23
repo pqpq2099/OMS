@@ -15,7 +15,7 @@ from pages.page_order_entry import _fmt_qty_with_unit
 
 
 WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
-WEEKDAY_OPTIONS = [f"週{x}" for x in WEEKDAY_LABELS]
+WEEKDAY_OPTIONS = [f"星期{x}" for x in WEEKDAY_LABELS]
 
 
 def page_select_store():
@@ -23,7 +23,7 @@ def page_select_store():
         "<style>.block-container { padding-top: 4rem !important; }</style>",
         unsafe_allow_html=True,
     )
-    st.title("選擇門市")
+    st.title("🏠 選擇分店")
 
     view_model = logic_order.get_store_selection_view_model()
     stores_df = view_model["stores_df"]
@@ -33,13 +33,13 @@ def page_select_store():
         return
 
     if stores_df.empty:
-        st.warning("目前沒有可選門市資料。")
+        st.warning("目前沒有可選分店資料。")
         return
 
     for _, row in stores_df.iterrows():
         label = row["store_label"]
         store_id = str(row.get("store_id", "")).strip()
-        if st.button(f"進入 {label}", key=f"store_{store_id}", use_container_width=True):
+        if st.button(label, key=f"store_{store_id}", use_container_width=True):
             st.session_state.store_id = store_id
             st.session_state.store_name = label
             st.session_state.vendor_id = ""
@@ -53,7 +53,7 @@ def page_select_vendor():
         "<style>.block-container { padding-top: 4rem !important; }</style>",
         unsafe_allow_html=True,
     )
-    st.title(f"門市 {st.session_state.store_name}")
+    st.title(f"🏢 {st.session_state.store_name}")
 
     selected_record_date = st.date_input(
         "作業日期",
@@ -84,7 +84,7 @@ def page_select_vendor():
         left = vendors.iloc[i]
         with cols[0]:
             if st.button(
-                f"選擇 {left['vendor_label']}",
+                f"{left['vendor_label']}",
                 key=f"vendor_{left.get('vendor_id', '')}",
                 use_container_width=True,
             ):
@@ -97,7 +97,7 @@ def page_select_vendor():
             right = vendors.iloc[i + 1]
             with cols[1]:
                 if st.button(
-                    f"選擇 {right['vendor_label']}",
+                    f"{right['vendor_label']}",
                     key=f"vendor_{right.get('vendor_id', '')}",
                     use_container_width=True,
                 ):
@@ -106,21 +106,21 @@ def page_select_vendor():
                     st.session_state.step = "order_entry"
                     st.rerun()
 
-    st.write("<b>其他功能</b>", unsafe_allow_html=True)
+    st.write("<b>📊 報表與分析中心</b>", unsafe_allow_html=True)
 
-    if st.button("查看 LINE 訊息明細", type="primary", use_container_width=True):
+    if st.button("🧾 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.step = "order_message_detail"
         st.rerun()
 
-    if st.button("查看分析頁", use_container_width=True):
+    if st.button("📈 期間進銷存分析", use_container_width=True):
         st.session_state.step = "analysis"
         st.rerun()
 
-    if st.button("查看每日盤點/叫貨紀錄", use_container_width=True):
+    if st.button("📜 查看歷史叫貨紀錄", use_container_width=True):
         st.session_state.step = "view_history"
         st.rerun()
 
-    if st.button("返回門市選擇", use_container_width=True):
+    if st.button("⬅️ 返回分店列表", use_container_width=True):
         st.session_state.step = "select_store"
         st.rerun()
 
@@ -203,7 +203,7 @@ def page_order():
         unsafe_allow_html=True,
     )
 
-    st.title(f"叫貨 {st.session_state.vendor_name}")
+    st.title(f"📝 {st.session_state.vendor_name}")
 
     if view_model["items_df_empty"]:
         st.warning("目前沒有品項資料。")
@@ -216,14 +216,14 @@ def page_order():
     vendor_items = view_model["vendor_items"]
     if vendor_items.empty:
         st.info("目前該廠商沒有可叫貨品項。")
-        if st.button("返回廠商選擇", use_container_width=True):
+        if st.button("⬅️ 返回功能選單", use_container_width=True):
             st.session_state.step = "select_vendor"
             st.rerun()
         return
 
     existing_ids = view_model["existing_ids"]
     if view_model["is_edit_mode"]:
-        st.info("目前為編輯模式，將沿用既有單據資料作為預設值。")
+        st.info("ℹ️ 這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
         edit_lines = [f"作業日期：{st.session_state.record_date}"]
         if existing_ids.get("stocktake_id"):
             edit_lines.append(f"盤點單：{existing_ids.get('stocktake_id')}")
@@ -234,7 +234,7 @@ def page_order():
         st.caption(" / ".join(edit_lines))
 
     ref_df = view_model["ref_df"]
-    with st.expander("上次叫貨量 / 近期待用量參考", expanded=False):
+    with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
         if ref_df.empty:
             st.caption("目前沒有可參考資料。")
         else:
@@ -259,11 +259,11 @@ def page_order():
 
     condition_col, stock_head_col, order_head_col = st.columns([6, 1, 1])
     with condition_col:
-        st.write("**品項名稱 / 建議資訊**")
+        st.write("**品項名稱（建議量=日均×1.5）**")
     with stock_head_col:
-        st.write("<div style='text-align:center;'><b>庫存</b></div>", unsafe_allow_html=True)
+        st.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
     with order_head_col:
-        st.write("<div style='text-align:center;'><b>叫貨</b></div>", unsafe_allow_html=True)
+        st.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
 
     conversions_df = view_model["conversions_df"]
 
@@ -292,7 +292,7 @@ def page_order():
 
             with c2:
                 stock_input = st.number_input(
-                    "庫存",
+                    "庫",
                     min_value=0.0,
                     step=0.1,
                     format="%g",
@@ -356,7 +356,7 @@ def page_order():
             WEEKDAY_OPTIONS,
         )
         st.caption(
-            f"預計到貨日期：{delivery_date.strftime('%Y-%m-%d')}（週{WEEKDAY_LABELS[delivery_date.weekday()]}）"
+            f"本次到貨日：{delivery_date.strftime('%Y-%m-%d')}（{WEEKDAY_OPTIONS[delivery_date.weekday()]}）"
         )
 
         submitted = st.form_submit_button("提交叫貨", use_container_width=True)
@@ -398,7 +398,7 @@ def page_order():
                 st.error(f"提交失敗：{exc}")
                 return
 
-    if st.button("返回廠商選擇", use_container_width=True, key="back_from_order"):
+    if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order"):
         st.session_state.step = "select_vendor"
         st.rerun()
 
