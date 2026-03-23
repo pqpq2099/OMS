@@ -6,7 +6,9 @@
 # 注意：所有重要異動建議經由此模組寫入紀錄。
 # ============================================================
 
-""text("核心模組_寫入_audit_log_變更紀錄")""
+"""
+核心模組：寫入 audit log（變更紀錄）。
+"""
 
 from __future__ import annotations
 from dataclasses import dataclass
