@@ -1117,6 +1117,8 @@ def _build_purchase_detail_df() -> pd.DataFrame:
 
     merged["order_date_dt"] = merged["order_date"].apply(_parse_date)
     merged["delivery_date_dt"] = merged["delivery_date"].apply(_parse_date)
+    merged["operation_date"] = merged["order_date"]
+    merged["operation_date_dt"] = merged["order_date_dt"]
 
     merged["order_qty_num"] = pd.to_numeric(
         _coalesce_columns(merged, ["order_qty", "qty"], default=0),
@@ -1259,6 +1261,8 @@ def _build_stock_detail_df() -> pd.DataFrame:
     )
 
     merged["stocktake_date_dt"] = merged["stocktake_date"].apply(_parse_date)
+    merged["operation_date"] = merged["stocktake_date"]
+    merged["operation_date_dt"] = merged["stocktake_date_dt"]
 
     merged["base_qty_num"] = pd.to_numeric(
         _coalesce_columns(merged, ["base_qty", "stock_qty", "qty"], default=0),
@@ -1404,7 +1408,7 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         return out
 
     po_work = pd.DataFrame()
-    po_date_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
+    po_date_field = "operation_date_dt" if "operation_date_dt" in po_df.columns else "order_date_dt"
     if not po_df.empty and "store_id" in po_df.columns and po_date_field in po_df.columns:
         po_work = po_df[
             po_df["store_id"].astype(str).str.strip() == str(store_id).strip()
@@ -1548,9 +1552,9 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
                 # ====================================================
                 # 雙日期模型（最終版）
                 # 1. 庫存以 stocktake_date（盤點日）為主
-                # 2. 期間進貨以 delivery_date（實際到貨日）為主
+                # 2. 期間進貨以 operation_date（作業日／叫貨日）為主
                 # 3. 區間定義：大於前一次盤點日，且小於等於本次盤點日
-                #    例：03-16 叫貨、03-17 到貨，則 03-17 這列要吃到這筆進貨
+                #    例：03-16 作業叫貨，則 03-16 這列要對應這筆叫貨
                 # 4. 本次叫貨另由 current_order_qty 處理，不要混進期間進貨
                 # ====================================================
                 item_po = item_po[
@@ -1645,7 +1649,7 @@ def _build_latest_item_metrics_df(store_id: str, as_of_date: date) -> pd.DataFra
 
 def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) -> pd.DataFrame:
     po_df = _build_purchase_detail_df()
-    date_field = "delivery_date_dt" if "delivery_date_dt" in po_df.columns else "order_date_dt"
+    date_field = "operation_date_dt" if "operation_date_dt" in po_df.columns else "order_date_dt"
     if po_df.empty or "store_id" not in po_df.columns or date_field not in po_df.columns:
         return pd.DataFrame()
 
