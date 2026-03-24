@@ -1,6 +1,8 @@
-# ============================================================
+﻿# ============================================================
 # ORIVIA OMS
 # File: pages/page_order_entry.py
+# Legacy compatibility source for order-related pages.
+# New order entry/result pages should avoid adding new dependencies here.
 # Legacy order entry page module
 # Existing logic is preserved for compatibility
 # ============================================================
