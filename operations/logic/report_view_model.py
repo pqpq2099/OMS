@@ -322,7 +322,7 @@ def build_analysis_page_view_model(store_id: str, start: date, end: date, select
     po_detail_df = _build_purchase_detail_df()
     purchase_filt = pd.DataFrame()
     if not po_detail_df.empty:
-        date_field = "delivery_date_dt" if "delivery_date_dt" in po_detail_df.columns else "order_date_dt"
+        date_field = "operation_date_dt" if "operation_date_dt" in po_detail_df.columns else "order_date_dt"
         purchase_filt = po_detail_df[(po_detail_df["store_id"].astype(str).str.strip() == str(store_id).strip()) & (po_detail_df[date_field].notna()) & (po_detail_df[date_field] >= start) & (po_detail_df[date_field] <= end)].copy()
         purchase_filt["日期"] = pd.to_datetime(purchase_filt[date_field], errors="coerce").dt.strftime("%m/%d")
         purchase_filt["廠商"] = purchase_filt["vendor_name_disp"].apply(lambda x: _norm(x) or "-")
