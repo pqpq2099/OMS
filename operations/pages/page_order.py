@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 
@@ -112,14 +112,6 @@ def page_select_vendor():
 
     if st.button("📄 產生今日進貨明細", type="primary", use_container_width=True):
         st.session_state.step = "order_message_detail"
-        st.rerun()
-
-    if st.button("📊 期間進銷存分析", use_container_width=True):
-        st.session_state.step = "analysis"
-        st.rerun()
-
-    if st.button("📜 查看歷史叫貨紀錄", use_container_width=True):
-        st.session_state.step = "view_history"
         st.rerun()
 
     if st.button("⬅️ 返回分店列表", use_container_width=True):
