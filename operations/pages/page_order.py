@@ -191,8 +191,20 @@ def page_order():
         }
 
         .suggest-text {
-    font-weight: 700;
-}
+            font-weight: 700;
+        }
+
+        .suggest-red {
+            color: #e74c3c;
+        }
+
+        .suggest-yellow {
+            color: #d4a017;
+        }
+
+        .suggest-green {
+            color: #27ae60;
+        }
 
         .price-text {
     opacity: 0.72;
@@ -315,10 +327,13 @@ def page_order():
                 coverage_days_display = f"{coverage_days:g}天"
                 if coverage_days < 3:
                     priority_class = "priority-red"
+                    suggest_class = "suggest-red"
                 elif coverage_days < 5:
                     priority_class = "priority-yellow"
+                    suggest_class = "suggest-yellow"
                 else:
                     priority_class = "priority-green"
+                    suggest_class = "suggest-green"
 
                 coverage_status = (
                     "🔴 不足"
@@ -331,6 +346,7 @@ def page_order():
                 coverage_days = None
                 coverage_days_display = "-"
                 priority_class = "priority-red"
+                suggest_class = "suggest-red"
                 coverage_status = "🔴 無日均"
 
             st.markdown(f'<div class="item-card {priority_class}">', unsafe_allow_html=True)
@@ -341,7 +357,7 @@ def page_order():
                 st.write(f"<b>{meta['item_name']}</b>", unsafe_allow_html=True)
                 info_parts = [
                     f"日均：{meta['daily_avg']:g}",
-                    f"<span class='suggest-text'>建議：{_fmt_qty_with_unit(meta['suggest_qty'], meta['stock_unit'])}</span>",
+                    f"<span class='suggest-text {suggest_class}'>建議：{_fmt_qty_with_unit(meta['suggest_qty'], meta['stock_unit'])}</span>",
                     f"<span class='price-text'>價格：{meta['price']:g}</span>",
                 ]
                 if meta["status_hint"]:
