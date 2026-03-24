@@ -191,14 +191,13 @@ def page_order():
         }
 
         .suggest-text {
-            font-weight: 700;
-            color: rgba(58, 63, 69, 0.96);
-        }
+    font-weight: 700;
+}
 
         .price-text {
-            color: rgba(138, 143, 152, 0.92);
-            font-size: 0.8rem;
-        }
+    opacity: 0.72;
+    font-size: 0.8rem;
+}
 
         .order-unit-label {
             display: flex;
@@ -219,19 +218,19 @@ def page_order():
         }
 
         .priority-red {
-            background-color: rgba(231, 76, 60, 0.06);
-            border-left: 5px solid #e74c3c;
-        }
+    background-color: rgba(231, 76, 60, 0.05);
+    border-left: 5px solid #e74c3c;
+}
 
         .priority-yellow {
-            background-color: rgba(241, 196, 15, 0.08);
-            border-left: 5px solid #f1c40f;
-        }
+    background-color: rgba(241, 196, 15, 0.06);
+    border-left: 5px solid #f1c40f;
+}
 
         .priority-green {
-            background-color: rgba(39, 174, 96, 0.06);
-            border-left: 5px solid #27ae60;
-        }
+    background-color: rgba(39, 174, 96, 0.05);
+    border-left: 5px solid #27ae60;
+}
         </style>
         """,
         unsafe_allow_html=True,
