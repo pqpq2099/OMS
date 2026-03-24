@@ -7,15 +7,17 @@ import streamlit as st
 from operations.logic import logic_order
 from operations.logic.order_errors import SystemProcessError, UserDisplayError
 from operations.logic.order_write import _save_order_entry
-from pages.page_order_entry import (
-    page_daily_stock_order_record as _legacy_page_daily_stock_order_record,
-    page_order_message_detail as _legacy_page_order_message_detail,
+from operations.pages.page_order_result import (
+    page_order_message_detail as page_order_message_detail_view,
 )
-from pages.page_order_entry import _fmt_qty_with_unit
+from pages.page_order_entry import (
+    page_daily_stock_order_record as legacy_page_daily_stock_order_record,
+)
+from utils.utils_format import _fmt_qty_with_unit
 
 
 WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
-WEEKDAY_OPTIONS = [f"週{x}" for x in WEEKDAY_LABELS]
+WEEKDAY_OPTIONS = [f"星期{x}" for x in WEEKDAY_LABELS]
 
 
 def page_select_store():
@@ -188,6 +190,16 @@ def page_order():
             margin-bottom: 0.25rem;
         }
 
+        .suggest-text {
+            color: rgba(88, 96, 112, 0.98);
+            font-weight: 700;
+        }
+
+        .price-text {
+            color: rgba(150, 156, 168, 0.9);
+            font-size: 0.78rem;
+        }
+
         .order-unit-label {
             display: flex;
             align-items: flex-end;
@@ -197,6 +209,28 @@ def page_order():
             font-weight: 500;
             opacity: 0.9;
             margin-top: 3px;
+        }
+
+        .item-card {
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            border-left: 6px solid transparent;
+        }
+
+        .priority-red {
+            background-color: #fff5f5;
+            border-left: 6px solid #e74c3c;
+        }
+
+        .priority-yellow {
+            background-color: #fffaf0;
+            border-left: 6px solid #f1c40f;
+        }
+
+        .priority-green {
+            background-color: #f3fbf6;
+            border-left: 6px solid #27ae60;
         }
         </style>
         """,
@@ -274,20 +308,50 @@ def page_order():
             item_id = str(row.get("item_id", "")).strip()
             meta = view_model["item_meta"][item_id]
 
+            daily_avg_value = float(meta["daily_avg"])
+            suggest_qty_value = float(meta["suggest_qty"])
+
+            if daily_avg_value > 0:
+                coverage_days = round(suggest_qty_value / daily_avg_value, 1)
+                coverage_days_display = f"{coverage_days:g}天"
+                if coverage_days < 3:
+                    priority_class = "priority-red"
+                elif coverage_days < 5:
+                    priority_class = "priority-yellow"
+                else:
+                    priority_class = "priority-green"
+
+                coverage_status = (
+                    "🔴 不足"
+                    if coverage_days < 3
+                    else "🟡 觀察"
+                    if coverage_days < 5
+                    else "🟢 正常"
+                )
+            else:
+                coverage_days = None
+                coverage_days_display = "-"
+                priority_class = "priority-red"
+                coverage_status = "🔴 無日均"
+
+            st.markdown(f'<div class="item-card {priority_class}">', unsafe_allow_html=True)
+
             c1, c2, c3 = st.columns([6, 1, 1])
 
             with c1:
                 st.write(f"<b>{meta['item_name']}</b>", unsafe_allow_html=True)
                 info_parts = [
-                    f"總庫存：{_fmt_qty_with_unit(meta['current_stock_qty'], meta['stock_unit'])}",
-                    f"建議量：{_fmt_qty_with_unit(meta['suggest_display'], meta['stock_unit'])}",
+                    f"日均：{meta['daily_avg']:g}",
+                    f"<span class='suggest-text'>建議：{_fmt_qty_with_unit(meta['suggest_qty'], meta['stock_unit'])}</span>",
+                    f"<span class='price-text'>價格：{meta['price']:g}</span>",
                 ]
                 if meta["status_hint"]:
                     info_parts.append(meta["status_hint"])
                 st.markdown(
-                    f"<div class='order-meta'>{' / '.join(info_parts)}</div>",
+                    f"<div class='order-meta'>{'　'.join(info_parts)}</div>",
                     unsafe_allow_html=True,
                 )
+                st.write(f"可撐：{coverage_days_display} ｜ {coverage_status}")
 
             with c2:
                 stock_input = st.number_input(
@@ -323,6 +387,8 @@ def page_order():
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
                 )
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
             submit_rows.append(
                 {
@@ -393,6 +459,12 @@ def page_order():
                 st.success(f"{action_text}{tail_text}")
                 st.session_state.step = "select_vendor"
                 st.rerun()
+            except UserDisplayError as exc:
+                st.error(str(exc))
+                return
+            except SystemProcessError as exc:
+                st.error(str(exc))
+                return
             except Exception as exc:
                 st.error(f"提交失敗：{exc}")
                 return
@@ -401,10 +473,10 @@ def page_order():
         st.session_state.step = "select_vendor"
         st.rerun()
 
+
 def page_order_message_detail():
-    return _legacy_page_order_message_detail()
+    return page_order_message_detail_view()
 
 
 def page_daily_stock_order_record():
-    return _legacy_page_daily_stock_order_record()
-
+    return legacy_page_daily_stock_order_record()

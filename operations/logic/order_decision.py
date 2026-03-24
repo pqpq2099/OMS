@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 
@@ -144,11 +144,14 @@ def build_item_decision_data(
             )
 
         metric = latest_metrics_map.get(item_id, {})
-        period_purchase = _safe_float(metric.get("近30日叫貨量", 0))
-        period_usage = _safe_float(metric.get("近30日用量", 0))
+        period_purchase = _safe_float(metric.get("期間進貨", 0))
+        period_usage = _safe_float(metric.get("期間消耗", 0))
         last_order_qty = _safe_float(metric.get("上次叫貨量", 0))
-        daily_avg = _safe_float(metric.get("日平均用量", 0))
-        total_stock_ref = _safe_float(metric.get("總庫存量", 0))
+        days = max(int(_safe_float(metric.get("天數", 0))), 0)
+        daily_avg = _safe_float(metric.get("日平均", 0))
+        if daily_avg <= 0 and period_usage > 0 and days > 0:
+            daily_avg = round(period_usage / days, 1)
+        total_stock_ref = _safe_float(metric.get("庫存合計", 0))
         suggest_qty = round(daily_avg * 1.5, 1)
         status_hint = _status_hint(total_stock_ref, daily_avg, suggest_qty)
 
