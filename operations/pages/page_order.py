@@ -191,13 +191,13 @@ def page_order():
         }
 
         .suggest-text {
-            color: rgba(88, 96, 112, 0.98);
             font-weight: 700;
+            color: rgba(58, 63, 69, 0.96);
         }
 
         .price-text {
-            color: rgba(150, 156, 168, 0.9);
-            font-size: 0.78rem;
+            color: rgba(138, 143, 152, 0.92);
+            font-size: 0.8rem;
         }
 
         .order-unit-label {
@@ -215,22 +215,22 @@ def page_order():
             padding: 10px 12px;
             border-radius: 8px;
             margin-bottom: 6px;
-            border-left: 6px solid transparent;
+            border-left: 5px solid transparent;
         }
 
         .priority-red {
-            background-color: #fff5f5;
-            border-left: 6px solid #e74c3c;
+            background-color: rgba(231, 76, 60, 0.06);
+            border-left: 5px solid #e74c3c;
         }
 
         .priority-yellow {
-            background-color: #fffaf0;
-            border-left: 6px solid #f1c40f;
+            background-color: rgba(241, 196, 15, 0.08);
+            border-left: 5px solid #f1c40f;
         }
 
         .priority-green {
-            background-color: #f3fbf6;
-            border-left: 6px solid #27ae60;
+            background-color: rgba(39, 174, 96, 0.06);
+            border-left: 5px solid #27ae60;
         }
         </style>
         """,
