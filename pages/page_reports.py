@@ -85,7 +85,7 @@ def page_view_history():
     h_start = c_h_date1.date_input(t("start_date"), value=date.today() - timedelta(days=30), key="hist_start_date")
     h_end = c_h_date2.date_input(t("end_date"), value=date.today(), key="hist_end_date")
     shared_tables = load_report_shared_tables()
-    display_mode = DISPLAY_MODE_MOBILE
+    display_mode = DISPLAY_MODE_FULL
     base_model = build_history_page_view_model(st.session_state.store_id, h_start, h_end, ALL_VENDORS, ALL_ITEMS, display_mode, shared_tables)
     if base_model["hist_df"].empty:
         st.info(t("history_no_record"))
