@@ -30,9 +30,13 @@ def delivery_date_from_weekday(
     weekday_option: str,
     weekday_options: list[str],
 ) -> date:
-    text = str(weekday_option or "").strip().replace("星期", "週")
+    text = str(weekday_option or "").strip()
     if text not in weekday_options:
-        return record_date
+        alt_text = text.replace("週", "星期")
+        if alt_text in weekday_options:
+            text = alt_text
+        else:
+            return record_date
 
     target_weekday = weekday_options.index(text)
     current_weekday = record_date.weekday()
