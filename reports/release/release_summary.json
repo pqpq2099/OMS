@@ -1,0 +1,7 @@
+{
+  "warm_optimized": true,
+  "ready_to_release": true,
+  "primary_future_optimization": "report_shared_tables_io",
+  "system_state": "stable",
+  "bottleneck": "spreadsheet_io_and_analysis_vm"
+}
