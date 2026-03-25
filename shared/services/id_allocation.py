@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from shared.utils.common_helpers import _norm
 from shared.services.spreadsheet_backend import append_rows_by_header, get_header, read_table
+from shared.services.spreadsheet_backend import get_spreadsheet
 
 
 def _make_id(prefix: str, width: int, n: int) -> str:
