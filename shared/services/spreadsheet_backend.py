@@ -7,13 +7,70 @@ import gspread
 import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
-from shared.services.supabase_client import fetch_table
+from shared.services.supabase_client import fetch_table, insert_rows, update_rows_by_match, delete_rows_by_match
 
 from shared.utils.common_helpers import _norm
 
 DEFAULT_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
 BASE_DIR = Path(__file__).resolve().parent
 LOCAL_SERVICE_ACCOUNT = BASE_DIR / "service_account.json"
+
+TABLE_PRIMARY_KEYS = {
+    "audit_logs": "audit_id",
+    "brands": "brand_id",
+    "id_sequences": "key",
+    "items": "item_id",
+    "item_specs": "spec_id",
+    "prices": "price_id",
+    "purchase_order_lines": "po_line_id",
+    "purchase_orders": "po_id",
+    "roles": "role_id",
+    "settings": "key",
+    "stocktake_lines": "stocktake_line_id",
+    "stocktakes": "stocktake_id",
+    "stores": "store_id",
+    "transactions": "txn_id",
+    "unit_conversions": "conversion_id",
+    "units": "unit_id",
+    "users": "user_id",
+    "vendors": "vendor_id",
+}
+
+
+def _rows_to_dicts(header: list[str], rows: list[dict] | list[list]) -> list[dict]:
+    out: list[dict] = []
+    for row in rows or []:
+        if isinstance(row, dict):
+            out.append({col: row.get(col, "") for col in header})
+        else:
+            values = list(row)
+            values = values[:len(header)] + [""] * max(0, len(header) - len(values))
+            out.append({col: values[idx] for idx, col in enumerate(header)})
+    return out
+
+
+def _delete_existing_rows_supabase(table_name: str):
+    key_field = TABLE_PRIMARY_KEYS.get(_norm(table_name))
+    if not key_field:
+        raise ValueError(f"{table_name} 找不到主鍵欄位，無法清空")
+    current_rows = fetch_table(table_name)
+    for row in current_rows or []:
+        key_value = row.get(key_field)
+        if key_value is not None and str(key_value).strip() != "":
+            delete_rows_by_match(table_name, key_field, key_value)
+
+
+def _replace_table_supabase(table_name: str, header: list[str], rows: list[dict] | list[list]):
+    _delete_existing_rows_supabase(table_name)
+    payload = _rows_to_dicts(header, rows)
+    if payload:
+        insert_rows(table_name, payload)
+    bust_cache(table_name)
+
+
+def _clear_table_supabase(table_name: str):
+    _delete_existing_rows_supabase(table_name)
+    bust_cache(table_name)
 
 
 def _get_secret_sheet_id() -> str:
@@ -367,6 +424,14 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
     if not rows:
         return
 
+    try:
+        payload = _rows_to_dicts(header, rows)
+        insert_rows(sheet_name, payload)
+        bust_cache(sheet_name)
+        return
+    except Exception:
+        pass
+
     sh = get_spreadsheet()
     if sh is None:
         raise ValueError("Spreadsheet 未初始化")
@@ -374,6 +439,7 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
     ws = sh.worksheet(sheet_name)
     values = [[row.get(col, "") for col in header] for row in rows]
     ws.append_rows(values, value_input_option="USER_ENTERED")
+    bust_cache(sheet_name)
 
 
 def get_row_index_map(sheet_name: str, key_field: str, force_refresh: bool = False) -> dict[str, int]:
@@ -402,10 +468,17 @@ def get_row_index_map(sheet_name: str, key_field: str, force_refresh: bool = Fal
 
 
 def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates: dict):
-    """依指定鍵值更新單筆資料，避免逐格 update_cell 或整張表重寫。"""
+    """依指定鍵值更新單筆資料，優先走 Supabase。"""
     key_value = _norm(key_value)
     if not key_value:
         raise ValueError(f"{sheet_name}.{key_field} 不可為空")
+
+    try:
+        update_rows_by_match(sheet_name, key_field, key_value, updates or {})
+        bust_cache(sheet_name)
+        return
+    except Exception:
+        pass
 
     header = get_header(sheet_name)
     if not header:

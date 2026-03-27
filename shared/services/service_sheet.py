@@ -7,22 +7,15 @@ from shared.services.spreadsheet_backend import (
     append_rows_by_header,
     bust_cache,
     get_header,
-    get_spreadsheet,
     get_table_versions,
     read_table,
     update_row_by_match,
+    _replace_table_supabase,
+    _clear_table_supabase,
 )
 
 
-def _sheet_col_to_letter(n: int) -> str:
-    result = ""
-    while n > 0:
-        n, rem = divmod(n - 1, 26)
-        result = chr(65 + rem) + result
-    return result
-
-
-def sheet_append(table: str, header: list[str], rows: list[list]):
+def sheet_append(table: str, header: list[str], rows: list[list] | list[dict]):
     return append_rows_by_header(table, header, rows)
 
 
@@ -35,7 +28,7 @@ def sheet_get_header(table: str) -> list[str]:
 
 
 def sheet_get_spreadsheet():
-    return get_spreadsheet()
+    return None
 
 
 def sheet_get_versions(table_names) -> dict:
@@ -55,69 +48,22 @@ def sheet_update(table: str, key: str, value: str, updates: dict):
 
 
 def sheet_replace_table(table: str, header: list[str], rows: list[list] | list[dict]):
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-
-    ws = sh.worksheet(table)
-    normalized_rows = []
-    for row in rows:
-        if isinstance(row, dict):
-            normalized_rows.append([row.get(col, "") for col in header])
-        else:
-            values = list(row)
-            values = values[:len(header)] + [""] * max(0, len(header) - len(values))
-            normalized_rows.append(values[:len(header)])
-
-    ws.clear()
-    ws.update([header] + normalized_rows)
-    bust_cache(table)
+    return _replace_table_supabase(table, header, rows)
 
 
 def sheet_clear_keep_header(table: str):
-    header = get_header(table)
-    sheet_replace_table(table, header, [])
-
-
-def sheet_update_cell(table: str, row_num: int, col_num: int, value):
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-    ws = sh.worksheet(table)
-    ws.update_cell(int(row_num), int(col_num), value)
-    bust_cache(table)
-
-
-def sheet_update_range(table: str, start_row: int, values: list[list], start_col: int = 1, value_input_option: str = "USER_ENTERED"):
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-    ws = sh.worksheet(table)
-    if not values:
-        return
-    end_row = start_row + len(values) - 1
-    end_col = start_col + len(values[0]) - 1
-    range_ref = f"{_sheet_col_to_letter(start_col)}{start_row}:{_sheet_col_to_letter(end_col)}{end_row}"
-    ws.update(range_ref, values, value_input_option=value_input_option)
-    bust_cache(table)
+    return _clear_table_supabase(table)
 
 
 def sheet_read_row_maps(table: str):
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-
-    ws = sh.worksheet(table)
-    values = ws.get_all_values()
-    if not values:
+    df = read_table(table)
+    if df.empty:
         return [], []
 
-    header = [_norm(x) for x in values[0]]
+    header = [_norm(x) for x in df.columns]
     row_maps = []
-    for row_num, row in enumerate(values[1:], start=2):
-        row_values = list(row)
-        row_values = row_values[:len(header)] + [""] * max(0, len(header) - len(row_values))
-        row_maps.append((row_num, {col: row_values[idx] for idx, col in enumerate(header)}))
+    for row_num, (_idx, row) in enumerate(df.iterrows(), start=2):
+        row_maps.append((row_num, {col: row.get(col, "") for col in header}))
     return header, row_maps
 
 
@@ -132,6 +78,46 @@ def sheet_find_row_number(table: str, key_field: str, key_value: str):
         if _norm(row_dict.get(key_field, "")) == _norm(key_value):
             return row_num, header, row_dict
     return None, header, None
+
+
+def sheet_update_cell(table: str, row_num: int, col_num: int, value):
+    header, row_maps = sheet_read_row_maps(table)
+    if not header:
+        raise ValueError(f"{table} missing header")
+    idx = int(row_num) - 2
+    col_idx = int(col_num) - 1
+    if idx < 0 or idx >= len(row_maps):
+        raise ValueError(f"{table} row {row_num} out of range")
+    if col_idx < 0 or col_idx >= len(header):
+        raise ValueError(f"{table} col {col_num} out of range")
+
+    _row_num, row_dict = row_maps[idx]
+    key_field = header[0]
+    key_value = row_dict.get(key_field, "")
+    return update_row_by_match(table, key_field, key_value, {header[col_idx]: value})
+
+
+def sheet_update_range(table: str, start_row: int, values: list[list], start_col: int = 1, value_input_option: str = "USER_ENTERED"):
+    if not values:
+        return
+    header, row_maps = sheet_read_row_maps(table)
+    if not header:
+        raise ValueError(f"{table} missing header")
+
+    for offset, value_row in enumerate(values):
+        idx = int(start_row) + offset - 2
+        if idx < 0 or idx >= len(row_maps):
+            raise ValueError(f"{table} row {start_row + offset} out of range")
+        _row_num, row_dict = row_maps[idx]
+        key_field = header[0]
+        key_value = row_dict.get(key_field, "")
+        updates = {}
+        for i, cell in enumerate(value_row):
+            col_idx = int(start_col) - 1 + i
+            if 0 <= col_idx < len(header):
+                updates[header[col_idx]] = cell
+        if updates:
+            update_row_by_match(table, key_field, key_value, updates)
 
 
 def sheet_update_row_values(table: str, row_num: int, header: list[str], row_values: list, value_input_option: str = "USER_ENTERED"):

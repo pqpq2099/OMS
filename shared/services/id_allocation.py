@@ -3,11 +3,12 @@ from __future__ import annotations
 import pandas as pd
 
 from shared.utils.common_helpers import _norm, _now_ts, _safe_float
-from shared.services.spreadsheet_backend import append_rows_by_header, get_header, read_table, get_spreadsheet, bust_cache
+from shared.services.spreadsheet_backend import get_header, read_table, update_row_by_match, bust_cache
 
 
 def _make_id(prefix: str, width: int, n: int) -> str:
     return f"{prefix}{str(n).zfill(int(width))}"
+
 
 def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str, list[str]]:
     request_counts = {k: int(v) for k, v in request_counts.items() if int(v) > 0}
@@ -16,18 +17,9 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
     if not request_counts:
         return result
 
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-
-    ws = sh.worksheet("id_sequences")
-    values = ws.get_all_values()
-    if not values or len(values) < 2:
+    df = read_table("id_sequences").copy()
+    if df.empty:
         raise ValueError("id_sequences 為空")
-
-    header = [_norm(x) for x in values[0]]
-    rows = values[1:]
-    df = pd.DataFrame(rows, columns=header)
 
     required = ["key", "env", "prefix", "width", "next_value"]
     for col in required:
@@ -37,18 +29,15 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
     now = _now_ts()
 
     for key, cnt in request_counts.items():
-        hit = df[
-            (df["key"].astype(str).str.strip() == str(key).strip())
-            & (df["env"].astype(str).str.strip() == str(env).strip())
-        ]
-
+        hit = df[(df["key"].astype(str).str.strip() == str(key).strip()) & (df["env"].astype(str).str.strip() == str(env).strip())]
         if hit.empty:
             raise ValueError(f"id_sequences 找不到 key={key}, env={env}")
 
-        idx = hit.index[0]
-        prefix = _norm(df.at[idx, "prefix"])
-        width = int(_safe_float(df.at[idx, "width"], 0))
-        next_value = int(_safe_float(df.at[idx, "next_value"], 0))
+        row = hit.iloc[0]
+        seq_key = _norm(row.get("key"))
+        prefix = _norm(row.get("prefix"))
+        width = int(_safe_float(row.get("width"), 0))
+        next_value = int(_safe_float(row.get("next_value"), 0))
 
         if not prefix or width <= 0 or next_value <= 0:
             raise ValueError(f"id_sequences 設定錯誤：key={key}")
@@ -56,12 +45,10 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
         ids = [_make_id(prefix, width, next_value + i) for i in range(cnt)]
         result[key] = ids
 
-        df.at[idx, "next_value"] = str(next_value + cnt)
+        updates = {"next_value": str(next_value + cnt)}
         if "updated_at" in df.columns:
-            df.at[idx, "updated_at"] = now
+            updates["updated_at"] = now
+        update_row_by_match("id_sequences", "key", seq_key, updates)
 
-    out_values = [header] + df[header].fillna("").astype(str).values.tolist()
-    ws.update(out_values)
-
-    bust_cache()
+    bust_cache("id_sequences")
     return result
