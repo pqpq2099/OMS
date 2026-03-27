@@ -17,8 +17,6 @@ from shared.utils.common_helpers import (
     _safe_float,
     _to_bool,
 )
-from shared.utils.utils_format import unit_label
-
 from shared.services.spreadsheet_backend import (
     _session_df_cache_get,
     _session_df_cache_set,
@@ -500,7 +498,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     base_qty_series = pd.to_numeric(merged["base_qty"], errors="coerce") if "base_qty" in merged.columns else pd.Series(0, index=merged.index, dtype="float64")
     merged["order_base_qty_num"] = base_qty_series.fillna(0.0)
 
-    merged["order_base_unit_disp"] = merged["base_unit"].apply(unit_label) if "base_unit" in merged.columns else ""
+    merged["order_base_unit_disp"] = merged["base_unit"].astype(str).str.strip() if "base_unit" in merged.columns else ""
 
     unit_price_series = pd.to_numeric(merged["unit_price"], errors="coerce") if "unit_price" in merged.columns else pd.Series(0, index=merged.index, dtype="float64")
     merged["unit_price_num"] = unit_price_series.fillna(0.0)
@@ -516,9 +514,9 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         order_unit_series = merged["order_unit"].astype("object")
         if "unit_id" in merged.columns:
             order_unit_series = order_unit_series.combine_first(merged["unit_id"].astype("object"))
-        merged["order_unit_disp"] = order_unit_series.apply(unit_label)
+        merged["order_unit_disp"] = order_unit_series.astype(str).str.strip()
     elif "unit_id" in merged.columns:
-        merged["order_unit_disp"] = merged["unit_id"].apply(unit_label)
+        merged["order_unit_disp"] = merged["unit_id"].astype(str).str.strip()
     else:
         merged["order_unit_disp"] = ""
 
@@ -1305,7 +1303,7 @@ def _build_purchase_summary_df(store_id: str, start_date: date, end_date: date) 
     po_work["品項名稱"] = po_work["item_name_disp"].apply(
         lambda x: _norm(x) or "未指定"
     )
-    po_work["單位"] = po_work["order_unit_disp"].apply(unit_label)
+    po_work["單位"] = po_work["order_unit_disp"].apply(lambda x: _norm(x))
     po_work["單價"] = po_work["unit_price_num"].astype(float)
     po_work["叫貨數量"] = po_work["order_qty_num"].astype(float)
     po_work["採購金額"] = po_work["amount_num"].astype(float)

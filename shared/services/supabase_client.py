@@ -1,44 +1,30 @@
 from __future__ import annotations
 
-import os
-from typing import Any
-
 import streamlit as st
 from supabase import create_client
+
+DEFAULT_SUPABASE_URL = "https://hikmpynwpqtbgqhsuyqd.supabase.co"
+DEFAULT_SUPABASE_KEY = "sb_publishable_NnWCl-WgBU2BqHFZLgdCEQ_2QNQwxd-"
 
 
 def _get_secret(name: str, default: str = "") -> str:
     try:
-        if hasattr(st, "secrets"):
-            if name in st.secrets:
-                return str(st.secrets[name])
-            lower = name.lower()
-            if lower in st.secrets:
-                return str(st.secrets[lower])
+        if hasattr(st, "secrets") and name in st.secrets:
+            return str(st.secrets[name]).strip()
     except Exception:
         pass
-    return os.getenv(name, default)
+    return str(default).strip()
 
 
-SUPABASE_URL = _get_secret("SUPABASE_URL", "https://hikmpynwpqtbgqhsuyqd.supabase.co")
-SUPABASE_KEY = _get_secret("SUPABASE_KEY", "sb_publishable_NnWCl-WgBU2BqHFZLgdCEQ_2QNQwxd-")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+def get_supabase_url() -> str:
+    return _get_secret("SUPABASE_URL", DEFAULT_SUPABASE_URL)
 
 
-def _clean_scalar(value: Any):
-    if value is None:
-        return None
-    if isinstance(value, float):
-        return value
-    text = str(value).strip() if not isinstance(value, (int, bool)) else value
-    if text == "":
-        return None
-    return value
+def get_supabase_key() -> str:
+    return _get_secret("SUPABASE_KEY", DEFAULT_SUPABASE_KEY)
 
 
-def _clean_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {str(k): _clean_scalar(v) for k, v in row.items()}
+supabase = create_client(get_supabase_url(), get_supabase_key())
 
 
 def fetch_table(table_name: str):
@@ -46,17 +32,30 @@ def fetch_table(table_name: str):
     return res.data or []
 
 
-def insert_rows(table_name: str, rows: list[dict[str, Any]]):
-    payload = [_clean_row(r) for r in rows if isinstance(r, dict)]
-    if not payload:
+def insert_rows(table_name: str, rows: list[dict]):
+    if not rows:
         return None
-    return supabase.table(table_name).insert(payload).execute()
+    return supabase.table(table_name).insert(rows).execute()
 
 
-def update_rows_by_match(table_name: str, key_field: str, key_value: Any, updates: dict[str, Any]):
-    payload = _clean_row(updates or {})
-    return supabase.table(table_name).update(payload).eq(key_field, key_value).execute()
+def update_rows(table_name: str, filters: dict, updates: dict):
+    query = supabase.table(table_name).update(updates)
+    for field, value in (filters or {}).items():
+        query = query.eq(field, value)
+    return query.execute()
 
 
-def delete_rows_by_match(table_name: str, key_field: str, key_value: Any):
-    return supabase.table(table_name).delete().eq(key_field, key_value).execute()
+def upsert_rows(table_name: str, rows: list[dict], on_conflict: str | None = None):
+    if not rows:
+        return None
+    kwargs = {}
+    if on_conflict:
+        kwargs["on_conflict"] = on_conflict
+    return supabase.table(table_name).upsert(rows, **kwargs).execute()
+
+
+def delete_rows(table_name: str, filters: dict):
+    query = supabase.table(table_name).delete()
+    for field, value in (filters or {}).items():
+        query = query.eq(field, value)
+    return query.execute()

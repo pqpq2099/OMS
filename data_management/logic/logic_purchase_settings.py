@@ -5,7 +5,6 @@ from datetime import date
 import pandas as pd
 
 from shared.utils.common_helpers import _norm
-from shared.utils.utils_format import unit_label
 from data_management.services.service_purchase import (
     PurchaseServiceError,
     create_item,
@@ -175,12 +174,10 @@ def build_item_display_df(items_df: pd.DataFrame, search_text: str, show_inactiv
         {
             "品項名稱": view_df["item_name_zh"].replace("", pd.NA).fillna(view_df["item_name"]),
             "分類": view_df.get("category", ""),
-            "基準單位": view_df.get("base_unit", "").apply(unit_label),
-            "庫存單位": view_df.get("default_stock_unit", "").apply(unit_label),
-            "叫貨單位": view_df.get("default_order_unit", "").apply(unit_label),
-            "可叫貨單位": view_df.get("orderable_units", "").apply(
-                lambda x: "、".join(unit_label(v.strip()) for v in str(x or "").split(",") if v.strip())
-            ),
+            "基準單位": view_df.get("base_unit", ""),
+            "庫存單位": view_df.get("default_stock_unit", ""),
+            "叫貨單位": view_df.get("default_order_unit", ""),
+            "可叫貨單位": view_df.get("orderable_units", ""),
             "狀態": view_df.get("is_active", "").apply(bool_text),
         }
     )
@@ -193,7 +190,7 @@ def build_price_display_df(prices_df: pd.DataFrame) -> pd.DataFrame:
         {
             "生效日期": prices_df.get("effective_date", ""),
             "單價": prices_df.get("unit_price", ""),
-            "單位": prices_df.get("price_unit", "").apply(unit_label),
+            "單位": prices_df.get("price_unit", ""),
             "結束日期": prices_df.get("end_date", ""),
             "狀態": prices_df.get("is_active", "").apply(bool_text),
         }
@@ -206,7 +203,7 @@ def build_conversion_display_df(conv_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "換算": conv_df.apply(
-                lambda r: f"1{unit_label(r.get('from_unit'))} = {_norm(r.get('ratio'))}{unit_label(r.get('to_unit'))}",
+                lambda r: f"1{_norm(r.get('from_unit'))} = {_norm(r.get('ratio'))}{_norm(r.get('to_unit'))}",
                 axis=1,
             ),
             "狀態": conv_df.get("is_active", "").apply(bool_text),
@@ -218,7 +215,7 @@ def build_price_option_map(prices_df: pd.DataFrame) -> dict[str, str]:
     if prices_df.empty:
         return {}
     return {
-        f"{_norm(r.get('effective_date'))}｜{fmt_price_1(r.get('unit_price'))}/{unit_label(r.get('price_unit'))}": _norm(r.get("price_id"))
+        f"{_norm(r.get('effective_date'))}｜{fmt_price_1(r.get('unit_price'))}/{_norm(r.get('price_unit'))}": _norm(r.get("price_id"))
         for _, r in prices_df.iterrows()
     }
 
@@ -227,7 +224,7 @@ def build_conversion_option_map(conv_df: pd.DataFrame) -> dict[str, str]:
     if conv_df.empty:
         return {}
     return {
-        f"1{unit_label(r.get('from_unit'))} = {_norm(r.get('ratio'))}{unit_label(r.get('to_unit'))}｜{_norm(r.get('conversion_id'))}": _norm(r.get("conversion_id"))
+        f"1{_norm(r.get('from_unit'))} = {_norm(r.get('ratio'))}{_norm(r.get('to_unit'))}｜{_norm(r.get('conversion_id'))}": _norm(r.get("conversion_id"))
         for _, r in conv_df.iterrows()
     }
 

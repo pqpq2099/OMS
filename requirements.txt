@@ -4,4 +4,4 @@ gspread
 oauth2client
 google-auth
 plotly
-supabase
+supabase==2.28.3

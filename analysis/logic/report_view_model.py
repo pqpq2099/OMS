@@ -18,7 +18,6 @@ from shared.services.service_reports import (
 )
 from shared.services.service_sheet import sheet_get_versions
 from shared.utils.utils_units import convert_unit, get_base_unit
-from shared.utils.utils_format import unit_label
 
 
 ALL_VENDORS = "全部廠商"
@@ -390,8 +389,8 @@ def build_stock_order_compare_view_model(store_id: str, selected_date: date, sel
     item_col = "品項" if "品項" in work.columns else "item_id"
     preview_all = work[["廠商", item_col, "這次庫存_顯示值", "庫存顯示單位", "這次叫貨_顯示值", "叫貨顯示單位"]].copy()
     preview_all = preview_all.rename(columns={item_col: "品項", "這次庫存_顯示值": "這次庫存", "這次叫貨_顯示值": "這次叫貨"})
-    preview_all["這次庫存"] = preview_all["這次庫存"].map(lambda v: f"{safe_float(v):g}") + preview_all["庫存顯示單位"].map(lambda v: f" {unit_label(v)}" if str(v).strip() else "")
-    preview_all["這次叫貨"] = preview_all["這次叫貨"].map(lambda v: f"{safe_float(v):g}") + preview_all["叫貨顯示單位"].map(lambda v: f" {unit_label(v)}" if str(v).strip() else "")
+    preview_all["這次庫存"] = preview_all["這次庫存"].map(lambda v: f"{safe_float(v):g}") + preview_all["庫存顯示單位"].map(lambda v: f" {str(v).strip()}" if str(v).strip() else "")
+    preview_all["這次叫貨"] = preview_all["這次叫貨"].map(lambda v: f"{safe_float(v):g}") + preview_all["叫貨顯示單位"].map(lambda v: f" {str(v).strip()}" if str(v).strip() else "")
     preview_all = preview_all.drop(columns=["庫存顯示單位", "叫貨顯示單位"]).sort_values(["廠商", "品項"], ascending=[True, True]).reset_index(drop=True)
     vendor_options = [ALL_VENDORS] + clean_option_list(preview_all["廠商"].dropna().tolist())
 
@@ -451,7 +450,7 @@ def build_export_view_model(export_type: str, selected_store_id: str, selected_s
         if not df.empty and selected_item != ALL_ITEMS:
             df = df[df["item_name_disp"].astype(str).str.strip() == selected_item].copy()
         if not df.empty:
-            preview = pd.DataFrame({"日期": pd.to_datetime(df[date_field], errors="coerce").dt.strftime("%m/%d"), "分店": selected_store_name, "廠商": df.get("vendor_name_disp", ""), "品項": df.get("item_name_disp", ""), "數量": pd.to_numeric(df.get("order_qty_num", 0), errors="coerce").fillna(0), "單位": df.get("order_unit_disp", "").map(unit_label) if "order_unit_disp" in df.columns else "", "金額": pd.to_numeric(df.get("amount_num", 0), errors="coerce").fillna(0)}).reset_index(drop=True)
+            preview = pd.DataFrame({"日期": pd.to_datetime(df[date_field], errors="coerce").dt.strftime("%m/%d"), "分店": selected_store_name, "廠商": df.get("vendor_name_disp", ""), "品項": df.get("item_name_disp", ""), "數量": pd.to_numeric(df.get("order_qty_num", 0), errors="coerce").fillna(0), "單位": df.get("order_unit_disp", ""), "金額": pd.to_numeric(df.get("amount_num", 0), errors="coerce").fillna(0)}).reset_index(drop=True)
         filename = f"今日進貨明細_{selected_store_name}_{start}_{end}.csv"
     elif export_type == "進銷存分析":
         df = build_analysis_with_vendor(store_id=selected_store_id, start_date=start, end_date=end, shared_tables=shared_tables)
@@ -863,15 +862,11 @@ def build_cost_debug_view_model(shared_tables: dict[str, pd.DataFrame], selected
         if "is_active" in price_rows.columns:
             price_rows = price_rows[price_rows["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"])].copy()
         if "effective_date" in price_rows.columns:
-            price_rows["__eff"] = price_rows["effective_date"].apply(
-                lambda x: None if pd.isna(x) or str(x).strip() == "" else pd.to_datetime(x, errors="coerce")
-            ).apply(lambda x: None if x is None or pd.isna(x) else x.date())
+            price_rows["__eff"] = price_rows["effective_date"].apply(lambda x: None if str(x).strip() == "" else pd.to_datetime(x).date())
         else:
             price_rows["__eff"] = None
         if "end_date" in price_rows.columns:
-            price_rows["__end"] = price_rows["end_date"].apply(
-                lambda x: None if pd.isna(x) or str(x).strip() == "" else pd.to_datetime(x, errors="coerce")
-            ).apply(lambda x: None if x is None or pd.isna(x) else x.date())
+            price_rows["__end"] = price_rows["end_date"].apply(lambda x: None if str(x).strip() == "" else pd.to_datetime(x).date())
         else:
             price_rows["__end"] = None
         price_rows = price_rows[(price_rows["__eff"].isna() | (price_rows["__eff"] <= target_date)) & (price_rows["__end"].isna() | (price_rows["__end"] >= target_date))].copy()
@@ -892,7 +887,7 @@ def build_cost_debug_view_model(shared_tables: dict[str, pd.DataFrame], selected
     conv_show = conversions_df.copy()
     if not conv_show.empty and "item_id" in conv_show.columns:
         conv_show = conv_show[conv_show["item_id"].astype(str).str.strip() == selected].copy()
-    return {"item_row": item_row, "base_unit": unit_label(base_unit), "default_stock_unit": unit_label(default_stock_unit), "default_order_unit": unit_label(default_order_unit), "unit_price": unit_price, "price_unit": unit_label(price_unit), "effective_date": effective_date, "base_unit_cost": base_unit_cost, "conv_show": conv_show}
+    return {"item_row": item_row, "base_unit": base_unit, "default_stock_unit": default_stock_unit, "default_order_unit": default_order_unit, "unit_price": unit_price, "price_unit": price_unit, "effective_date": effective_date, "base_unit_cost": base_unit_cost, "conv_show": conv_show}
 
 
 def build_csv_download_payload(preview: pd.DataFrame) -> bytes:
@@ -919,16 +914,10 @@ def build_cost_debug_display_model(shared_tables: dict[str, pd.DataFrame], selec
     model = build_cost_debug_view_model(shared_tables, selected_item_id, target_date)
     conv_show = model["conv_show"]
     conv_columns = [c for c in ["conversion_id", "from_unit", "to_unit", "ratio", "is_active"] if c in conv_show.columns]
-    conv_display = conv_show[conv_columns].copy() if conv_columns else pd.DataFrame()
-    if not conv_display.empty:
-        if "from_unit" in conv_display.columns:
-            conv_display["from_unit"] = conv_display["from_unit"].apply(unit_label)
-        if "to_unit" in conv_display.columns:
-            conv_display["to_unit"] = conv_display["to_unit"].apply(unit_label)
     return {
         "selector": selector,
         "item_label": item_label,
         "item_name": item_label.rsplit(" (", 1)[0] if item_label else "",
         "model": model,
-        "conv_display": conv_display,
+        "conv_display": conv_show[conv_columns].copy() if conv_columns else pd.DataFrame(),
     }
