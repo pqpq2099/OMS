@@ -6,7 +6,7 @@ import streamlit as st
 
 from operations.logic import logic_stock_record
 from shared.core.navigation import goto
-from shared.utils.utils_format import _fmt_qty_with_unit
+from shared.utils.utils_format import _fmt_qty_with_unit, unit_label
 from shared.services import service_order_core
 
 
@@ -179,7 +179,7 @@ def page_daily_stock_order_record():
                 disabled=True,
             )
             st.markdown(
-                f"<div class='order-unit-label'>{row.get('stock_unit', '')}</div>",
+                f"<div class='order-unit-label'>{unit_label(row.get('stock_unit', ''))}</div>",
                 unsafe_allow_html=True,
             )
 
@@ -201,6 +201,7 @@ def page_daily_stock_order_record():
                 key=f"daily_record_unit_{item_id}",
                 label_visibility="collapsed",
                 disabled=True,
+                format_func=unit_label,
             )
 
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)

@@ -13,7 +13,7 @@ from operations.pages.page_order_result import (
 from operations.pages.page_daily_stock_order_record import (
     page_daily_stock_order_record as page_daily_stock_order_record_view,
 )
-from shared.utils.utils_format import _fmt_qty_with_unit
+from shared.utils.utils_format import _fmt_qty_with_unit, unit_label
 
 
 WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
@@ -313,7 +313,7 @@ def page_order():
                     label_visibility="collapsed",
                 )
                 st.markdown(
-                    f"<div class='order-unit-label'>{card['stock_unit']}</div>",
+                    f"<div class='order-unit-label'>{unit_label(card['stock_unit'])}</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -335,6 +335,7 @@ def page_order():
                     else 0,
                     key=f"order_unit_{item_id}",
                     label_visibility="collapsed",
+                    format_func=unit_label,
                 )
 
             st.markdown("</div>", unsafe_allow_html=True)

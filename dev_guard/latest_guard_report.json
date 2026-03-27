@@ -1,0 +1,847 @@
+{
+  "meta": {
+    "generated_at": "2026-03-25T19:19:53",
+    "project_root": "/mnt/data/omswork/OMS",
+    "validator": "dev_guard/run_local_guard.py",
+    "baseline_source": "validation_baseline/run_validation_baseline.py"
+  },
+  "compileall": {
+    "ok": true
+  },
+  "import_smoke": [
+    {
+      "module": "analysis.logic.report_query",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "analysis.logic.report_view_model",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "analysis.pages.page_export",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "analysis.pages.page_inventory_analysis",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "analysis.pages.page_order_history",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "analysis.pages.page_reports",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "analysis.pages.shared",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "app",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "benchmarks.performance.local_runtime",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "benchmarks.performance.run_benchmarks",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "benchmarks.performance.run_stress_benchmarks",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "benchmarks.performance.stress_data_builder",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.logic.logic_purchase_settings",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.page_purchase_settings",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.purchase_settings.shared",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.purchase_settings.tab_items",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.purchase_settings.tab_prices",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.purchase_settings.tab_unit_conversions",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.purchase_settings.tab_units",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.pages.purchase_settings.tab_vendors",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "data_management.services.service_purchase",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "dev_guard.run_local_guard",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "oms_core",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.logic_order",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.logic_order_result",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.logic_stock_record",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.logic_stocktake",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_decision",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_errors",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_query",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_query_common",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_query_po",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_query_stock",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_validation",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_view_model",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_write",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_write_po",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_write_stock",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.order_write_utils",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.user_permission",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.user_query",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.logic.user_write",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.pages.page_daily_stock_order_record",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.pages.page_order",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.pages.page_order_result",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.pages.page_select_store",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.pages.page_select_vendor",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "operations.pages.page_stocktake",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.core.app_runtime",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.core.app_shell",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.core.audit_writer",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.core.id_generator",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.core.navigation",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.core.write_pipeline",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.id_allocation",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.report_calculations",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.repository_gsheets",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.service_audit",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.service_id",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.service_line",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.service_order_core",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.service_reports",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.service_sheet",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.services.spreadsheet_backend",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.utils.common_helpers",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.utils.ui_style",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.utils.utils_format",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.utils.utils_helpers",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "shared.utils.utils_units",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "system.logic.logic_system_tools",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "system.pages.page_appearance_settings",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "system.pages.page_system_info",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "system.pages.page_system_maintenance",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "system.pages.page_system_tools",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "system.services.system_actions",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "ui_text",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.logic.logic_login",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.logic.logic_user_admin",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.logic.store_admin",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.logic.user_permission",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.logic.user_query",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.logic.user_write",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.page_account_settings",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.page_login",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.page_store_admin",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.page_user_admin",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.user_admin.shared",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.user_admin.tab_account_edit",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.user_admin.tab_promotion",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.user_admin.tab_role_permission",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.user_admin.tab_store_permission",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.pages.user_admin.tab_user_list",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.services.service_stores",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "users_permissions.services.service_users",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    },
+    {
+      "module": "validation_baseline.run_validation_baseline",
+      "ok": true,
+      "error_type": "",
+      "error_message": ""
+    }
+  ],
+  "router_smoke": {
+    "route_count": 18,
+    "checks": [
+      {
+        "route_key": "select_store",
+        "target": "operations_pages.page_select_store",
+        "ok": true
+      },
+      {
+        "route_key": "select_vendor",
+        "target": "operations_pages.page_select_vendor",
+        "ok": true
+      },
+      {
+        "route_key": "order_entry",
+        "target": "operations_pages.page_order",
+        "ok": true
+      },
+      {
+        "route_key": "order_message_detail",
+        "target": "operations_pages.page_order_message_detail",
+        "ok": true
+      },
+      {
+        "route_key": "export",
+        "target": "analysis_pages.page_export",
+        "ok": true
+      },
+      {
+        "route_key": "stock_order_compare",
+        "target": "analysis_pages.page_stock_order_compare",
+        "ok": true
+      },
+      {
+        "route_key": "analysis",
+        "target": "analysis_pages.page_analysis",
+        "ok": true
+      },
+      {
+        "route_key": "view_history",
+        "target": "analysis_pages.page_view_history",
+        "ok": true
+      },
+      {
+        "route_key": "cost_debug",
+        "target": "analysis_pages.page_cost_debug",
+        "ok": true
+      },
+      {
+        "route_key": "appearance_settings",
+        "target": "system_pages.page_appearance_settings",
+        "ok": true
+      },
+      {
+        "route_key": "system_info",
+        "target": "system_pages.page_system_info",
+        "ok": true
+      },
+      {
+        "route_key": "owner_verify",
+        "target": "app_runtime.page_owner_verify",
+        "ok": true
+      },
+      {
+        "route_key": "user_admin",
+        "target": "users_permissions_pages.page_user_admin",
+        "ok": true
+      },
+      {
+        "route_key": "account_settings",
+        "target": "users_permissions_pages.page_account_settings",
+        "ok": true
+      },
+      {
+        "route_key": "purchase_settings",
+        "target": "data_management_pages.page_purchase_settings",
+        "ok": true
+      },
+      {
+        "route_key": "store_admin",
+        "target": "users_permissions_pages.page_store_admin",
+        "ok": true
+      },
+      {
+        "route_key": "system_maintenance",
+        "target": "system_pages.page_system_maintenance",
+        "ok": true
+      },
+      {
+        "route_key": "system_tools",
+        "target": "system_pages.page_system_tools",
+        "ok": true
+      }
+    ],
+    "extra_keys": [],
+    "missing_keys": [],
+    "ok": true
+  },
+  "page_exports": [
+    {
+      "package": "operations.pages",
+      "export_name": "page_select_store",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "operations.pages",
+      "export_name": "page_select_vendor",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "operations.pages",
+      "export_name": "page_order",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "operations.pages",
+      "export_name": "page_order_result",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "operations.pages",
+      "export_name": "page_order_message_detail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "operations.pages",
+      "export_name": "page_daily_stock_order_record",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "operations.pages",
+      "export_name": "page_stocktake",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_export_report",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_inventory_analysis",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_order_history",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_analysis",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_cost_debug",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_export",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_stock_order_compare",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "analysis.pages",
+      "export_name": "page_view_history",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "data_management.pages",
+      "export_name": "page_purchase_settings",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "users_permissions.pages",
+      "export_name": "page_account_settings",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "users_permissions.pages",
+      "export_name": "page_login",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "users_permissions.pages",
+      "export_name": "page_store_admin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "users_permissions.pages",
+      "export_name": "page_user_admin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "users_permissions.pages",
+      "export_name": "render_login_sidebar",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "system.pages",
+      "export_name": "page_appearance_settings",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "system.pages",
+      "export_name": "page_system_info",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "system.pages",
+      "export_name": "page_system_maintenance",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "package": "system.pages",
+      "export_name": "page_system_tools",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "page_layer_violations": [],
+  "summary": {
+    "compileall_ok": true,
+    "import_modules_total": 95,
+    "import_modules_failed": 0,
+    "router_ok": true,
+    "router_route_count": 18,
+    "page_export_total": 25,
+    "page_export_failed": 0,
+    "page_violation_total": 0,
+    "page_direct_write_calls": 0,
+    "page_dataframe_ops": 0
+  },
+  "guard_ok": true
+}

@@ -7,6 +7,7 @@ import gspread
 import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
+from shared.services.supabase_client import fetch_table
 
 from shared.utils.common_helpers import _norm
 
@@ -237,11 +238,46 @@ def _get_sheet_snapshot(sheet_name: str, version: int = 0, force_refresh: bool =
 
 
 def _read_table_remote(sheet_name: str, version: int = 0) -> pd.DataFrame:
-    snapshot = _get_sheet_snapshot(sheet_name, version)
-    return _build_dataframe_from_snapshot(snapshot)
+    """
+    優先讀 Supabase。
+    若 Supabase 讀不到，再退回原本 Google Sheets 流程。
+    """
+    try:
+        rows = fetch_table(sheet_name)
+        if not rows:
+            return pd.DataFrame()
 
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return pd.DataFrame()
+
+        df.columns = [_norm(c) for c in df.columns]
+
+        df = df[
+            df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
+        ].reset_index(drop=True)
+
+        return df
+    except Exception:
+        snapshot = _get_sheet_snapshot(sheet_name, version)
+        return _build_dataframe_from_snapshot(snapshot)
 
 def _get_header_remote(sheet_name: str, version: int = 0) -> list[str]:
+    """
+    優先讀 Supabase header。
+    若 Supabase 失敗，再退回 Google Sheets header。
+    """
+    try:
+        rows = fetch_table(sheet_name)
+        if rows:
+            df = pd.DataFrame(rows)
+            if not df.empty:
+                header = [_norm(c) for c in df.columns]
+                if header:
+                    return header
+    except Exception:
+        pass
+
     snapshot = _get_sheet_snapshot(sheet_name, version)
     header = list(snapshot.get("header", []) or [])
     if not header:
