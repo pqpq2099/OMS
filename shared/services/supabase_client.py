@@ -59,3 +59,17 @@ def delete_rows(table_name: str, filters: dict):
     for field, value in (filters or {}).items():
         query = query.eq(field, value)
     return query.execute()
+
+
+def replace_table_rows(table_name: str, key_field: str, rows: list[dict]):
+    existing = fetch_table(table_name)
+    existing_keys = {str(r.get(key_field, "")).strip() for r in existing if str(r.get(key_field, "")).strip()}
+    new_keys = {str(r.get(key_field, "")).strip() for r in rows if str(r.get(key_field, "")).strip()}
+
+    delete_keys = [k for k in existing_keys if k and k not in new_keys]
+    for key in delete_keys:
+        supabase.table(table_name).delete().eq(key_field, key).execute()
+
+    if rows:
+        supabase.table(table_name).upsert(rows).execute()
+    return True

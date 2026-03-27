@@ -21,6 +21,7 @@ from datetime import date
 import pandas as pd
 
 from shared.utils.common_helpers import _norm, _now_ts, _safe_float
+from shared.utils.utils_format import clear_unit_label_cache
 from shared.services.service_sheet import (
     sheet_append,
     sheet_bust_cache as bust_cache,
@@ -368,6 +369,7 @@ def create_item(
     header = get_header("items")
     sheet_append("items", header, [row])
     bust_cache()
+    clear_unit_label_cache()
     return new_id
 
 
@@ -514,6 +516,7 @@ def update_unit(
     }
     sheet_update("units", "unit_id", unit_id, updates)
     bust_cache()
+    clear_unit_label_cache()
 
 
 def update_item(
