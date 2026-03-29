@@ -6,6 +6,7 @@ import pandas as pd
 
 from operations.logic import logic_order
 from shared.services import service_order_core
+from shared.utils.utils_format import unit_label
 
 
 def _fmt_qty(v):
@@ -158,7 +159,7 @@ def build_order_message_detail_view_model(*, store_id: str, store_name: str, sel
         for _, r in group.iterrows():
             item_name = _simplify_line_item_name(r.get("item_name", ""))
             qty = _fmt_qty(r.get(qty_col, ""))
-            unit = str(r.get(unit_col, "")).strip()
+            unit = unit_label(str(r.get(unit_col, "")).strip())
             lines.append(f"{item_name} {qty}{unit}")
 
         lines.append(_fmt_arrival_text(delivery_dt))

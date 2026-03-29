@@ -163,6 +163,8 @@ def _upsert_detail_rows_by_parent(
                 new_idx += 1
             for key, value in item_row.items():
                 if key in row_dict:
+                    if key == line_id_field:  # 不可覆蓋已分配的 line id
+                        continue
                     row_dict[key] = "" if value is None else value
             add_rows.append(row_dict)
 

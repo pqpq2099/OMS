@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 
@@ -17,6 +17,7 @@ from shared.services.service_reports import (
     safe_float,
 )
 from shared.services.service_sheet import sheet_get_versions
+from shared.utils.utils_format import unit_label
 from shared.utils.utils_units import convert_unit, get_base_unit
 
 
@@ -389,8 +390,8 @@ def build_stock_order_compare_view_model(store_id: str, selected_date: date, sel
     item_col = "品項" if "品項" in work.columns else "item_id"
     preview_all = work[["廠商", item_col, "這次庫存_顯示值", "庫存顯示單位", "這次叫貨_顯示值", "叫貨顯示單位"]].copy()
     preview_all = preview_all.rename(columns={item_col: "品項", "這次庫存_顯示值": "這次庫存", "這次叫貨_顯示值": "這次叫貨"})
-    preview_all["這次庫存"] = preview_all["這次庫存"].map(lambda v: f"{safe_float(v):g}") + preview_all["庫存顯示單位"].map(lambda v: f" {str(v).strip()}" if str(v).strip() else "")
-    preview_all["這次叫貨"] = preview_all["這次叫貨"].map(lambda v: f"{safe_float(v):g}") + preview_all["叫貨顯示單位"].map(lambda v: f" {str(v).strip()}" if str(v).strip() else "")
+    preview_all["這次庫存"] = preview_all["這次庫存"].map(lambda v: f"{safe_float(v):g}") + preview_all["庫存顯示單位"].map(lambda v: f" {unit_label(str(v).strip())}" if str(v).strip() else "")
+    preview_all["這次叫貨"] = preview_all["這次叫貨"].map(lambda v: f"{safe_float(v):g}") + preview_all["叫貨顯示單位"].map(lambda v: f" {unit_label(str(v).strip())}" if str(v).strip() else "")
     preview_all = preview_all.drop(columns=["庫存顯示單位", "叫貨顯示單位"]).sort_values(["廠商", "品項"], ascending=[True, True]).reset_index(drop=True)
     vendor_options = [ALL_VENDORS] + clean_option_list(preview_all["廠商"].dropna().tolist())
 
@@ -838,11 +839,19 @@ def build_cost_debug_selector_data(shared_tables: dict[str, pd.DataFrame]):
 
 
 def build_cost_debug_view_model(shared_tables: dict[str, pd.DataFrame], selected_item_id: str, target_date: date):
+    def _safe_to_date(x):
+        dt = pd.to_datetime(x, errors="coerce")
+        if pd.isna(dt):
+            return None
+        return dt.date()
+
     items_df = get_active_df(shared_tables["items"])
     prices_df = shared_tables["prices"]
     conversions_df = get_active_df(shared_tables["unit_conversions"])
+    units_df = shared_tables.get("units", pd.DataFrame())
     work = build_cost_debug_selector_data(shared_tables)["work"]
     selected = str(selected_item_id).strip()
+
     if work.empty:
         item_row = pd.Series(dtype=object)
         selected = ""
@@ -853,27 +862,63 @@ def build_cost_debug_view_model(shared_tables: dict[str, pd.DataFrame], selected
             selected = str(item_row.get("item_id", "")).strip()
         else:
             item_row = work.loc[mask].iloc[0]
-    base_unit = norm(item_row.get("base_unit", ""))
-    default_stock_unit = norm(item_row.get("default_stock_unit", ""))
-    default_order_unit = norm(item_row.get("default_order_unit", ""))
+
+    unit_map = {}
+    if not units_df.empty and "unit_id" in units_df.columns:
+        units_work = units_df.copy()
+        units_work["unit_id"] = units_work["unit_id"].astype(str).str.strip()
+
+        units_work["unit_name_disp"] = units_work.get("unit_name_zh", "").astype(str).str.strip()
+        if "unit_name" in units_work.columns:
+            units_work.loc[units_work["unit_name_disp"] == "", "unit_name_disp"] = (
+                units_work["unit_name"].astype(str).str.strip()
+            )
+
+        units_work.loc[units_work["unit_name_disp"] == "", "unit_name_disp"] = units_work["unit_id"]
+        unit_map = dict(zip(units_work["unit_id"], units_work["unit_name_disp"]))
+
+    base_unit_id = norm(item_row.get("base_unit", ""))
+    base_unit = unit_map.get(base_unit_id, base_unit_id)
+
+    default_stock_unit_id = norm(item_row.get("default_stock_unit", ""))
+    default_stock_unit = unit_map.get(default_stock_unit_id, default_stock_unit_id)
+
+    default_order_unit_id = norm(item_row.get("default_order_unit", ""))
+    default_order_unit = unit_map.get(default_order_unit_id, default_order_unit_id)
+
     price_rows = prices_df.copy()
     if not price_rows.empty and "item_id" in price_rows.columns:
-        price_rows = price_rows[price_rows["item_id"].astype(str).str.strip() == str(selected_item_id).strip()].copy()
+        price_rows = price_rows[
+            price_rows["item_id"].astype(str).str.strip() == selected
+        ].copy()
+
         if "is_active" in price_rows.columns:
-            price_rows = price_rows[price_rows["is_active"].apply(lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"])].copy()
+            price_rows = price_rows[
+                price_rows["is_active"].apply(
+                    lambda x: str(x).strip() in ["1", "True", "true", "YES", "yes", "是"]
+                )
+            ].copy()
+
         if "effective_date" in price_rows.columns:
-            price_rows["__eff"] = price_rows["effective_date"].apply(lambda x: None if str(x).strip() == "" else pd.to_datetime(x).date())
+            price_rows["__eff"] = price_rows["effective_date"].apply(_safe_to_date)
         else:
             price_rows["__eff"] = None
+
         if "end_date" in price_rows.columns:
-            price_rows["__end"] = price_rows["end_date"].apply(lambda x: None if str(x).strip() == "" else pd.to_datetime(x).date())
+            price_rows["__end"] = price_rows["end_date"].apply(_safe_to_date)
         else:
             price_rows["__end"] = None
-        price_rows = price_rows[(price_rows["__eff"].isna() | (price_rows["__eff"] <= target_date)) & (price_rows["__end"].isna() | (price_rows["__end"] >= target_date))].copy()
+
+        price_rows = price_rows[
+            (price_rows["__eff"].isna() | (price_rows["__eff"] <= target_date))
+            & (price_rows["__end"].isna() | (price_rows["__end"] >= target_date))
+        ].copy()
+
         if not price_rows.empty:
             latest_price = price_rows.sort_values("__eff", ascending=True).iloc[-1]
             unit_price = float(latest_price.get("unit_price", 0) or 0)
-            price_unit = norm(latest_price.get("price_unit", ""))
+            price_unit_id = norm(latest_price.get("price_unit", ""))
+            price_unit = unit_map.get(price_unit_id, price_unit_id)
             effective_date = latest_price.get("effective_date", "")
         else:
             unit_price = 0.0
@@ -883,12 +928,30 @@ def build_cost_debug_view_model(shared_tables: dict[str, pd.DataFrame], selected
         unit_price = 0.0
         price_unit = ""
         effective_date = ""
-    base_unit_cost = get_base_unit_cost(item_id=selected, target_date=target_date, items_df=items_df, prices_df=prices_df, conversions_df=conversions_df)
+
+    base_unit_cost = get_base_unit_cost(
+        item_id=selected,
+        target_date=target_date,
+        items_df=items_df,
+        prices_df=prices_df,
+        conversions_df=conversions_df,
+    )
+
     conv_show = conversions_df.copy()
     if not conv_show.empty and "item_id" in conv_show.columns:
         conv_show = conv_show[conv_show["item_id"].astype(str).str.strip() == selected].copy()
-    return {"item_row": item_row, "base_unit": base_unit, "default_stock_unit": default_stock_unit, "default_order_unit": default_order_unit, "unit_price": unit_price, "price_unit": price_unit, "effective_date": effective_date, "base_unit_cost": base_unit_cost, "conv_show": conv_show}
 
+    return {
+        "item_row": item_row,
+        "base_unit": base_unit,
+        "default_stock_unit": default_stock_unit,
+        "default_order_unit": default_order_unit,
+        "unit_price": unit_price,
+        "price_unit": price_unit,
+        "effective_date": effective_date,
+        "base_unit_cost": base_unit_cost,
+        "conv_show": conv_show,
+    }
 
 def build_csv_download_payload(preview: pd.DataFrame) -> bytes:
     if preview is None or preview.empty:

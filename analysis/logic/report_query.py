@@ -6,7 +6,7 @@ import streamlit as st
 from shared.services.service_reports import get_report_shared_table_versions, read_report_table
 
 
-REPORT_SHARED_TABLES = ("items", "vendors", "stores", "prices", "unit_conversions")
+REPORT_SHARED_TABLES = ("items", "vendors", "stores", "prices", "units", "unit_conversions")
 
 
 def load_report_shared_tables() -> dict[str, pd.DataFrame]:

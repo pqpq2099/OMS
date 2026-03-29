@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
 from shared.services.supabase_client import fetch_table, insert_rows, update_rows
+from shared.services.table_contract import TABLE_CONTRACT
 
 from shared.utils.common_helpers import _norm
 
@@ -70,7 +71,6 @@ def get_gspread_client():
     try:
         info = _get_service_account_info()
         if not info:
-            st.error("找不到 Google Service Account 設定")
             return None
         signature = json.dumps(info, ensure_ascii=False, sort_keys=True)
         return _build_gspread_client(signature)
@@ -84,7 +84,6 @@ def get_spreadsheet():
     try:
         info = _get_service_account_info()
         if not info:
-            st.error("找不到 Google Service Account 設定")
             return None
         signature = json.dumps(info, ensure_ascii=False, sort_keys=True)
         return _open_spreadsheet_resource(signature, _get_secret_sheet_id())
@@ -239,8 +238,9 @@ def _get_sheet_snapshot(sheet_name: str, version: int = 0, force_refresh: bool =
 
 def _read_table_remote(sheet_name: str, version: int = 0) -> pd.DataFrame:
     """
-    優先讀 Supabase。
-    若 Supabase 讀不到，再退回原本 Google Sheets 流程。
+    主資料來源：Supabase。
+    若 Supabase 不可用（例外），才退回 Google Sheets 緊急備援。
+    正常運作時 Google Sheets 路徑不會被執行。
     """
     try:
         rows = fetch_table(sheet_name)
@@ -259,6 +259,7 @@ def _read_table_remote(sheet_name: str, version: int = 0) -> pd.DataFrame:
 
         return df
     except Exception:
+        # [Google fallback] 僅在 Supabase 不可用時執行，非主流程
         snapshot = _get_sheet_snapshot(sheet_name, version)
         return _build_dataframe_from_snapshot(snapshot)
 
@@ -295,15 +296,11 @@ def _resolve_table_version(sheet_name: str, force_refresh: bool = False) -> tupl
 
 def read_table(sheet_name: str, force_refresh: bool = False) -> pd.DataFrame:
     """
-    讀取 Google Sheet 表格。
-    這裡採三層快取：
+    讀取資料表。主資料來源：Supabase。Google Sheets 僅作緊急備援。
+    三層快取：
     1. cache_resource：client / spreadsheet 連線共用
     2. cache_data + session snapshot：同張表 header/table 共用一次遠端讀取
     3. session_state runtime cache：同一位使用者當前操作流程直接重用 DataFrame
-
-    另外當 Google API 暫時 429 / timeout 時：
-    - 若 session 內已有最近一次成功資料，優先回傳舊資料
-    - 目的不是永久吃舊資料，而是避免單次畫面整頁炸掉
     """
     cache = _get_runtime_table_cache()
     cache_key, current_version = _resolve_table_version(sheet_name, force_refresh=force_refresh)
@@ -360,7 +357,55 @@ def get_header(sheet_name: str, force_refresh: bool = False) -> list[str]:
         if old_header is not None:
             st.warning(f"{sheet_name} header 讀取失敗，已改用暫存資料：{e}")
             return list(old_header)
+        # [TABLE_CONTRACT fallback] 所有遠端來源失敗時，從契約取 columns_order
+        contract = TABLE_CONTRACT.get(_norm(sheet_name))
+        if contract and contract.get("columns_order"):
+            return list(contract["columns_order"])
         raise
+
+
+# ---------------------------------------------------------------------------
+# TABLE_CONTRACT 寫入前驗證（內部函式）
+# table 不在 TABLE_CONTRACT 時一律略過，不拋錯，確保向後相容。
+# ---------------------------------------------------------------------------
+
+def _get_table_contract(table_name: str) -> dict | None:
+    """回傳 table 的 contract 定義；未定義時回傳 None（略過驗證）。"""
+    return TABLE_CONTRACT.get(_norm(table_name))
+
+
+def _validate_required_columns(table_name: str, row: dict) -> None:
+    """檢查 row 中 required_columns 不可缺少或為空。
+    table 不在 TABLE_CONTRACT：直接略過。
+    """
+    contract = _get_table_contract(table_name)
+    if contract is None:
+        return
+    required = contract.get("required_columns", [])
+    missing = [
+        col for col in required
+        if col not in row or row[col] == "" or row[col] is None
+    ]
+    if missing:
+        raise ValueError(
+            f"[{table_name}] 寫入失敗：required_columns 缺少或為空 → {missing}"
+        )
+
+
+def _validate_primary_key_presence(table_name: str, row: dict) -> None:
+    """檢查 row 中 primary_key 不可缺少或為空。
+    table 不在 TABLE_CONTRACT：直接略過。
+    """
+    contract = _get_table_contract(table_name)
+    if contract is None:
+        return
+    pk = contract.get("primary_key")
+    if not pk:
+        return
+    if pk not in row or row.get(pk) == "" or row.get(pk) is None:
+        raise ValueError(
+            f"[{table_name}] 寫入失敗：primary_key「{pk}」缺少或為空"
+        )
 
 
 def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
@@ -376,16 +421,29 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
             values = values[:len(header)] + [""] * max(0, len(header) - len(values))
             normalized_rows.append({col: values[idx] for idx, col in enumerate(header)})
 
+    # [TABLE_CONTRACT 驗證] 寫入前檢查 required_columns 與 primary_key
+    for row in normalized_rows:
+        _validate_required_columns(sheet_name, row)
+        _validate_primary_key_presence(sheet_name, row)
+
+    _supabase_exc = None
     try:
-        insert_rows(sheet_name, normalized_rows)
+        # [Supabase] 省略空值欄位：避免 integer/numeric 欄位收到 "" 導致型別錯誤
+        # id (autoincrement) 省略後 DB 自動補 nextval；nullable numeric 省略後插入 NULL
+        insert_payload = [
+            {k: v for k, v in row.items() if v != "" and v is not None}
+            for row in normalized_rows
+        ]
+        insert_rows(sheet_name, insert_payload)
         bust_cache(sheet_name)
         return
-    except Exception:
-        pass
+    except Exception as e:
+        _supabase_exc = e
 
+    # [Google fallback] 僅在 Supabase 不可用時執行，非主流程
     sh = get_spreadsheet()
     if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
+        raise _supabase_exc  # 拋出 Supabase 原始錯誤，非 "Spreadsheet 未初始化"
 
     ws = sh.worksheet(sheet_name)
     values = [[row.get(col, "") for col in header] for row in normalized_rows]
@@ -418,18 +476,35 @@ def get_row_index_map(sheet_name: str, key_field: str, force_refresh: bool = Fal
 
 
 def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates: dict):
-    """依指定鍵值更新單筆資料，優先寫入 Supabase。"""
+    """依指定鍵值更新單筆資料，優先寫入 Supabase。Google Sheets 僅作緊急備援。"""
     key_value = _norm(key_value)
     if not key_value:
         raise ValueError(f"{sheet_name}.{key_field} 不可為空")
 
+    # [TABLE_CONTRACT 驗證] key_field 非 primary_key 時保留原行為不拋錯；
+    # 若 updates 中明確帶有 primary_key，確保其值不為空。
+    _contract = _get_table_contract(sheet_name)
+    if _contract:
+        _pk = _contract.get("primary_key")
+        if _pk and _pk in (updates or {}):
+            if (updates or {}).get(_pk) in ("", None):
+                raise ValueError(
+                    f"[{sheet_name}] 更新失敗：primary_key「{_pk}」在 updates 中不可為空"
+                )
+
+    _supabase_exc = None
     try:
         clean_updates = {field: ("" if value is None else value) for field, value in (updates or {}).items()}
         update_rows(sheet_name, {key_field: key_value}, clean_updates)
         bust_cache(sheet_name)
         return
-    except Exception:
-        pass
+    except Exception as e:
+        _supabase_exc = e
+
+    # [Google fallback] 僅在 Supabase 不可用時執行，非主流程
+    sh = get_spreadsheet()
+    if sh is None:
+        raise _supabase_exc  # 拋出 Supabase 原始錯誤，非 "Spreadsheet 未初始化"
 
     header = get_header(sheet_name)
     if not header:
@@ -457,10 +532,6 @@ def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates
         row[field] = "" if value is None else value
 
     values = [[row.get(col, "") for col in header]]
-
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
 
     ws = sh.worksheet(sheet_name)
 

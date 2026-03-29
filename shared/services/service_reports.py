@@ -22,7 +22,14 @@ from shared.services.report_calculations import (
 from shared.utils.ui_style import render_report_dataframe as _render_report_dataframe
 from shared.services.service_sheet import sheet_get_versions, sheet_read
 
-REPORT_SHARED_TABLES = ("items", "vendors", "stores", "prices", "unit_conversions")
+REPORT_SHARED_TABLES = (
+    "items",
+    "vendors",
+    "stores",
+    "prices",
+    "units",            
+    "unit_conversions",
+)
 
 
 def render_report_dataframe(*args, **kwargs):

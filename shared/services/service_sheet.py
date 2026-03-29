@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from shared.utils.common_helpers import _norm
+from shared.services.table_contract import TABLE_CONTRACT
 from shared.services.spreadsheet_backend import (
     append_rows_by_header,
     bust_cache,
@@ -25,23 +26,21 @@ def _sheet_col_to_letter(n: int) -> str:
 
 
 
-_PRIMARY_KEY_MAP = {
-    "vendors": "vendor_id",
+# PK 來源由 TABLE_CONTRACT 提供（shared/services/table_contract.py）
+# 寫入前驗證（required_columns / primary_key）在 spreadsheet_backend 執行
+# 非 TABLE_CONTRACT 的表保留舊值作 fallback
+_PRIMARY_KEY_MAP: dict[str, str] = {
+    t: info["primary_key"] for t, info in TABLE_CONTRACT.items()
+}
+_PRIMARY_KEY_MAP.update({
     "units": "unit_id",
-    "items": "item_id",
     "prices": "price_id",
     "unit_conversions": "conversion_id",
-    "purchase_orders": "po_id",
-    "purchase_order_lines": "po_line_id",
-    "stocktakes": "stocktake_id",
-    "stocktake_lines": "stocktake_line_id",
     "transactions": "txn_id",
     "audit_logs": "audit_id",
-    "users": "user_id",
-    "stores": "store_id",
-    "settings": "key",
+    "settings": "setting_key",
     "id_sequences": "key",
-}
+})
 
 
 def _primary_key_for_table(table: str, header: list[str] | None = None) -> str | None:
