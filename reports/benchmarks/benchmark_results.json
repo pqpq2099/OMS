@@ -1,0 +1,604 @@
+{
+  "meta": {
+    "workbook_path": "/mnt/data/ORIVIA_OMS_DB.xlsx",
+    "cold_repeat": 2,
+    "warm_repeat": 3,
+    "store_id": "STORE_002",
+    "history_window": [
+      "2026-03-15",
+      "2026-03-24"
+    ],
+    "compare_date": "2026-03-19"
+  },
+  "benchmarks": [
+    {
+      "group": "spreadsheet_backend",
+      "name": "read_table(items)",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          37.834,
+          33.175
+        ],
+        "mean_ms": 35.504,
+        "median_ms": 35.504,
+        "min_ms": 33.175,
+        "max_ms": 37.834
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          4.275,
+          0.412,
+          0.346
+        ],
+        "mean_ms": 1.678,
+        "median_ms": 0.412,
+        "min_ms": 0.346,
+        "max_ms": 4.275
+      },
+      "speedup_ratio": 21.16,
+      "result_shape": {
+        "rows": 146,
+        "cols": 29
+      }
+    },
+    {
+      "group": "spreadsheet_backend",
+      "name": "get_header(items)",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          21.415,
+          21.452
+        ],
+        "mean_ms": 21.433,
+        "median_ms": 21.433,
+        "min_ms": 21.415,
+        "max_ms": 21.452
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.01,
+          0.01,
+          0.007
+        ],
+        "mean_ms": 0.009,
+        "median_ms": 0.01,
+        "min_ms": 0.007,
+        "max_ms": 0.01
+      },
+      "speedup_ratio": 2381.44,
+      "result_shape": {
+        "size": 29,
+        "sample": [
+          "item_id",
+          "brand_id",
+          "default_vendor_id",
+          "item_name",
+          "item_name_zh"
+        ]
+      }
+    },
+    {
+      "group": "spreadsheet_backend",
+      "name": "read_table(items, force_refresh=True)",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          31.221,
+          31.384
+        ],
+        "mean_ms": 31.302,
+        "median_ms": 31.302,
+        "min_ms": 31.221,
+        "max_ms": 31.384
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          30.155,
+          30.319,
+          30.518
+        ],
+        "mean_ms": 30.33,
+        "median_ms": 30.319,
+        "min_ms": 30.155,
+        "max_ms": 30.518
+      },
+      "speedup_ratio": 1.03,
+      "result_shape": {
+        "rows": 146,
+        "cols": 29
+      }
+    },
+    {
+      "group": "spreadsheet_backend",
+      "name": "bust_cache(items) + read_table(items)",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          29.959,
+          30.699
+        ],
+        "mean_ms": 30.329,
+        "median_ms": 30.329,
+        "min_ms": 29.959,
+        "max_ms": 30.699
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          30.446,
+          30.833,
+          48.82
+        ],
+        "mean_ms": 36.7,
+        "median_ms": 30.833,
+        "min_ms": 30.446,
+        "max_ms": 48.82
+      },
+      "speedup_ratio": 0.83,
+      "result_shape": {
+        "rows": 146,
+        "cols": 29
+      }
+    },
+    {
+      "group": "spreadsheet_backend",
+      "name": "report_stock_source_reads()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          179.056,
+          189.619
+        ],
+        "mean_ms": 184.337,
+        "median_ms": 184.337,
+        "min_ms": 179.056,
+        "max_ms": 189.619
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          1.462,
+          1.889,
+          1.628
+        ],
+        "mean_ms": 1.66,
+        "median_ms": 1.628,
+        "min_ms": 1.462,
+        "max_ms": 1.889
+      },
+      "speedup_ratio": 111.05,
+      "result_shape": {
+        "stocktakes": {
+          "rows": 27,
+          "cols": 30
+        },
+        "stocktake_lines": {
+          "rows": 396,
+          "cols": 31
+        },
+        "items": {
+          "rows": 146,
+          "cols": 29
+        },
+        "vendors": {
+          "rows": 13,
+          "cols": 31
+        },
+        "stores": {
+          "rows": 5,
+          "cols": 26
+        },
+        "unit_conversions": {
+          "rows": 18,
+          "cols": 26
+        }
+      }
+    },
+    {
+      "group": "spreadsheet_backend",
+      "name": "report_purchase_source_reads()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          129.021,
+          127.176
+        ],
+        "mean_ms": 128.099,
+        "median_ms": 128.099,
+        "min_ms": 127.176,
+        "max_ms": 129.021
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          1.355,
+          1.161,
+          1.266
+        ],
+        "mean_ms": 1.261,
+        "median_ms": 1.266,
+        "min_ms": 1.161,
+        "max_ms": 1.355
+      },
+      "speedup_ratio": 101.59,
+      "result_shape": {
+        "purchase_orders": {
+          "rows": 24,
+          "cols": 28
+        },
+        "purchase_order_lines": {
+          "rows": 144,
+          "cols": 34
+        },
+        "vendors": {
+          "rows": 13,
+          "cols": 31
+        },
+        "items": {
+          "rows": 146,
+          "cols": 29
+        },
+        "stores": {
+          "rows": 5,
+          "cols": 26
+        }
+      }
+    },
+    {
+      "group": "report_calculations",
+      "name": "_build_inventory_history_summary_df(STORE_002, 2026-03-15~2026-03-24)",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          831.85,
+          794.44
+        ],
+        "mean_ms": 813.145,
+        "median_ms": 813.145,
+        "min_ms": 794.44,
+        "max_ms": 831.85
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.18,
+          0.191,
+          0.169
+        ],
+        "mean_ms": 0.18,
+        "median_ms": 0.18,
+        "min_ms": 0.169,
+        "max_ms": 0.191
+      },
+      "speedup_ratio": 4517.47,
+      "result_shape": {
+        "rows": 396,
+        "cols": 22
+      }
+    },
+    {
+      "group": "report_calculations",
+      "name": "_build_stock_detail_df()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          224.995,
+          267.456
+        ],
+        "mean_ms": 246.226,
+        "median_ms": 246.226,
+        "min_ms": 224.995,
+        "max_ms": 267.456
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.148,
+          0.339,
+          0.289
+        ],
+        "mean_ms": 0.259,
+        "median_ms": 0.289,
+        "min_ms": 0.148,
+        "max_ms": 0.339
+      },
+      "speedup_ratio": 950.68,
+      "result_shape": {
+        "rows": 396,
+        "cols": 53
+      }
+    },
+    {
+      "group": "report_calculations",
+      "name": "_build_purchase_detail_df()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          173.685,
+          201.253
+        ],
+        "mean_ms": 187.469,
+        "median_ms": 187.469,
+        "min_ms": 173.685,
+        "max_ms": 201.253
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.094,
+          0.201,
+          0.185
+        ],
+        "mean_ms": 0.16,
+        "median_ms": 0.185,
+        "min_ms": 0.094,
+        "max_ms": 0.201
+      },
+      "speedup_ratio": 1171.68,
+      "result_shape": {
+        "rows": 144,
+        "cols": 59
+      }
+    },
+    {
+      "group": "report_calculations",
+      "name": "_build_latest_item_metrics_df(STORE_002, 2026-03-19)",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          507.021,
+          463.358
+        ],
+        "mean_ms": 485.19,
+        "median_ms": 485.19,
+        "min_ms": 463.358,
+        "max_ms": 507.021
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.203,
+          0.174,
+          0.15
+        ],
+        "mean_ms": 0.176,
+        "median_ms": 0.174,
+        "min_ms": 0.15,
+        "max_ms": 0.203
+      },
+      "speedup_ratio": 2756.76,
+      "result_shape": {
+        "rows": 139,
+        "cols": 22
+      }
+    },
+    {
+      "group": "analysis_flow",
+      "name": "load_report_shared_tables()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          115.545,
+          124.741
+        ],
+        "mean_ms": 120.143,
+        "median_ms": 120.143,
+        "min_ms": 115.545,
+        "max_ms": 124.741
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.144,
+          0.177,
+          0.182
+        ],
+        "mean_ms": 0.167,
+        "median_ms": 0.177,
+        "min_ms": 0.144,
+        "max_ms": 0.182
+      },
+      "speedup_ratio": 719.42,
+      "result_shape": {
+        "items": {
+          "rows": 146,
+          "cols": 29
+        },
+        "vendors": {
+          "rows": 13,
+          "cols": 31
+        },
+        "stores": {
+          "rows": 5,
+          "cols": 26
+        },
+        "prices": {
+          "rows": 146,
+          "cols": 26
+        },
+        "unit_conversions": {
+          "rows": 18,
+          "cols": 26
+        }
+      }
+    },
+    {
+      "group": "analysis_flow",
+      "name": "build_history_page_view_model()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          829.806,
+          853.754
+        ],
+        "mean_ms": 841.78,
+        "median_ms": 841.78,
+        "min_ms": 829.806,
+        "max_ms": 853.754
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          1.639,
+          1.656,
+          1.452
+        ],
+        "mean_ms": 1.582,
+        "median_ms": 1.639,
+        "min_ms": 1.452,
+        "max_ms": 1.656
+      },
+      "speedup_ratio": 532.1,
+      "result_shape": {
+        "hist_df": {
+          "rows": 396,
+          "cols": 22
+        },
+        "vendor_options": {
+          "size": 11,
+          "sample": [
+            "全部廠商",
+            "JENNY",
+            "元和",
+            "國豐",
+            "太古"
+          ]
+        },
+        "item_options": {
+          "size": 1,
+          "sample": [
+            "全部品項"
+          ]
+        },
+        "detail_df": {
+          "rows": 273,
+          "cols": 22
+        },
+        "export_df": {
+          "rows": 0,
+          "cols": 0
+        },
+        "show_df": {
+          "rows": 0,
+          "cols": 0
+        }
+      }
+    },
+    {
+      "group": "analysis_flow",
+      "name": "build_stock_order_compare_view_model()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          564.445,
+          506.201
+        ],
+        "mean_ms": 535.323,
+        "median_ms": 535.323,
+        "min_ms": 506.201,
+        "max_ms": 564.445
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          0.547,
+          0.516,
+          0.472
+        ],
+        "mean_ms": 0.512,
+        "median_ms": 0.516,
+        "min_ms": 0.472,
+        "max_ms": 0.547
+      },
+      "speedup_ratio": 1045.55,
+      "result_shape": {
+        "preview": {
+          "rows": 65,
+          "cols": 4
+        },
+        "vendor_options": {
+          "size": 6,
+          "sample": [
+            "全部廠商",
+            "JENNY",
+            "元和",
+            "國豐",
+            "昶翔"
+          ]
+        },
+        "has_source": true
+      }
+    },
+    {
+      "group": "analysis_flow",
+      "name": "build_analysis_page_view_model()",
+      "cold": {
+        "repeat": 2,
+        "durations_ms": [
+          799.107,
+          842.685
+        ],
+        "mean_ms": 820.896,
+        "median_ms": 820.896,
+        "min_ms": 799.107,
+        "max_ms": 842.685
+      },
+      "warm": {
+        "repeat": 3,
+        "durations_ms": [
+          1.096,
+          1.707,
+          2.16
+        ],
+        "mean_ms": 1.654,
+        "median_ms": 1.707,
+        "min_ms": 1.096,
+        "max_ms": 2.16
+      },
+      "speedup_ratio": 496.31,
+      "result_shape": {
+        "hist_df": {
+          "rows": 396,
+          "cols": 22
+        },
+        "purchase_filt": {
+          "rows": 144,
+          "cols": 62
+        },
+        "vendor_options": {
+          "size": 11,
+          "sample": [
+            "全部廠商",
+            "JENNY",
+            "元和",
+            "國豐",
+            "太古"
+          ]
+        },
+        "total_purchase_amount": 206302.49999999997,
+        "total_stock_amount": 0.0,
+        "vendor_summary": {
+          "rows": 24,
+          "cols": 3
+        },
+        "detail_df": {
+          "rows": 273,
+          "cols": 22
+        },
+        "export_df": {
+          "rows": 0,
+          "cols": 0
+        },
+        "show_df": {
+          "rows": 0,
+          "cols": 0
+        }
+      }
+    }
+  ]
+}
