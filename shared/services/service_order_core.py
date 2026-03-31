@@ -23,7 +23,7 @@ from shared.services.report_calculations import (
     _get_latest_stock_qty_in_display_unit,
     get_base_unit_cost,
 )
-from shared.services.spreadsheet_backend import get_table_versions, read_table
+from shared.services.data_backend import get_table_versions, read_table
 
 
 def build_latest_item_metrics_df(*, store_id: str, as_of_date: date) -> pd.DataFrame:

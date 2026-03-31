@@ -20,7 +20,7 @@ from shared.services.report_calculations import (
     get_base_unit_cost,
 )
 from shared.utils.ui_style import render_report_dataframe as _render_report_dataframe
-from shared.services.spreadsheet_backend import get_table_versions, read_table
+from shared.services.data_backend import get_table_versions, read_table
 
 REPORT_SHARED_TABLES = (
     "items",

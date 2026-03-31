@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from shared.services.spreadsheet_backend import read_table
+from shared.services.data_backend import read_table
 from shared.utils.common_helpers import _norm
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 # TABLE_CONTRACT — 全系統唯一資料表契約
 #
 # 每個 table 定義三個鍵：
-#   primary_key     : 應用層主鍵（供 service_sheet / backend 做 upsert / update）
+#   primary_key     : 應用層主鍵（供 data_backend 做 upsert / update）
 #   required_columns: 寫入時不可為空的欄位清單
 #   columns_order   : 欄位順序（與 Supabase schema 一致，供 fallback header 使用）
 #

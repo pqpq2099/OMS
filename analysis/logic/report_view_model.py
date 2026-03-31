@@ -16,7 +16,7 @@ from shared.services.service_reports import (
     norm,
     safe_float,
 )
-from shared.services.spreadsheet_backend import get_table_versions
+from shared.services.data_backend import get_table_versions
 from shared.utils.utils_format import unit_label
 from shared.utils.utils_units import convert_unit, get_base_unit
 

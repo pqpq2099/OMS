@@ -17,7 +17,7 @@ from shared.utils.common_helpers import (
     _safe_float,
     _to_bool,
 )
-from shared.services.spreadsheet_backend import (
+from shared.services.data_backend import (
     _session_df_cache_get,
     _session_df_cache_set,
     _table_versions_signature,

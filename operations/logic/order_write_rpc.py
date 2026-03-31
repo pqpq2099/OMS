@@ -29,7 +29,7 @@ from shared.services.service_id import (
 from operations.logic.order_query_stock import get_existing_stock_line_id_map
 from operations.logic.order_query_po import get_existing_po_line_id_map, get_existing_order_maps
 from shared.utils.utils_units import convert_to_base
-from shared.services.spreadsheet_backend import read_table
+from shared.services.data_backend import read_table
 
 
 def _sanitize_payload(obj, _path: str = "") -> object:

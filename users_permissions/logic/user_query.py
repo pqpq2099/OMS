@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
-from shared.services.spreadsheet_backend import get_table_versions, read_table
+from shared.services.data_backend import get_table_versions, read_table
 
 
 

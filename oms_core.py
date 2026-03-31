@@ -36,7 +36,7 @@ from shared.services.report_calculations import (
     _sum_purchase_qty_in_display_unit,
     get_base_unit_cost,
 )
-from shared.services.spreadsheet_backend import (
+from shared.services.data_backend import (
     BASE_DIR,
     LOCAL_SERVICE_ACCOUNT,
     _get_header_remote,
