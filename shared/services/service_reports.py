@@ -20,7 +20,7 @@ from shared.services.report_calculations import (
     get_base_unit_cost,
 )
 from shared.utils.ui_style import render_report_dataframe as _render_report_dataframe
-from shared.services.service_sheet import sheet_get_versions, sheet_read
+from shared.services.spreadsheet_backend import get_table_versions, read_table
 
 REPORT_SHARED_TABLES = (
     "items",
@@ -37,11 +37,11 @@ def render_report_dataframe(*args, **kwargs):
 
 
 def get_report_shared_table_versions(table_names=REPORT_SHARED_TABLES):
-    return sheet_get_versions(table_names)
+    return get_table_versions(table_names)
 
 
 def read_report_table(name: str) -> pd.DataFrame:
-    return sheet_read(name)
+    return read_table(name)
 
 
 def build_inventory_history_summary_df(*, store_id: str, start_date: date, end_date: date) -> pd.DataFrame:

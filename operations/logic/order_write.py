@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from operations.logic.order_write_rpc import build_order_write_rpc_payload
 from shared.services.service_order_rpc import rpc_save_order_transaction
-from shared.services.service_sheet import sheet_bust_cache
+from shared.services.spreadsheet_backend import bust_cache
 
 
 def _save_order_entry(
@@ -45,5 +45,5 @@ def _save_order_entry(
         is_initial_stock=is_initial_stock,
     )
     rpc_save_order_transaction(payload)
-    sheet_bust_cache()
+    bust_cache()
     return payload["_meta"]["po_id"]

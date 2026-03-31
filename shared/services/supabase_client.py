@@ -123,3 +123,54 @@ def replace_table_rows(table_name: str, key_field: str, rows: list[dict]):
     if rows:
         client.table(table_name).upsert(rows).execute()
     return True
+
+
+# ----------------------------------------------------------------
+# [TEMP DEBUG] 連線診斷：確認 URL / Key / id_sequences 狀態
+# 供 app_shell.py sidebar 呼叫，確認後可移除此函式
+# ----------------------------------------------------------------
+def debug_connection_info() -> dict:
+    """[TEMP] 診斷 Supabase 連線狀態與 id_sequences 初始化。"""
+    url = get_supabase_url()
+    key = get_supabase_key()
+
+    # 遮罩 URL：只顯示 https://xxxxxx...後6碼
+    if url and len(url) > 20:
+        masked_url = url[:12] + "..." + url[-6:]
+    else:
+        masked_url = url or "(未設定)"
+
+    has_key = "yes" if key else "no"
+
+    seq_exists = False
+    seq_count = 0
+    stocktake_seq = False
+    order_seq = False
+    stock_seq = False
+    error_msg = ""
+
+    try:
+        rows = fetch_table("id_sequences")
+        seq_exists = True
+        seq_count = len(rows) if rows else 0
+        if rows:
+            seq_keys = {str(r.get("key", "")).strip() for r in rows}
+            stocktake_seq = "stocktakes" in seq_keys
+            order_seq = "purchase_orders" in seq_keys
+            stock_seq = (
+                "stocktake_lines" in seq_keys
+                or "purchase_order_lines" in seq_keys
+            )
+    except Exception as e:
+        error_msg = str(e)
+
+    return {
+        "masked_url": masked_url,
+        "has_key": has_key,
+        "seq_exists": seq_exists,
+        "seq_count": seq_count,
+        "stocktake_seq": stocktake_seq,
+        "order_seq": order_seq,
+        "stock_seq": stock_seq,
+        "error_msg": error_msg,
+    }

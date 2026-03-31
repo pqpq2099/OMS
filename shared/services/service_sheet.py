@@ -1,3 +1,11 @@
+# ============================================================
+# [兼容層] service_sheet.py
+# 所有函式已走純 Supabase 路徑（via spreadsheet_backend）。
+# 本檔案保留供 app_runtime.py / service_stores.py / order_write_utils.py
+# 使用複雜 helper（sheet_find_row_number、sheet_replace_table 等），
+# 這些 helper 無對應的 spreadsheet_backend 版本，不應急於刪除。
+# Google Sheets 依賴已完全移除。
+# ============================================================
 from __future__ import annotations
 
 import pandas as pd
@@ -8,7 +16,6 @@ from shared.services.spreadsheet_backend import (
     append_rows_by_header,
     bust_cache,
     get_header,
-    get_spreadsheet,
     get_table_versions,
     read_table,
     update_row_by_match,
@@ -78,7 +85,8 @@ def sheet_get_header(table: str) -> list[str]:
 
 
 def sheet_get_spreadsheet():
-    return get_spreadsheet()
+    """[LEGACY STUB] Google Sheets 已停用，回傳 None。"""
+    return None
 
 
 def sheet_get_versions(table_names) -> dict:
@@ -101,37 +109,15 @@ def sheet_replace_table(table: str, header: list[str], rows: list[list] | list[d
     records = _rows_to_dicts(header, rows)
     pk = _primary_key_for_table(table, header)
 
-    try:
-        if pk:
-            existing = sheet_read(table)
-            if existing is not None and not existing.empty and pk in existing.columns:
-                for _, r in existing.iterrows():
-                    key_val = _norm(r.get(pk))
-                    if key_val:
-                        delete_rows(table, {pk: key_val})
-            if records:
-                insert_rows(table, records)
-            bust_cache(table)
-            return
-    except Exception:
-        pass
-
-    sh = get_spreadsheet()
-    if sh is None:
-        raise ValueError("Spreadsheet 未初始化")
-
-    ws = sh.worksheet(table)
-    normalized_rows = []
-    for row in rows:
-        if isinstance(row, dict):
-            normalized_rows.append([row.get(col, "") for col in header])
-        else:
-            values = list(row)
-            values = values[:len(header)] + [""] * max(0, len(header) - len(values))
-            normalized_rows.append(values[:len(header)])
-
-    ws.clear()
-    ws.update([header] + normalized_rows)
+    if pk:
+        existing = sheet_read(table)
+        if existing is not None and not existing.empty and pk in existing.columns:
+            for _, r in existing.iterrows():
+                key_val = _norm(r.get(pk))
+                if key_val:
+                    delete_rows(table, {pk: key_val})
+    if records:
+        insert_rows(table, records)
     bust_cache(table)
 
 

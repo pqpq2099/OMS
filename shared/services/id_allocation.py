@@ -19,7 +19,7 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
 
     df = read_table("id_sequences").copy()
     if df.empty:
-        raise ValueError("id_sequences 為空")
+        raise ValueError("Supabase 已連線，但 id_sequences 尚未初始化")
 
     required = ["key", "env", "prefix", "width", "next_value"]
     for col in required:

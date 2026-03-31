@@ -22,12 +22,12 @@ import pandas as pd
 
 from shared.utils.common_helpers import _norm, _now_ts, _safe_float
 from shared.utils.utils_format import clear_unit_label_cache
-from shared.services.service_sheet import (
-    sheet_append,
-    sheet_bust_cache as bust_cache,
-    sheet_get_header as get_header,
-    sheet_read as read_table,
-    sheet_update,
+from shared.services.spreadsheet_backend import (
+    append_rows_by_header as sheet_append,
+    bust_cache,
+    get_header,
+    read_table,
+    update_row_by_match as sheet_update,
 )
 from shared.services.service_id import (
     allocate_item_id,
