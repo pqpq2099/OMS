@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pandas as pd
-import streamlit as st
-
 from shared.services.id_allocation import allocate_ids
-from shared.utils.common_helpers import _norm
-from shared.services.service_sheet import sheet_bust_cache, sheet_read, sheet_replace_table
 
 
 def _now_ts() -> str:
@@ -31,42 +26,7 @@ def allocate_many_ids(sequence_key: str, count: int) -> list[str]:
 
 
 def allocate_user_id() -> str:
-    try:
-        return allocate_ids_map({"users": 1})["users"][0]
-    except Exception:
-        df = sheet_read("id_sequences").copy()
-        if df.empty:
-            raise ValueError("id_sequences worksheet has no usable data")
-
-        df.columns = [_norm(x) for x in df.columns]
-        required = ["key", "env", "prefix", "width", "next_value"]
-        for col in required:
-            if col not in df.columns:
-                raise ValueError(f"Missing required column in id_sequences: {col}")
-
-        hit = df[(df["key"].astype(str).str.strip() == "users") & (df["env"].astype(str).str.strip() == "prod")]
-        if hit.empty:
-            raise ValueError("Cannot find id_sequences row for users/prod")
-
-        idx = hit.index[0]
-        prefix = _norm(df.at[idx, "prefix"])
-        width = int(pd.to_numeric(df.at[idx, "width"], errors="coerce") or 0)
-        next_value = int(pd.to_numeric(df.at[idx, "next_value"], errors="coerce") or 0)
-        if not prefix or width <= 0 or next_value <= 0:
-            raise ValueError("Invalid users sequence configuration")
-
-        new_user_id = f"{prefix}{str(next_value).zfill(width)}"
-        df.at[idx, "next_value"] = str(next_value + 1)
-        if "updated_at" in df.columns:
-            df.at[idx, "updated_at"] = _now_ts()
-        if "updated_by" in df.columns:
-            df.at[idx, "updated_by"] = str(st.session_state.get("login_user", "")).strip()
-
-        header = list(df.columns)
-        rows = df[header].fillna("").astype(str).values.tolist()
-        sheet_replace_table("id_sequences", header, rows)
-        sheet_bust_cache()
-        return new_user_id
+    return allocate_ids_map({"users": 1})["users"][0]
 
 
 def allocate_purchase_order_id() -> str:
