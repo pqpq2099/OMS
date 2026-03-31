@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
-from shared.services.service_sheet import sheet_get_versions, sheet_read_many
+from shared.services.data_backend import get_table_versions, read_table
 
 
 
@@ -28,14 +28,14 @@ _USER_ADMIN_TABLES = ("users", "roles", "stores")
 
 
 def load_user_admin_tables() -> dict[str, pd.DataFrame]:
-    versions = sheet_get_versions(_USER_ADMIN_TABLES)
+    versions = get_table_versions(_USER_ADMIN_TABLES)
     cache = st.session_state.get("_user_admin_tables_cache")
     if isinstance(cache, dict) and cache.get("versions") == versions:
         data = cache.get("data", {})
         if data:
             return {k: v.copy() for k, v in data.items()}
 
-    data = sheet_read_many(_USER_ADMIN_TABLES)
+    data = {name: read_table(name) for name in _USER_ADMIN_TABLES}
     st.session_state["_user_admin_tables_cache"] = {
         "versions": versions,
         "data": {k: v.copy() for k, v in data.items()},

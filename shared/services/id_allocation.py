@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from shared.utils.common_helpers import _norm, _now_ts, _safe_float
-from shared.services.spreadsheet_backend import append_rows_by_header, get_header, read_table, bust_cache
+from shared.services.data_backend import append_rows_by_header, get_header, read_table, bust_cache
 from shared.services.supabase_client import update_rows
 
 
@@ -19,7 +19,7 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
 
     df = read_table("id_sequences").copy()
     if df.empty:
-        raise ValueError("id_sequences 為空")
+        raise ValueError("Supabase 已連線，但 id_sequences 尚未初始化")
 
     required = ["key", "env", "prefix", "width", "next_value"]
     for col in required:

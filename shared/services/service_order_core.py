@@ -23,7 +23,7 @@ from shared.services.report_calculations import (
     _get_latest_stock_qty_in_display_unit,
     get_base_unit_cost,
 )
-from shared.services.service_sheet import sheet_get_versions, sheet_read
+from shared.services.data_backend import get_table_versions, read_table
 
 
 def build_latest_item_metrics_df(*, store_id: str, as_of_date: date) -> pd.DataFrame:
@@ -88,11 +88,11 @@ def status_hint(total_stock_ref: float, daily_avg: float, suggest_qty: float):
 
 
 def read_order_table(name: str) -> pd.DataFrame:
-    return sheet_read(name)
+    return read_table(name)
 
 
 def get_order_table_versions(table_names) -> dict:
-    return sheet_get_versions(table_names)
+    return get_table_versions(table_names)
 
 
 __all__ = [

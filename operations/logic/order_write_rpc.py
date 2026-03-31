@@ -29,7 +29,7 @@ from shared.services.service_id import (
 from operations.logic.order_query_stock import get_existing_stock_line_id_map
 from operations.logic.order_query_po import get_existing_po_line_id_map, get_existing_order_maps
 from shared.utils.utils_units import convert_to_base
-from shared.services.service_sheet import sheet_read
+from shared.services.data_backend import read_table
 
 
 def _sanitize_payload(obj, _path: str = "") -> object:
@@ -153,7 +153,7 @@ def build_order_write_rpc_payload(
         })
 
     # ── Purchase order ──────────────────────────────────────────────
-    prices_df = sheet_read("prices")
+    prices_df = read_table("prices")
     order_rows = [r for r in submit_rows if safe_float(r.get("order_qty", 0)) > 0]
 
     po_id = norm(existing_po_id)

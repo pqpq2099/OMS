@@ -6,13 +6,13 @@ import pandas as pd
 
 from shared.services.service_audit import audit_log
 from shared.services.service_id import allocate_store_id
-from shared.services.service_sheet import (
-    sheet_append,
-    sheet_bust_cache,
-    sheet_get_header,
-    sheet_read_many,
-    sheet_replace_table,
-    sheet_update,
+from shared.services.data_backend import (
+    append_rows_by_header as sheet_append,
+    bust_cache as sheet_bust_cache,
+    get_header as sheet_get_header,
+    read_many as sheet_read_many,
+    replace_table as sheet_replace_table,
+    update_row_by_match as sheet_update,
 )
 
 

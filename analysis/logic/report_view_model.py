@@ -16,7 +16,7 @@ from shared.services.service_reports import (
     norm,
     safe_float,
 )
-from shared.services.service_sheet import sheet_get_versions
+from shared.services.data_backend import get_table_versions
 from shared.utils.utils_format import unit_label
 from shared.utils.utils_units import convert_unit, get_base_unit
 
@@ -157,7 +157,7 @@ def _build_history_analysis_shared_upstream(store_id: str, start_date: date, end
         str(store_id).strip(),
         str(start_date),
         str(end_date),
-        sheet_get_versions(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors")),
+        get_table_versions(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors")),
     )
     cache = st.session_state.get("_history_analysis_upstream_cache")
     if isinstance(cache, dict) and cache.get("signature") == signature:
@@ -261,7 +261,7 @@ def build_stock_order_compare_view_model(store_id: str, selected_date: date, sel
     compare_signature = (
         str(store_id).strip(),
         str(selected_date),
-        sheet_get_versions(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors", "stores", "unit_conversions")),
+        get_table_versions(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors", "stores", "unit_conversions")),
     )
     cache = st.session_state.get("_stock_order_compare_vm_cache")
     if isinstance(cache, dict) and cache.get("signature") == compare_signature:

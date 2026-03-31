@@ -1,103 +1,24 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import gspread
 import pandas as pd
 import streamlit as st
-from google.oauth2.service_account import Credentials
-from shared.services.supabase_client import fetch_table, insert_rows, update_rows
+from shared.services.supabase_client import delete_rows, fetch_table, insert_rows, update_rows
 from shared.services.table_contract import TABLE_CONTRACT
 
 from shared.utils.common_helpers import _norm
 
-DEFAULT_SHEET_ID = "1L1ogNjLWjjH8usMWC2JQowMMZkfD4zkuE-4UcgiTqXQ"
 BASE_DIR = Path(__file__).resolve().parent
 LOCAL_SERVICE_ACCOUNT = BASE_DIR / "service_account.json"
-
-
-def _get_secret_sheet_id() -> str:
-    try:
-        if hasattr(st.secrets, "get"):
-            return st.secrets.get("SHEET_ID") or st.secrets.get("sheet_id") or DEFAULT_SHEET_ID
-    except Exception:
-        pass
-    return DEFAULT_SHEET_ID
-
-
-def _get_service_account_info() -> dict | None:
-    """統一 Google Service Account 讀取入口。"""
-    try:
-        if "gcp_service_account" in st.secrets:
-            return dict(st.secrets["gcp_service_account"])
-        if "gcp" in st.secrets:
-            return dict(st.secrets["gcp"])
-        if LOCAL_SERVICE_ACCOUNT.exists():
-            return json.loads(LOCAL_SERVICE_ACCOUNT.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return None
-
-
-@st.cache_resource(show_spinner=False)
-def _build_gspread_client(_service_account_signature: str):
-    info = _get_service_account_info()
-    if not info:
-        raise ValueError("找不到 Google Service Account 設定")
-
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_info(info, scopes=scopes)
-    return gspread.authorize(creds)
-
-
-@st.cache_resource(show_spinner=False)
-def _open_spreadsheet_resource(_service_account_signature: str, sheet_id: str):
-    client = _build_gspread_client(_service_account_signature)
-    return client.open_by_key(sheet_id)
-
-
-def get_gspread_client():
-    """
-    Google Sheets 驗證入口
-    優先順序：
-    1. st.secrets["gcp_service_account"]
-    2. st.secrets["gcp"]
-    3. 本機 service_account.json
-    """
-    try:
-        info = _get_service_account_info()
-        if not info:
-            return None
-        signature = json.dumps(info, ensure_ascii=False, sort_keys=True)
-        return _build_gspread_client(signature)
-    except Exception as e:
-        st.error(f"Google Sheets 驗證失敗：{e}")
-        return None
-
-
-def get_spreadsheet():
-    """取得目前主資料庫 Spreadsheet。"""
-    try:
-        info = _get_service_account_info()
-        if not info:
-            return None
-        signature = json.dumps(info, ensure_ascii=False, sort_keys=True)
-        return _open_spreadsheet_resource(signature, _get_secret_sheet_id())
-    except Exception as e:
-        st.error(f"開啟 Sheet 失敗：{e}")
-        return None
 
 
 def _get_runtime_table_cache() -> dict:
     """
     取得本次使用者 session 的表格快取。
     目的：
-    1. 同一次操作流程中，避免同一張表被重複打到 Google Sheets。
-    2. 當 Google API 暫時 429 時，優先回傳最近一次成功資料，降低整頁爆掉機率。
+    1. 同一次操作流程中，避免同一張表被重複打到 Supabase。
+    2. 當遠端暫時無法存取時，優先回傳最近一次成功資料，降低整頁爆掉機率。
     """
     return st.session_state.setdefault("_runtime_table_cache", {})
 
@@ -108,7 +29,7 @@ def _get_runtime_header_cache() -> dict:
 
 
 def _get_runtime_sheet_snapshot_cache() -> dict:
-    """統一保存同一版本 sheet 的 header/table 原始快照，避免重複遠端讀取。"""
+    """統一保存同一版本 table 的 header/table 原始快照，避免重複遠端讀取。"""
     return st.session_state.setdefault("_runtime_sheet_snapshot_cache", {})
 
 
@@ -157,133 +78,34 @@ def _session_df_cache_set(cache_key: str, signature, df: pd.DataFrame):
     }
 
 
-@st.cache_data(show_spinner=False)
-def _read_sheet_snapshot_remote(sheet_name: str, version: int = 0) -> dict:
-    """
-    遠端讀表統一入口。
-    同一張表在同一版號下，只打一次 Google Sheets，
-    header / table 都共用同一份快照。
-    """
-    sh = get_spreadsheet()
-    if sh is None:
-        return {"header": [], "rows": []}
-
-    ws = sh.worksheet(sheet_name)
-    values = ws.get_all_values()
-    if not values:
-        return {"header": [], "rows": []}
-
-    header = [_norm(c) for c in values[0]]
-    rows = values[1:]
-    normalized_rows: list[list[str]] = []
-    for row in rows:
-        current = list(row)
-        if len(current) < len(header):
-            current = current + [""] * (len(header) - len(current))
-        else:
-            current = current[:len(header)]
-        normalized_rows.append(current)
-
-    return {
-        "header": header,
-        "rows": normalized_rows,
-    }
-
-
-def _build_dataframe_from_snapshot(snapshot: dict) -> pd.DataFrame:
-    header = list(snapshot.get("header", []) or [])
-    rows = list(snapshot.get("rows", []) or [])
-
-    if not header:
-        return pd.DataFrame()
+def _read_table_remote(sheet_name: str, version: int = 0) -> pd.DataFrame:
+    """主資料來源：Supabase。"""
+    rows = fetch_table(sheet_name)
     if not rows:
-        return pd.DataFrame(columns=header)
+        return pd.DataFrame()
 
-    df = pd.DataFrame(rows, columns=header)
-    if not df.empty:
-        df = df[
-            df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
-        ].reset_index(drop=True)
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame()
+
+    df.columns = [_norm(c) for c in df.columns]
+
+    df = df[
+        df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
+    ].reset_index(drop=True)
+
     return df
 
-
-def _get_sheet_snapshot(sheet_name: str, version: int = 0, force_refresh: bool = False) -> dict:
-    cache = _get_runtime_sheet_snapshot_cache()
-    cache_key = _norm(sheet_name)
-
-    if force_refresh:
-        cache.pop(cache_key, None)
-
-    cached = cache.get(cache_key)
-    if isinstance(cached, dict) and cached.get("version") == version:
-        return {
-            "version": version,
-            "header": list(cached.get("header", []) or []),
-            "rows": [list(row) for row in list(cached.get("rows", []) or [])],
-        }
-
-    snapshot = _read_sheet_snapshot_remote(sheet_name, version)
-    normalized = {
-        "version": version,
-        "header": list(snapshot.get("header", []) or []),
-        "rows": [list(row) for row in list(snapshot.get("rows", []) or [])],
-    }
-    cache[cache_key] = normalized
-    return {
-        "version": version,
-        "header": list(normalized["header"]),
-        "rows": [list(row) for row in normalized["rows"]],
-    }
-
-
-def _read_table_remote(sheet_name: str, version: int = 0) -> pd.DataFrame:
-    """
-    主資料來源：Supabase。
-    若 Supabase 不可用（例外），才退回 Google Sheets 緊急備援。
-    正常運作時 Google Sheets 路徑不會被執行。
-    """
-    try:
-        rows = fetch_table(sheet_name)
-        if not rows:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(rows)
-        if df.empty:
-            return pd.DataFrame()
-
-        df.columns = [_norm(c) for c in df.columns]
-
-        df = df[
-            df.apply(lambda r: any(_norm(v) != "" for v in r), axis=1)
-        ].reset_index(drop=True)
-
-        return df
-    except Exception:
-        # [Google fallback] 僅在 Supabase 不可用時執行，非主流程
-        snapshot = _get_sheet_snapshot(sheet_name, version)
-        return _build_dataframe_from_snapshot(snapshot)
-
 def _get_header_remote(sheet_name: str, version: int = 0) -> list[str]:
-    """
-    優先讀 Supabase header。
-    若 Supabase 失敗，再退回 Google Sheets header。
-    """
-    try:
-        rows = fetch_table(sheet_name)
-        if rows:
-            df = pd.DataFrame(rows)
-            if not df.empty:
-                header = [_norm(c) for c in df.columns]
-                if header:
-                    return header
-    except Exception:
-        pass
-
-    snapshot = _get_sheet_snapshot(sheet_name, version)
-    header = list(snapshot.get("header", []) or [])
-    if not header:
-        raise ValueError(f"{sheet_name} 沒有 header")
-    return header
+    """從 Supabase 讀取 header。"""
+    rows = fetch_table(sheet_name)
+    if rows:
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            header = [_norm(c) for c in df.columns]
+            if header:
+                return header
+    raise ValueError(f"{sheet_name} 沒有 header")
 
 
 def _resolve_table_version(sheet_name: str, force_refresh: bool = False) -> tuple[str, int]:
@@ -296,9 +118,9 @@ def _resolve_table_version(sheet_name: str, force_refresh: bool = False) -> tupl
 
 def read_table(sheet_name: str, force_refresh: bool = False) -> pd.DataFrame:
     """
-    讀取資料表。主資料來源：Supabase。Google Sheets 僅作緊急備援。
+    讀取資料表。主資料來源：Supabase。
     三層快取：
-    1. cache_resource：client / spreadsheet 連線共用
+    1. cache_resource：client 連線共用
     2. cache_data + session snapshot：同張表 header/table 共用一次遠端讀取
     3. session_state runtime cache：同一位使用者當前操作流程直接重用 DataFrame
     """
@@ -426,32 +248,18 @@ def append_rows_by_header(sheet_name: str, header: list[str], rows: list[dict]):
         _validate_required_columns(sheet_name, row)
         _validate_primary_key_presence(sheet_name, row)
 
-    _supabase_exc = None
-    try:
-        # [Supabase] 省略空值欄位：避免 integer/numeric 欄位收到 "" 導致型別錯誤
-        # id (autoincrement) 省略後 DB 自動補 nextval；nullable numeric 省略後插入 NULL
-        insert_payload = [
-            {k: v for k, v in row.items() if v != "" and v is not None}
-            for row in normalized_rows
-        ]
-        insert_rows(sheet_name, insert_payload)
-        bust_cache(sheet_name)
-        return
-    except Exception as e:
-        _supabase_exc = e
-
-    # [Google fallback] 僅在 Supabase 不可用時執行，非主流程
-    sh = get_spreadsheet()
-    if sh is None:
-        raise _supabase_exc  # 拋出 Supabase 原始錯誤，非 "Spreadsheet 未初始化"
-
-    ws = sh.worksheet(sheet_name)
-    values = [[row.get(col, "") for col in header] for row in normalized_rows]
-    ws.append_rows(values, value_input_option="USER_ENTERED")
+    # 省略空值欄位：避免 integer/numeric 欄位收到 "" 導致型別錯誤
+    insert_payload = [
+        {k: v for k, v in row.items() if v != "" and v is not None}
+        for row in normalized_rows
+    ]
+    insert_rows(sheet_name, insert_payload)
+    bust_cache(sheet_name)
+    return
 
 
 def get_row_index_map(sheet_name: str, key_field: str, force_refresh: bool = False) -> dict[str, int]:
-    """建立 key -> Google Sheet 列號的快取映射，避免重複整張掃描。"""
+    """建立 key -> 列號的快取映射，避免重複整張掃描。"""
     cache = st.session_state.setdefault("_runtime_row_index_cache", {})
     cache_key = f"{_norm(sheet_name)}::{_norm(key_field)}"
     current_version = get_table_version(sheet_name)
@@ -476,7 +284,7 @@ def get_row_index_map(sheet_name: str, key_field: str, force_refresh: bool = Fal
 
 
 def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates: dict):
-    """依指定鍵值更新單筆資料，優先寫入 Supabase。Google Sheets 僅作緊急備援。"""
+    """依指定鍵值更新單筆資料，寫入 Supabase。"""
     key_value = _norm(key_value)
     if not key_value:
         raise ValueError(f"{sheet_name}.{key_field} 不可為空")
@@ -492,58 +300,8 @@ def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates
                     f"[{sheet_name}] 更新失敗：primary_key「{_pk}」在 updates 中不可為空"
                 )
 
-    _supabase_exc = None
-    try:
-        clean_updates = {field: ("" if value is None else value) for field, value in (updates or {}).items()}
-        update_rows(sheet_name, {key_field: key_value}, clean_updates)
-        bust_cache(sheet_name)
-        return
-    except Exception as e:
-        _supabase_exc = e
-
-    # [Google fallback] 僅在 Supabase 不可用時執行，非主流程
-    sh = get_spreadsheet()
-    if sh is None:
-        raise _supabase_exc  # 拋出 Supabase 原始錯誤，非 "Spreadsheet 未初始化"
-
-    header = get_header(sheet_name)
-    if not header:
-        raise ValueError(f"{sheet_name} 沒有 header")
-
-    row_map = get_row_index_map(sheet_name, key_field)
-    row_idx = row_map.get(key_value)
-    if row_idx is None:
-        raise ValueError(f"找不到 {sheet_name}.{key_field} = {key_value}")
-
-    df = read_table(sheet_name)
-    if key_field not in df.columns:
-        raise ValueError(f"{sheet_name} 缺少欄位 {key_field}")
-
-    mask = df[key_field].astype(str).str.strip() == key_value
-    if not mask.any():
-        raise ValueError(f"找不到 {sheet_name}.{key_field} = {key_value}")
-
-    row = df.loc[mask].iloc[0].to_dict()
-    for col in header:
-        row.setdefault(col, "")
-    for field, value in (updates or {}).items():
-        if field not in row:
-            row[field] = ""
-        row[field] = "" if value is None else value
-
-    values = [[row.get(col, "") for col in header]]
-
-    ws = sh.worksheet(sheet_name)
-
-    def _col_letter(n: int) -> str:
-        result = ''
-        while n > 0:
-            n, rem = divmod(n - 1, 26)
-            result = chr(65 + rem) + result
-        return result
-
-    end_col = _col_letter(len(header))
-    ws.update(f"A{row_idx}:{end_col}{row_idx}", values)
+    clean_updates = {field: ("" if value is None else value) for field, value in (updates or {}).items()}
+    update_rows(sheet_name, {key_field: key_value}, clean_updates)
     bust_cache(sheet_name)
 
 
@@ -562,9 +320,6 @@ def bust_cache(sheet_names: str | list[str] | tuple[str, ...] | None = None):
     2. 指定表名：只讓該表版本號 +1，並清除該表的 session 快取
     """
     if not sheet_names:
-        _safe_clear_callable_cache(_build_gspread_client)
-        _safe_clear_callable_cache(_open_spreadsheet_resource)
-        _safe_clear_callable_cache(_read_sheet_snapshot_remote)
         _safe_clear_callable_cache(_read_table_remote)
         _safe_clear_callable_cache(_get_header_remote)
         st.session_state.pop("_runtime_table_cache", None)
@@ -610,3 +365,144 @@ def bust_cache(sheet_names: str | list[str] | tuple[str, ...] | None = None):
                 continue
         for stale_df_key in stale_df_keys:
             df_cache.pop(stale_df_key, None)
+
+
+# ---------------------------------------------------------------------------
+# 以下為資料存取功能層，供 app_runtime / service_stores /
+# order_write_utils 直接使用。
+# ---------------------------------------------------------------------------
+
+# TABLE_CONTRACT 已於頂部 import，此處直接建立 PK 查詢表
+_PK_MAP: dict[str, str] = {
+    t: info["primary_key"] for t, info in TABLE_CONTRACT.items() if info.get("primary_key")
+}
+_PK_MAP.update({
+    "units":            "unit_id",
+    "prices":           "price_id",
+    "unit_conversions": "conversion_id",
+    "transactions":     "txn_id",
+    "audit_logs":       "audit_id",
+    "settings":         "setting_key",
+    "id_sequences":     "key",
+})
+
+
+def _pk_for_table(table: str, header: list[str] | None = None) -> str | None:
+    """回傳資料表的 primary key 欄位名稱；找不到時嘗試從 header 推斷。"""
+    key = _PK_MAP.get(_norm(table))
+    if key:
+        return key
+    for col in (header or []):
+        if str(col).strip().endswith("_id"):
+            return str(col).strip()
+    return None
+
+
+def _rows_to_dicts(header: list[str], rows: list[list] | list[dict]) -> list[dict]:
+    """將 list[list] 或 list[dict] 統一轉為 list[dict]（按 header 對齊）。"""
+    out: list[dict] = []
+    for row in rows:
+        if isinstance(row, dict):
+            out.append({col: row.get(col, "") for col in header})
+        else:
+            values = list(row)
+            values = values[:len(header)] + [""] * max(0, len(header) - len(values))
+            out.append({col: values[idx] for idx, col in enumerate(header)})
+    return out
+
+
+def read_many(table_names) -> dict[str, pd.DataFrame]:
+    """批次讀取多張表，回傳 {table_name: DataFrame}。"""
+    return {name: read_table(name) for name in table_names}
+
+
+def read_row_maps(table: str) -> tuple[list[str], list[tuple[int, dict]]]:
+    """
+    讀取資料表，回傳 (header, [(row_num, row_dict), ...])。
+    row_num 從 2 開始（與 Google Sheets 列號相容，header 為第 1 列）。
+    """
+    df = read_table(table).copy()
+    if df is None or df.empty:
+        return [], []
+    header = [_norm(x) for x in list(df.columns)]
+    row_maps: list[tuple[int, dict]] = []
+    for row_num, (_, row) in enumerate(df.iterrows(), start=2):
+        row_maps.append((row_num, {col: row.get(col, "") for col in header}))
+    return header, row_maps
+
+
+def find_row_number(table: str, key_field: str, key_value: str):
+    """
+    依 key_field == key_value 搜尋資料表，回傳 (row_num, header, row_dict)。
+    找不到時回傳 (None, header, None)。
+    """
+    header, row_maps = read_row_maps(table)
+    if not header:
+        raise ValueError(f"{table} missing header")
+    if key_field not in header:
+        raise ValueError(f"{table} missing column: {key_field}")
+    for row_num, row_dict in row_maps:
+        if _norm(str(row_dict.get(key_field, ""))) == _norm(key_value):
+            return row_num, header, row_dict
+    return None, header, None
+
+
+def update_row_values(
+    table: str,
+    row_num: int,
+    header: list[str],
+    row_values: list,
+    value_input_option: str = "USER_ENTERED",
+):
+    """
+    以 row_num（1-indexed，header = 1）定位列，將整列更新為 row_values。
+    實際透過 primary key 執行 Supabase update。
+    """
+    if not header:
+        raise ValueError(f"{table} missing header")
+
+    normalized = list(row_values)
+    normalized = normalized[:len(header)] + [""] * max(0, len(header) - len(normalized))
+
+    df = read_table(table)
+    idx = int(row_num) - 2
+    if df is None or df.empty or idx < 0 or idx >= len(df):
+        raise ValueError(f"{table} invalid row_num={row_num}")
+
+    pk = _pk_for_table(table, list(df.columns))
+    if not pk or pk not in df.columns:
+        raise ValueError(f"{table} missing primary key for row update")
+
+    row = df.iloc[idx].to_dict()
+    for i, col in enumerate(header):
+        row[col] = normalized[i]
+
+    key_val = _norm(str(row.get(pk, "")))
+    update_rows(table, {pk: key_val}, row)
+    bust_cache(table)
+
+
+def replace_table(table: str, header: list[str], rows: list[list] | list[dict]):
+    """
+    清空資料表後批次寫入新資料（按 primary key 逐筆刪除再 insert）。
+    """
+    records = _rows_to_dicts(header, rows)
+    pk = _pk_for_table(table, header)
+
+    if pk:
+        existing = read_table(table)
+        if existing is not None and not existing.empty and pk in existing.columns:
+            for _, r in existing.iterrows():
+                key_val = _norm(str(r.get(pk, "")))
+                if key_val:
+                    delete_rows(table, {pk: key_val})
+
+    if records:
+        insert_rows(table, records)
+    bust_cache(table)
+
+
+def clear_keep_header(table: str):
+    """清空資料表所有資料列（保留欄位定義）。"""
+    header = get_header(table)
+    replace_table(table, header, [])

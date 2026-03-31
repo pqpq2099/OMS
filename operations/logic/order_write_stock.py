@@ -3,7 +3,7 @@ from __future__ import annotations
 from shared.services.service_order_core import norm, safe_float
 from operations.logic.order_errors import UserDisplayError
 from shared.services.service_id import allocate_stocktake_id
-from shared.services.service_sheet import sheet_append, sheet_get_header
+from shared.services.data_backend import append_rows_by_header as sheet_append, get_header as sheet_get_header
 from operations.logic.order_write_utils import _update_row_by_id, _upsert_detail_rows_by_parent, _write_audit_log
 from shared.utils.utils_units import convert_to_base
 
