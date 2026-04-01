@@ -3,40 +3,10 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-import streamlit as st
 
 from shared.services import service_order_core
 from shared.utils.utils_units import convert_unit
-
-
-_ORDER_PAGE_TABLES = (
-    "stores",
-    "vendors",
-    "items",
-    "prices",
-    "unit_conversions",
-    "stocktakes",
-    "stocktake_lines",
-    "purchase_orders",
-    "purchase_order_lines",
-)
-
-
-def load_order_page_tables() -> dict[str, pd.DataFrame]:
-    """集中載入叫貨頁常用資料，減少 rerun 時重複 read_table。"""
-    versions = service_order_core.get_order_table_versions(_ORDER_PAGE_TABLES)
-    cache = st.session_state.get("_order_page_tables_cache")
-    if isinstance(cache, dict) and cache.get("versions") == versions:
-        data = cache.get("data", {})
-        if data:
-            return {k: v.copy() for k, v in data.items()}
-
-    data = {name: service_order_core.read_order_table(name) for name in _ORDER_PAGE_TABLES}
-    st.session_state["_order_page_tables_cache"] = {
-        "versions": versions,
-        "data": {k: v.copy() for k, v in data.items()},
-    }
-    return {k: v.copy() for k, v in data.items()}
+from operations.logic.order_query_common import load_order_page_tables
 
 
 def convert_metric_base_to_stock_display_qty(
