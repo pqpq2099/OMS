@@ -415,7 +415,7 @@ def _get_latest_stock_qty_in_display_unit(
         return round(base_qty, 1)
 
 def _build_purchase_detail_df() -> pd.DataFrame:
-    table_names = ("purchase_orders", "purchase_order_lines", "vendors", "items", "stores")
+    table_names = ("purchase_orders", "purchase_order_lines", "vendors", "items", "stores", "units")
     cache_key = "derived::purchase_detail_df"
     cached = _get_derived_cache(cache_key, table_names)
     if cached is not None:
@@ -426,6 +426,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
     vendors_df = read_table("vendors")
     items_df = read_table("items")
     stores_df = read_table("stores")
+    units_df = read_table("units")
 
     if po_df.empty or pol_df.empty:
         return _set_derived_cache(cache_key, table_names, pd.DataFrame())
@@ -476,9 +477,10 @@ def _build_purchase_detail_df() -> pd.DataFrame:
 
     merged["status"] = (merged["po_status"] if "po_status" in merged.columns else merged.get("status", "")).astype(str)
 
-    vendor_name_map = _build_preferred_label_map(vendors_df, "vendor_id", ["vendor_name", "vendor_id"], empty_default="")
+    vendor_name_map = _build_preferred_label_map(vendors_df, "vendor_id", ["vendor_name_zh", "vendor_name", "vendor_id"], empty_default="")
     item_name_map = _build_preferred_label_map(items_df, "item_id", ["item_name_zh", "item_name", "item_id"], empty_default="")
     store_name_map = _build_preferred_label_map(stores_df, "store_id", ["store_name_zh", "store_name", "store_id"], empty_default="")
+    unit_name_map = _build_preferred_label_map(units_df, "unit_id", ["unit_name_zh", "unit_name", "unit_id"], empty_default="")
 
     if not items_df.empty and "item_id" in items_df.columns:
         item_cols = ["item_id"] + [
@@ -536,6 +538,7 @@ def _build_purchase_detail_df() -> pd.DataFrame:
         merged["order_unit_disp"] = merged["unit_id"].astype(str).str.strip()
     else:
         merged["order_unit_disp"] = ""
+    merged["order_unit_disp"] = merged["order_unit_disp"].map(unit_name_map).fillna(merged["order_unit_disp"])
 
     if "display_order" in merged.columns:
         merged["display_order_num"] = pd.to_numeric(merged["display_order"], errors="coerce").fillna(999999)
