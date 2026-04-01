@@ -4,6 +4,7 @@ from datetime import date
 
 import streamlit as st
 
+from shared.core.navigation import goto
 from operations.logic import logic_order_result
 
 
@@ -55,5 +56,4 @@ def page_order_message_detail():
 
     with c2:
         if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_message_detail"):
-            st.session_state.step = "select_vendor"
-            st.rerun()
+            goto("select_vendor")

@@ -200,5 +200,4 @@ def page_daily_stock_order_record():
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
 
     if st.button("⬅️ 返回廠商選單", use_container_width=True):
-        st.session_state.step = "select_vendor"
-        st.rerun()
+        goto("select_vendor")
