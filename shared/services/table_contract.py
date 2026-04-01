@@ -60,7 +60,7 @@ TABLE_CONTRACT: dict[str, dict] = {
         "required_columns": ["stocktake_id", "store_id", "vendor_id"],
         "columns_order": [
             "stocktake_id", "store_id", "stocktake_date", "vendor_id",
-            "status", "note",
+            "stocktake_type", "status", "note",
             "created_at", "created_by", "updated_at", "updated_by",
         ],
     },
@@ -97,6 +97,38 @@ TABLE_CONTRACT: dict[str, dict] = {
         "required_columns": ["store_id", "line_group_id"],
         "columns_order": [
             "store_id", "line_group_id", "is_active", "created_at", "updated_at",
+        ],
+    },
+    "units": {
+        "primary_key": "unit_id",
+        "required_columns": ["unit_id"],
+        "columns_order": [
+            "unit_id", "unit_name", "unit_name_zh", "unit_type", "unit_symbol",
+            "is_active", "created_at", "updated_at",
+        ],
+    },
+    "prices": {
+        "primary_key": "price_id",
+        "required_columns": ["price_id", "item_id"],
+        "columns_order": [
+            "price_id", "item_id", "spec_id", "unit_price", "price_unit",
+            "effective_date", "end_date", "is_active", "created_at", "updated_at",
+        ],
+    },
+    "unit_conversions": {
+        "primary_key": "conversion_id",
+        "required_columns": ["conversion_id", "item_id"],
+        "columns_order": [
+            "conversion_id", "spec_id", "item_id", "from_unit", "to_unit",
+            "ratio", "is_active", "created_at", "updated_at",
+        ],
+    },
+    "audit_logs": {
+        "primary_key": "audit_id",
+        "required_columns": ["audit_id"],
+        "columns_order": [
+            "audit_id", "ts", "user_id", "action", "table_name",
+            "entity_id", "before_json", "after_json", "note",
         ],
     },
 }
