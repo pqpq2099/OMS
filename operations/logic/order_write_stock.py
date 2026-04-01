@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+# =============================================================================
+# [DEPRECATED — 舊式直接寫入路徑，已由 RPC transaction 取代，禁止呼叫]
+# 正式寫入路徑：
+#   order_write._save_order_entry
+#   → order_write_rpc.build_order_write_rpc_payload
+#   → service_order_rpc.rpc_save_order_transaction (Supabase RPC)
+# 此模組僅保留歷史參照，write_stocktake_section() 在呼叫時會立即拋出 RuntimeError。
+# =============================================================================
+_DEPRECATED_LEGACY_PATH = True
+
 from shared.services.service_order_core import norm, safe_float
 from operations.logic.order_errors import UserDisplayError
 from shared.services.service_id import allocate_stocktake_id
@@ -21,6 +31,12 @@ def write_stocktake_section(
     now,
     user_id,
 ):
+    raise RuntimeError(
+        "[DEPRECATED] write_stocktake_section 為舊式直接寫入路徑，已停用。"
+        " 正式路徑：order_write._save_order_entry"
+        " → order_write_rpc.build_order_write_rpc_payload"
+        " → service_order_rpc.rpc_save_order_transaction"
+    )
     stocktake_rows = []
     for r in submit_rows:
         item_id = norm(r.get("item_id", ""))

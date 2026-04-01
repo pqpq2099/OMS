@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+# =============================================================================
+# [DEPRECATED — 舊式直接寫入路徑，已由 RPC transaction 取代，禁止呼叫]
+# 正式寫入路徑：
+#   order_write._save_order_entry
+#   → order_write_rpc.build_order_write_rpc_payload
+#   → service_order_rpc.rpc_save_order_transaction (Supabase RPC)
+# 此模組僅保留歷史參照，write_purchase_order_section() 在呼叫時會立即拋出 RuntimeError。
+# =============================================================================
+_DEPRECATED_LEGACY_PATH = True
+
 from shared.services.service_order_core import norm, safe_float, get_base_unit_cost
 from operations.logic.order_errors import UserDisplayError
 from shared.services.service_id import allocate_purchase_order_id
@@ -22,6 +32,12 @@ def write_purchase_order_section(
     now,
     user_id,
 ):
+    raise RuntimeError(
+        "[DEPRECATED] write_purchase_order_section 為舊式直接寫入路徑，已停用。"
+        " 正式路徑：order_write._save_order_entry"
+        " → order_write_rpc.build_order_write_rpc_payload"
+        " → service_order_rpc.rpc_save_order_transaction"
+    )
     prices_df = sheet_read("prices")
     order_rows = [r for r in submit_rows if safe_float(r["order_qty"]) > 0]
 
