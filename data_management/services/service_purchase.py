@@ -361,7 +361,7 @@ def create_item(
         "orderable_units": orderable_units_text,
         "is_active": _to_bool_num(is_active),
         "category": _norm(category),
-        "spec": _norm(spec),
+        "spec_value": _norm(spec),
         "created_at": now,
         "updated_at": now,
     }
@@ -562,7 +562,7 @@ def update_item(
         "orderable_units": orderable_units_text,
         "is_active": _to_bool_num(is_active),
         "category": _norm(category),
-        "spec": _norm(spec),
+        "spec_value": _norm(spec),
         "updated_at": now,
     }
     sheet_update("items", "item_id", item_id, updates)
