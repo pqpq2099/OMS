@@ -386,7 +386,7 @@ def get_item_edit_values(filtered_items_df: pd.DataFrame, item_id: str, brand_ma
         "item_name_zh": _norm(row.get("item_name_zh")),
         "item_name": _norm(row.get("item_name")),
         "category": _norm(row.get("category")),
-        "spec": _norm(row.get("spec")),
+        "spec": _norm(row.get("spec_value")) or _norm(row.get("spec")),
         "is_active": bool_text(row.get("is_active")) == "啟用",
         "brand_idx": brand_idx,
         "base_unit_idx": find_unit_label_index(unit_options, _norm(row.get("base_unit"))),
