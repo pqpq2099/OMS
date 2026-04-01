@@ -34,6 +34,7 @@ def resolve_login_page_state(*, has_login_user: bool, force_change_password: boo
 
 
 
+# [STUB] 此函式原意為預讀 users 表以加速切頁體驗，目前尚未實作，保留呼叫端介面。
 def preload_login_users():
     return None
 

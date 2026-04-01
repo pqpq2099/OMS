@@ -51,18 +51,6 @@ def _set_login_session_payload(payload: dict[str, object]):
         st.session_state[key] = value
 
 
-def _set_login_session(user_row: pd.Series):
-    payload = {
-        "login_user": norm_text(user_row.get("user_id")),
-        "login_account_code": norm_text(user_row.get("account_code")),
-        "login_display_name": norm_text(user_row.get("display_name")),
-        "login_role_id": norm_text(user_row.get("role_id")).lower(),
-        "login_store_scope": norm_text(user_row.get("store_scope")),
-        "force_change_password": str(user_row.get("must_change_password", "")).strip() in {"1", "true", "True"},
-    }
-    _set_login_session_payload(payload)
-
-
 def logout():
     """清除登入狀態。"""
     for key in [

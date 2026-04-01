@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import streamlit as st
 
-from users_permissions.services.service_stores import create_store, update_store_active
-
-
 from users_permissions.services.service_stores import (
     StoreServiceError,
     build_brand_options,
     build_store_admin_view,
+    create_store,
     generate_next_store_code,
     load_store_admin_tables,
+    update_store_active,
 )
 
 

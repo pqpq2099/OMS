@@ -192,17 +192,6 @@ def create_store(brand_id: str, store_name_zh: str, actor: str = "system") -> di
     return new_row
 
 
-def write_back_stores_df(stores_df: pd.DataFrame):
-    stores_header = sheet_get_header("stores")
-    work = stores_df.copy()
-    for col in stores_header:
-        if col not in work.columns:
-            work[col] = ""
-    work = work[stores_header].copy()
-    rows = work.fillna("").astype(str).values.tolist()
-    sheet_replace_table("stores", stores_header, rows)
-
-
 def update_store_active(store_id: str, new_active: int, actor: str = "system"):
     stores_df, _ = load_store_admin_tables()
     if stores_df.empty:
