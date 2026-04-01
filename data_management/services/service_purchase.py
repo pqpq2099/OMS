@@ -404,7 +404,7 @@ def create_price(
     _ensure_not_empty(price_unit, "價格單位")
 
     price_val = _safe_float(unit_price, 0.0)
-    if _get_item_require_price(item_id) and price_val <= 0:
+    if price_val < 0 or (_get_item_require_price(item_id) and price_val == 0):
         raise PurchaseServiceError("單價必須大於 0")
 
     new_id = allocate_price_id()
@@ -608,7 +608,7 @@ def update_price(
         else pd.DataFrame()
     )
     _item_id_for_price = _norm(_pr.iloc[0].get("item_id", "")) if not _pr.empty else ""
-    if _get_item_require_price(_item_id_for_price) and price_val <= 0:
+    if price_val < 0 or (_get_item_require_price(_item_id_for_price) and price_val == 0):
         raise PurchaseServiceError("單價必須大於 0")
 
     now = _now_ts()
