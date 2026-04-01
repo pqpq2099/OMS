@@ -7,12 +7,6 @@ import streamlit as st
 from shared.core.navigation import goto
 from operations.logic import logic_order
 from operations.logic.order_errors import SystemProcessError, UserDisplayError
-from operations.pages.page_order_result import (
-    page_order_message_detail as page_order_message_detail_view,
-)
-from operations.pages.page_daily_stock_order_record import (
-    page_daily_stock_order_record as page_daily_stock_order_record_view,
-)
 from shared.utils.utils_format import _fmt_qty_with_unit, unit_label
 
 
@@ -415,9 +409,3 @@ def page_order():
         goto("select_vendor")
 
 
-def page_order_message_detail():
-    return page_order_message_detail_view()
-
-
-def page_daily_stock_order_record():
-    return page_daily_stock_order_record_view()
