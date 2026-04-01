@@ -101,17 +101,19 @@ def build_daily_stock_order_record_view_model(*, store_id: str, store_name: str,
 
 def build_vendor_daily_record_rows(
     *,
-    page_tables: dict[str, pd.DataFrame],
-    items_df: pd.DataFrame,
-    po_df: pd.DataFrame,
-    pol_df: pd.DataFrame,
-    stocktakes_df: pd.DataFrame,
-    stocktake_lines_df: pd.DataFrame,
-    latest_metrics_map: dict,
+    base_model: dict,
     store_id: str,
     vendor_id: str,
     selected_date: date,
 ) -> dict:
+    page_tables = base_model["page_tables"]
+    items_df = base_model["items_df"]
+    po_df = base_model["po_df"]
+    pol_df = base_model["pol_df"]
+    stocktakes_df = base_model["stocktakes_df"]
+    stocktake_lines_df = base_model["stocktake_lines_df"]
+    latest_metrics_map = base_model["latest_metrics_map"]
+
     vendor_items = items_df[
         items_df["default_vendor_id"].astype(str).str.strip() == vendor_id
     ].copy()

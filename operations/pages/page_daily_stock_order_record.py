@@ -7,7 +7,6 @@ import streamlit as st
 from operations.logic import logic_stock_record
 from shared.core.navigation import goto
 from shared.utils.utils_format import _fmt_qty_with_unit, unit_label
-from shared.services import service_order_core
 
 
 def page_daily_stock_order_record():
@@ -78,7 +77,7 @@ def page_daily_stock_order_record():
 
     st.title("📋 當日庫存叫貨紀錄")
 
-    store_id = service_order_core.norm(st.session_state.get("store_id", ""))
+    store_id = str(st.session_state.get("store_id", "")).strip()
     store_name = st.session_state.get("store_name", "")
 
     if not store_id:
@@ -109,7 +108,7 @@ def page_daily_stock_order_record():
 
     vendor_options = base_model.get("vendor_options", [])
     vendor_labels = [row.get("vendor_label", "") for row in vendor_options]
-    default_vendor_id = service_order_core.norm(st.session_state.get("vendor_id", ""))
+    default_vendor_id = str(st.session_state.get("vendor_id", "")).strip()
     vendor_id_to_label = {row.get("vendor_id", ""): row.get("vendor_label", "") for row in vendor_options}
     vendor_label_to_id = {row.get("vendor_label", ""): row.get("vendor_id", "") for row in vendor_options}
 
@@ -128,13 +127,7 @@ def page_daily_stock_order_record():
     vendor_id = vendor_label_to_id.get(selected_vendor_label, "")
 
     detail_model = logic_stock_record.build_vendor_daily_record_rows(
-        page_tables=base_model["page_tables"],
-        items_df=base_model["items_df"],
-        po_df=base_model["po_df"],
-        pol_df=base_model["pol_df"],
-        stocktakes_df=base_model["stocktakes_df"],
-        stocktake_lines_df=base_model["stocktake_lines_df"],
-        latest_metrics_map=base_model["latest_metrics_map"],
+        base_model=base_model,
         store_id=store_id,
         vendor_id=vendor_id,
         selected_date=selected_date,
