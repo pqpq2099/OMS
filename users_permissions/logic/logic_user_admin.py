@@ -257,6 +257,7 @@ def build_promotion_selected_state(ctx, selected_promotion_user_id: str):
         "target_user": {"role_id": current_role_id, "user_id": selected_user_id},
         "current_role_id": current_role_id,
         "current_role_name": current_role_name,
+        "current_store_scope": norm_text(promotion_row.get("store_scope")),
         "promotion_role_candidates": promotion_role_candidates,
         "role_index": role_index,
         "promotion_store_option_map": promotion_store_option_map,
