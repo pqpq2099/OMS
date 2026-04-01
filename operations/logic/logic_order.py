@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import streamlit as st
-
-from shared.services.service_line import send_line_message as service_send_line_message
-
 from operations.logic.order_decision import (
     build_item_decision_data,
     convert_metric_base_to_order_display_qty,
@@ -72,8 +68,3 @@ def submit_order_entry(
         is_initial_stock=is_initial_stock,
     )
     return {"ok": True, "errors": [], "po_id": po_id}
-
-
-def send_line_message(line_message: str, *, store_id: str | None = None) -> bool:
-    resolved_store_id = str(store_id or st.session_state.get("store_id", "")).strip()
-    return service_send_line_message(line_message=line_message, store_id=resolved_store_id)
