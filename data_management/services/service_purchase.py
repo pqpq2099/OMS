@@ -80,6 +80,25 @@ def _normalize_multi_units(units: list[str]) -> str:
     return ",".join(cleaned)
 
 
+def _get_item_require_price(item_id: str) -> bool:
+    """讀取 items.require_price，預設 True（保守：未知 item 一律要求有價格）。"""
+    item_id_norm = _norm(item_id)
+    if not item_id_norm:
+        return True
+    items_df = read_table("items")
+    if items_df.empty or "require_price" not in items_df.columns:
+        return True
+    row = items_df[items_df["item_id"].astype(str) == item_id_norm]
+    if row.empty:
+        return True
+    val = row.iloc[0].get("require_price", True)
+    if isinstance(val, bool):
+        return val
+    if str(val).lower() in ("false", "0", "no"):
+        return False
+    return True
+
+
 def _brand_id_or_default(brand_id: str) -> str:
     text = _norm(brand_id)
     if text:
@@ -385,7 +404,7 @@ def create_price(
     _ensure_not_empty(price_unit, "價格單位")
 
     price_val = _safe_float(unit_price, 0.0)
-    if price_val <= 0:
+    if _get_item_require_price(item_id) and price_val <= 0:
         raise PurchaseServiceError("單價必須大於 0")
 
     new_id = allocate_price_id()
@@ -582,7 +601,14 @@ def update_price(
     _ensure_not_empty(price_unit, "價格單位")
 
     price_val = _safe_float(unit_price, 0.0)
-    if price_val <= 0:
+    _prices_df = read_table("prices")
+    _pr = (
+        _prices_df[_prices_df["price_id"].astype(str) == _norm(price_id)]
+        if not _prices_df.empty and "price_id" in _prices_df.columns
+        else pd.DataFrame()
+    )
+    _item_id_for_price = _norm(_pr.iloc[0].get("item_id", "")) if not _pr.empty else ""
+    if _get_item_require_price(_item_id_for_price) and price_val <= 0:
         raise PurchaseServiceError("單價必須大於 0")
 
     now = _now_ts()
