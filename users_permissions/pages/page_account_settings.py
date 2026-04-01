@@ -12,11 +12,9 @@ import streamlit as st
 
 from users_permissions.services.service_users import (
     UserServiceError,
-    build_account_info_df,
-    get_user_row,
     norm_text,
 )
-from users_permissions.logic.user_write import change_my_password
+from users_permissions.logic.user_write import change_my_password, get_my_account_view
 
 
 def page_account_settings():
@@ -28,7 +26,7 @@ def page_account_settings():
         return
 
     try:
-        user_row = get_user_row(login_user_id)
+        account_view = get_my_account_view(login_user_id)
     except UserServiceError as e:
         st.error(str(e))
         return
@@ -37,7 +35,7 @@ def page_account_settings():
         return
 
     st.markdown("### 目前帳號資訊")
-    st.table(build_account_info_df(user_row))
+    st.table(account_view["account_info_df"])
 
     st.markdown("### 修改自己的密碼")
     st.caption("密碼至少 6 碼。修改成功後，下次登入會直接使用新密碼。")

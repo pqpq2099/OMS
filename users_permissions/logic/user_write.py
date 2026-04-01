@@ -3,9 +3,11 @@ from __future__ import annotations
 import streamlit as st
 
 from users_permissions.services.service_users import (
+    build_account_info_df,
     change_own_password,
     create_user_account,
     force_change_password,
+    get_user_row,
     initialize_owner_password,
     login_user,
     now_ts,
@@ -59,3 +61,8 @@ def change_my_password(user_id: str, *, current_password: str, new_password: str
         new_password=new_password,
         confirm_password=confirm_password,
     )
+
+
+def get_my_account_view(user_id: str) -> dict:
+    user_row = get_user_row(user_id)
+    return {"account_info_df": build_account_info_df(user_row)}
