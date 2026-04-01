@@ -111,7 +111,7 @@ TABLE_CONTRACT: dict[str, dict] = {
         "primary_key": "price_id",
         "required_columns": ["price_id", "item_id"],
         "columns_order": [
-            "price_id", "item_id", "spec_id", "unit_price", "price_unit",
+            "price_id", "item_id", "unit_price", "price_unit",
             "effective_date", "end_date", "is_active", "created_at", "updated_at",
         ],
     },
