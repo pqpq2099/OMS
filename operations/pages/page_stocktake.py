@@ -14,6 +14,7 @@
 
 import streamlit as st
 
+from shared.core.navigation import goto
 from operations.logic.logic_stocktake import build_stocktake_page_tables, build_stocktake_submit_df
 
 
@@ -188,5 +189,12 @@ def page_stocktake():
 
     # 之後改成正式資料來源
     items_df, units_df = build_stocktake_page_tables()
+
+    if items_df.empty:
+        st.title("點貨 / 叫貨")
+        st.info("⚠️ 此功能尚未開放，請由主選單進行叫貨作業。")
+        if st.button("⬅️ 返回", use_container_width=True):
+            goto("select_vendor")
+        return
 
     render_page_stocktake(items_df, units_df)
