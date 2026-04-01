@@ -4,8 +4,9 @@ from datetime import date
 
 import pandas as pd
 
-from operations.logic import logic_order
+from operations.logic.order_query_common import load_order_page_tables
 from shared.services import service_order_core
+from shared.services.service_line import send_line_message as _send_line_message
 from shared.utils.utils_format import unit_label
 
 
@@ -49,7 +50,7 @@ def _fmt_arrival_text(arrival_date_value):
 
 
 def build_order_message_detail_view_model(*, store_id: str, store_name: str, selected_date: date) -> dict:
-    page_tables = logic_order.load_order_page_tables()
+    page_tables = load_order_page_tables()
     po_df = page_tables["purchase_orders"]
     pol_df = page_tables["purchase_order_lines"]
     vendors_df = page_tables["vendors"]
@@ -169,4 +170,4 @@ def build_order_message_detail_view_model(*, store_id: str, store_name: str, sel
 
 
 def dispatch_line_message(*, line_message: str, store_id: str) -> bool:
-    return logic_order.send_line_message(line_message=line_message, store_id=store_id)
+    return _send_line_message(line_message=line_message, store_id=store_id)
