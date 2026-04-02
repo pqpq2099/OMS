@@ -187,13 +187,9 @@ def render_page_stocktake(items_df, units_df):
             result = submit_stocktake_results(results, items_df, store_id, actor)
 
             if result["ok"]:
-                stk_count = len(result["stocktake_ids"])
-                po_count = len(result["po_ids"])
-                msg = f"✅ 盤點已送出（盤點 {stk_count} 筆"
-                if po_count:
-                    msg += f"，叫貨單 {po_count} 筆"
-                msg += "）"
-                st.success(msg)
+                st.session_state["_stk_result_stocktake_ids"] = result["stocktake_ids"]
+                st.session_state["_stk_result_po_ids"] = result["po_ids"]
+                goto("stocktake_result")
             else:
                 st.error(f"❌ 送出失敗：{result['error']}")
 # ---------------------------------------------------------
