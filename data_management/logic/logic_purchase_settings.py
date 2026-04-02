@@ -440,6 +440,8 @@ def validate_unit_payload(payload: dict):
 
 
 def validate_item_payload(payload: dict):
+    if not _norm(payload.get("item_name_zh")):
+        raise PurchaseServiceError("品項名稱不可空白")
     if not _norm(payload.get("default_vendor_id")):
         raise PurchaseServiceError("請先選擇供應商")
     if not _norm(payload.get("base_unit")):
@@ -457,6 +459,11 @@ def validate_price_payload(payload: dict):
         raise PurchaseServiceError("請先選擇品項")
     if not _norm(payload.get("price_unit")):
         raise PurchaseServiceError("請選擇價格單位")
+    try:
+        if float(payload.get("unit_price", 0) or 0) < 0:
+            raise PurchaseServiceError("單價不可為負數")
+    except (TypeError, ValueError):
+        pass
 
 
 def validate_conversion_payload(payload: dict):
@@ -466,6 +473,8 @@ def validate_conversion_payload(payload: dict):
         raise PurchaseServiceError("請選擇來源單位")
     if not _norm(payload.get("to_unit")):
         raise PurchaseServiceError("請選擇目標單位")
+    if _norm(payload.get("from_unit")) == _norm(payload.get("to_unit")):
+        raise PurchaseServiceError("來源單位與目標單位不可相同")
 
 
 def submit_create_vendor(**payload):
