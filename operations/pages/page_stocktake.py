@@ -15,7 +15,12 @@
 import streamlit as st
 
 from shared.core.navigation import goto
-from operations.logic.logic_stocktake import build_stocktake_page_tables, build_stocktake_submit_df
+from operations.logic.logic_stocktake import (
+    build_stocktake_page_tables,
+    build_stocktake_submit_df,
+    validate_stocktake_results,
+    submit_stocktake_results,
+)
 
 
 
@@ -170,13 +175,22 @@ def render_page_stocktake(items_df, units_df):
 
     if st.button("✅ 一次送出"):
 
-        df = build_stocktake_submit_df(results)
+        errors = validate_stocktake_results(results)
 
-        st.write("送出資料")
+        if errors:
+            for msg in errors:
+                st.error(msg)
 
-        st.dataframe(df)
+        else:
+            store_id = str(st.session_state.get("store_id", "")).strip()
+            actor = str(st.session_state.get("role", "")).strip()
+            result = submit_stocktake_results(results, items_df, store_id, actor)
 
-        # 這裡之後會接 DB 寫入
+            if result["ok"]:
+                count = len(result["stocktake_ids"])
+                st.success(f"✅ 盤點已送出（{count} 筆廠商記錄）")
+            else:
+                st.error(f"❌ 送出失敗：{result['error']}")
 # ---------------------------------------------------------
 # 頁面入口（給 app.py 用）
 # ---------------------------------------------------------
