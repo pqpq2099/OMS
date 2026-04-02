@@ -56,6 +56,7 @@ def get_stocktake_items() -> pd.DataFrame:
             "stock_unit_name": stock_unit_name,
             "order_unit_name": order_unit_name,
             "default_vendor_id": _norm(row.get("default_vendor_id", "")),
+            "base_unit": _norm(row.get("base_unit", "")),
         })
 
     if not rows:
