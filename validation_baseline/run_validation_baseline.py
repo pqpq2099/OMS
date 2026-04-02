@@ -97,6 +97,7 @@ _EXPECTED_ROUTES: dict[str, str] = {
     "select_vendor":       "operations.pages.page_select_vendor",
     "order_entry":         "operations.pages.page_order",
     "order_message_detail":"operations.pages.page_order_message_detail",
+    "purchase_orders":     "operations.pages.page_purchase_orders",
     "export":              "analysis.pages.page_export",
     "stock_order_compare": "analysis.pages.page_stock_order_compare",
     "analysis":            "analysis.pages.page_analysis",
@@ -175,6 +176,7 @@ _PAGE_EXPORTS: dict[str, list[str]] = {
         "page_order_message_detail",
         "page_daily_stock_order_record",
         "page_stocktake",
+        "page_purchase_orders",
     ],
     "data_management.pages": [
         "page_purchase_settings",
