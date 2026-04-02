@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import streamlit as st
 
@@ -70,6 +70,14 @@ def _fmt_amount(val) -> str:
     if f == 0:
         return "—"
     return str(round(f, 1))
+
+
+def _default_delivery_date(po_date_str: str) -> date:
+    """計算預設到貨日：po_date + 1 天；解析失敗 fallback 今日 + 1。"""
+    try:
+        return date.fromisoformat(str(po_date_str).strip()[:10]) + timedelta(days=1)
+    except (ValueError, TypeError):
+        return date.today() + timedelta(days=1)
 
 
 # ----------------------------------------------------------
@@ -133,6 +141,7 @@ def _render_po_row(row, pol_df, vendor_map: dict, actor: str) -> None:
     status = str(row.get("status", "")).strip()
     po_date = str(row.get("po_date", "")).strip()
     stocktake_id = str(row.get("stocktake_id", "")).strip()
+    delivery_date_saved = str(row.get("delivery_date", "")).strip()
 
     # 明細筆數
     if not pol_df.empty and "po_id" in pol_df.columns:
@@ -153,19 +162,27 @@ def _render_po_row(row, pol_df, vendor_map: dict, actor: str) -> None:
         st.divider()
 
         if status == "draft":
+            selected_delivery = st.date_input(
+                "預計到貨日",
+                value=_default_delivery_date(po_date),
+                key=f"delivery_date_{po_id}",
+            )
             if st.button(
                 "✅ 確認叫貨單",
                 key=f"confirm_{po_id}",
                 use_container_width=True,
             ):
-                result = confirm_purchase_order(po_id, actor)
+                result = confirm_purchase_order(po_id, actor, selected_delivery)
                 if result["ok"]:
                     st.success("✅ 叫貨單已確認")
                     st.rerun()
                 else:
                     st.error(f"❌ 確認失敗：{result['error']}")
         else:
-            st.success("✅ 已確認")
+            if delivery_date_saved:
+                st.success(f"✅ 已確認　預計到貨：{delivery_date_saved[:10]}")
+            else:
+                st.success("✅ 已確認")
 
 
 # ----------------------------------------------------------

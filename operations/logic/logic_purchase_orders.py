@@ -90,9 +90,9 @@ def load_po_list(
     )
 
 
-def confirm_purchase_order(po_id: str, actor: str) -> dict:
+def confirm_purchase_order(po_id: str, actor: str, delivery_date: date) -> dict:
     """
-    將指定 PO 的 status 由 draft 改為 confirmed。
+    將指定 PO 的 status 由 draft 改為 confirmed，同時寫入 delivery_date。
     回傳 {"ok": bool, "error": str}
     """
     try:
@@ -103,6 +103,7 @@ def confirm_purchase_order(po_id: str, actor: str) -> dict:
             po_id,
             {
                 "status": "confirmed",
+                "delivery_date": str(delivery_date),
                 "updated_by": actor,
                 "updated_at": now,
             },
