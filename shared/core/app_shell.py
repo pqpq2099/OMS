@@ -144,6 +144,7 @@ def router():
         "order_message_detail": operations_pages.page_order_message_detail,
         "purchase_orders": operations_pages.page_purchase_orders,
         "stocktake_history": operations_pages.page_stocktake_history,
+        "stocktake_result": operations_pages.page_stocktake_result,
         "export": analysis_pages.page_export,
         "stock_order_compare": analysis_pages.page_stock_order_compare,
         "analysis": analysis_pages.page_analysis,
