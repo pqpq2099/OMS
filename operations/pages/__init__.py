@@ -13,6 +13,7 @@ from .page_order_result import page_order_message_detail as page_order_result
 from .page_daily_stock_order_record import page_daily_stock_order_record
 from .page_stocktake import page_stocktake
 from .page_purchase_orders import page_purchase_orders
+from .page_stocktake_history import page_stocktake_history
 
 __all__ = [
     "page_select_store",
@@ -23,4 +24,5 @@ __all__ = [
     "page_daily_stock_order_record",
     "page_stocktake",
     "page_purchase_orders",
+    "page_stocktake_history",
 ]
