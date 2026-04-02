@@ -77,13 +77,18 @@ def submit_stocktake_results(
 ) -> dict:
     """
     呼叫寫入服務層，回傳結果 dict：
-      {"ok": True,  "stocktake_ids": [...], "error": ""}
-      {"ok": False, "stocktake_ids": [],    "error": "...訊息..."}
+      {"ok": True,  "stocktake_ids": [...], "po_ids": [...], "error": ""}
+      {"ok": False, "stocktake_ids": [],    "po_ids": [],    "error": "...訊息..."}
     """
     try:
-        stocktake_ids = submit_stocktake(results, items_df, store_id, actor)
-        return {"ok": True, "stocktake_ids": stocktake_ids, "error": ""}
+        write_result = submit_stocktake(results, items_df, store_id, actor)
+        return {
+            "ok": True,
+            "stocktake_ids": write_result["stocktake_ids"],
+            "po_ids": write_result["po_ids"],
+            "error": "",
+        }
     except StocktakeWriteError as e:
-        return {"ok": False, "stocktake_ids": [], "error": str(e)}
+        return {"ok": False, "stocktake_ids": [], "po_ids": [], "error": str(e)}
     except Exception as e:
-        return {"ok": False, "stocktake_ids": [], "error": f"寫入失敗：{e}"}
+        return {"ok": False, "stocktake_ids": [], "po_ids": [], "error": f"寫入失敗：{e}"}
