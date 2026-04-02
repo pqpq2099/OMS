@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-# [STUB] 此模組為盤點功能的佔位實作，尚未接回正式資料源。
-# build_stocktake_page_tables() 永遠回傳空 DataFrame，page_stocktake 已加入
-# empty guard，會顯示「尚未開放」提示而非空白畫面。
-# 正式接回時：將 build_stocktake_page_tables() 改為讀取 DB，移除此 STUB 標記。
-
 import pandas as pd
+
+from operations.services.service_stocktake import get_stocktake_items, get_stocktake_units
 
 
 def build_stocktake_submit_df(results: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-def build_stocktake_page_tables():
-    # [STUB] 尚未實作正式資料載入，回傳空 DataFrame 以觸發 page 的受控提示
-    return pd.DataFrame(), pd.DataFrame()
+def build_stocktake_page_tables(store_id: str = "") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    載入盤點頁所需的品項與單位資料。
+    store_id 預留供未來依門市篩選使用；目前品項為品牌層級，不做門市過濾。
+    回傳 (items_df, units_df)；items_df 為空時觸發 page 的 empty guard。
+    """
+    items_df = get_stocktake_items()
+    if items_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    units_df = get_stocktake_units(items_df)
+    return items_df, units_df

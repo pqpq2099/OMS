@@ -187,8 +187,8 @@ def render_page_stocktake(items_df, units_df):
 # ---------------------------------------------------------
 def page_stocktake():
 
-    # 之後改成正式資料來源
-    items_df, units_df = build_stocktake_page_tables()
+    store_id = str(st.session_state.get("store_id", "")).strip()
+    items_df, units_df = build_stocktake_page_tables(store_id)
 
     if items_df.empty:
         st.title("點貨 / 叫貨")
