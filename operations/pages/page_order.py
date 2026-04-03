@@ -251,25 +251,15 @@ def page_order():
         st.info("這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
         st.caption(logic_order.build_order_edit_caption(existing_ids, st.session_state.record_date))
 
-    reference_display_df = logic_order.build_order_reference_display_df(
-        view_model["ref_df"],
-        _fmt_qty_with_unit,
-    )
-    with st.expander("📊 查看上次叫貨 / 期間消耗參考（已自動隱藏無紀錄品項）", expanded=False):
-        if reference_display_df.empty:
-            st.caption("目前沒有可參考資料。")
-        else:
-            st.table(reference_display_df)
-
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
 
     condition_col, stock_head_col, order_head_col = st.columns([6, 1, 1])
     with condition_col:
         st.write("**品項名稱（建議量=日均×1.5）**")
     with stock_head_col:
-        st.write("<div style='text-align:center;'><b>庫</b></div>", unsafe_allow_html=True)
+        st.write("<div style='text-align:center; font-size:0.75rem;'><b>本次庫存</b></div>", unsafe_allow_html=True)
     with order_head_col:
-        st.write("<div style='text-align:center;'><b>進</b></div>", unsafe_allow_html=True)
+        st.write("<div style='text-align:center; font-size:0.75rem;'><b>本次叫貨</b></div>", unsafe_allow_html=True)
 
     conversions_df = view_model["conversions_df"]
     item_cards = logic_order.build_order_item_cards_view_model(
