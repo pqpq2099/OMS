@@ -39,3 +39,6 @@ Thumbs.db
 # Env
 .env
 .env.*
+
+# 本地測試捷徑
+streamlit run app.py.txt
