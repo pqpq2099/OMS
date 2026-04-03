@@ -173,6 +173,8 @@ def get_store_selection_view_model() -> dict:
                     error_message = "目前帳號的 store_scope 無法對應到有效門市。"
 
     if not stores_df.empty:
+        if "store_id" in stores_df.columns:
+            stores_df = stores_df.sort_values("store_id", ascending=True).reset_index(drop=True)
         stores_df["store_label"] = stores_df.apply(label_store, axis=1)
 
     return {
