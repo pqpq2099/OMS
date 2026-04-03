@@ -378,9 +378,9 @@ def create_item(
         "default_stock_unit": _norm(default_stock_unit),
         "default_order_unit": _norm(default_order_unit),
         "orderable_units": orderable_units_text,
-        "is_active": _to_bool_num(is_active),
+        "is_active": bool(is_active),
         "category": _norm(category),
-        "spec_value": _norm(spec),
+        "note": _norm(spec),
         "created_at": now,
         "updated_at": now,
     }
@@ -579,9 +579,9 @@ def update_item(
         "default_stock_unit": _norm(default_stock_unit),
         "default_order_unit": _norm(default_order_unit),
         "orderable_units": orderable_units_text,
-        "is_active": _to_bool_num(is_active),
+        "is_active": bool(is_active),
         "category": _norm(category),
-        "spec_value": _norm(spec),
+        "note": _norm(spec),
         "updated_at": now,
     }
     sheet_update("items", "item_id", item_id, updates)

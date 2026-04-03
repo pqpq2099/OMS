@@ -23,7 +23,7 @@ TABLE_CONTRACT: dict[str, dict] = {
             "item_id", "brand_id", "default_vendor_id", "item_name", "item_name_zh",
             "item_type", "base_unit", "default_stock_unit", "default_order_unit",
             "orderable_units", "is_active", "created_at", "updated_at",
-            "category", "spec_value", "spec_unit", "pack_unit", "pack_qty", "outer_unit",
+            "category", "note", "spec_value", "spec_unit", "pack_unit", "pack_qty", "outer_unit",
             "require_price",
         ],
     },
