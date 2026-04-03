@@ -92,18 +92,14 @@ def page_inventory_analysis():
                 "日期": st.column_config.TextColumn(width="small"),
                 "品項": st.column_config.TextColumn(width="medium"),
                 "庫存金額": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "叫貨金額": st.column_config.NumberColumn(format="%.1f", width="small"),
             }
             if display_mode == DISPLAY_MODE_MOBILE
             else {
                 "日期": st.column_config.TextColumn(width="small"),
                 "品項": st.column_config.TextColumn(width="medium"),
-                "上次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "期間進貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "庫存合計": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "期間消耗": st.column_config.NumberColumn(format="%.1f", width="small"),
                 "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
             }
         )
         st.download_button(

@@ -174,7 +174,7 @@ def _build_vendor_stock_amount_df(hist_df: pd.DataFrame, shared_tables: dict[str
 
 
 def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Add 庫存金額 column to detail_df (per-row: 這次庫存_base_qty × base_unit_cost)."""
+    """Add 庫存金額 and 叫貨金額 columns to detail_df (per-row: base_qty × base_unit_cost)."""
     if detail_df.empty or "item_id" not in detail_df.columns:
         return detail_df
     if "這次庫存_base_qty" not in detail_df.columns:
@@ -182,7 +182,8 @@ def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: 
     work = detail_df.copy()
     work["item_id"] = work["item_id"].astype(str).str.strip()
     work["enrich_date"] = pd.to_datetime(work["日期"], errors="coerce").dt.date
-    work["enrich_base_qty"] = pd.to_numeric(work["這次庫存_base_qty"], errors="coerce").fillna(0)
+    work["enrich_stock_qty"] = pd.to_numeric(work["這次庫存_base_qty"], errors="coerce").fillna(0)
+    work["enrich_order_qty"] = pd.to_numeric(work.get("這次叫貨_base_qty", pd.Series(0, index=work.index)), errors="coerce").fillna(0)
     base_cost_lookup = _build_base_unit_cost_lookup(
         shared_tables.get("items", pd.DataFrame()),
         shared_tables.get("prices", pd.DataFrame()),
@@ -190,7 +191,8 @@ def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: 
     )
     if not base_cost_lookup:
         work["庫存金額"] = 0.0
-        return work.drop(columns=["enrich_date", "enrich_base_qty"], errors="ignore")
+        work["叫貨金額"] = 0.0
+        return work.drop(columns=["enrich_date", "enrich_stock_qty", "enrich_order_qty"], errors="ignore")
     pair_df = work[["item_id", "enrich_date"]].drop_duplicates().reset_index(drop=True)
     pair_df["enrich_cost"] = [
         _resolve_base_unit_cost(base_cost_lookup, row.item_id, row.enrich_date)
@@ -198,8 +200,9 @@ def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: 
     ]
     pair_df["enrich_cost"] = pd.to_numeric(pair_df["enrich_cost"], errors="coerce").fillna(0)
     work = work.merge(pair_df, on=["item_id", "enrich_date"], how="left")
-    work["庫存金額"] = (work["enrich_base_qty"] * work["enrich_cost"].fillna(0)).round(1)
-    return work.drop(columns=["enrich_date", "enrich_base_qty", "enrich_cost"], errors="ignore")
+    work["庫存金額"] = (work["enrich_stock_qty"] * work["enrich_cost"].fillna(0)).round(1)
+    work["叫貨金額"] = (work["enrich_order_qty"] * work["enrich_cost"].fillna(0)).round(1)
+    return work.drop(columns=["enrich_date", "enrich_stock_qty", "enrich_order_qty", "enrich_cost"], errors="ignore")
 
 
 def _build_report_detail_frames(*, detail_df: pd.DataFrame, selected_vendor: str, display_mode: str, date_col: str, full_cols: list[str]):
@@ -800,21 +803,33 @@ def _get_analysis_detail_frames(cache: dict, detail_df: pd.DataFrame, selected_v
     cache_key = (selected_vendor, display_mode)
     display_map = cache["detail_display_map"]
     if cache_key not in display_map:
+        # Enrich with monetary amounts (庫存金額 / 叫貨金額)
         enriched = (
             _enrich_detail_df_with_stock_amount(detail_df, shared_tables)
-            if display_mode == DISPLAY_MODE_MOBILE and shared_tables is not None
+            if shared_tables is not None
             else detail_df
         )
-        full_cols = ["日期", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"]
-        if "庫存金額" in enriched.columns:
-            full_cols = full_cols + ["庫存金額"]
-        display_map[cache_key] = _build_report_detail_frames(
+        # export_df: full columns for CSV download
+        export_base_cols = ["日期", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均", "庫存金額", "叫貨金額"]
+        export_df, _ = _build_report_detail_frames(
             detail_df=enriched,
             selected_vendor=selected_vendor,
-            display_mode=display_mode,
+            display_mode=DISPLAY_MODE_FULL,
             date_col="日期",
-            full_cols=full_cols,
+            full_cols=export_base_cols,
         )
+        # show_df: columns shown in UI depend on display_mode
+        if export_df.empty or selected_vendor == ALL_VENDORS:
+            show_df = pd.DataFrame()
+        elif display_mode == DISPLAY_MODE_MOBILE:
+            mobile_cols = [c for c in ["日期", "品項", "庫存金額", "叫貨金額"] if c in export_df.columns]
+            show_df = export_df[mobile_cols].copy()
+            if "品項" in show_df.columns:
+                show_df["品項"] = show_df["品項"].apply(short_item_name)
+        else:
+            full_show_cols = [c for c in ["日期", "品項", "這次庫存", "這次叫貨"] if c in export_df.columns]
+            show_df = export_df[full_show_cols].copy()
+        display_map[cache_key] = (export_df, show_df)
     export_df, show_df = display_map[cache_key]
     return export_df, show_df
 
