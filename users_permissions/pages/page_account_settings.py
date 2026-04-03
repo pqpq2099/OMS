@@ -40,6 +40,9 @@ def page_account_settings():
     st.markdown("### 修改自己的密碼")
     st.caption("密碼至少 6 碼。修改成功後，下次登入會直接使用新密碼。")
 
+    if st.session_state.get("_pw_change_success"):
+        st.success(st.session_state.pop("_pw_change_success"))
+
     with st.form("account_change_password_form"):
         current_password = st.text_input("目前密碼", type="password")
         new_password = st.text_input("新密碼", type="password")
@@ -54,7 +57,8 @@ def page_account_settings():
                     new_password=new_password,
                     confirm_password=confirm_password,
                 )
-                st.success(result.get("message") or "✅ 密碼已更新")
+                st.session_state["_pw_change_success"] = result.get("message") or "✅ 密碼已更新"
+                st.rerun()
             except UserServiceError as e:
                 st.error(str(e))
             except Exception as e:

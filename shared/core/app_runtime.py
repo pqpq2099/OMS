@@ -435,6 +435,7 @@ def get_login_toggle_state() -> dict[str, str]:
 def update_login_enabled_setting(next_value: str):
     save_setting("login_enabled", next_value)
     sheet_bust_cache()
+    st.session_state.pop("_settings_login_enabled_cache", None)
     clear_login_session_state()
     goto("select_store")
 
@@ -447,6 +448,7 @@ def save_system_appearance(*, system_name: str, logo_url: str):
     save_setting("system_name", system_name.strip() or "營運管理系統")
     save_setting("logo_url", logo_url.strip())
     sheet_bust_cache()
+    st.session_state.pop("_settings_login_enabled_cache", None)
 
 
 def get_system_reset_targets() -> tuple[list[str], list[str]]:
