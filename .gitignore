@@ -42,3 +42,13 @@ Thumbs.db
 
 # 本地測試捷徑
 streamlit run app.py.txt
+
+# Claude Code 內部設定
+.claude/
+
+# AI 開發工具（Claude Skills）
+skills/
+
+# dev_guard 產生的報告（含本機路徑，不納入版本控制）
+dev_guard/latest_guard_report.json
+dev_guard/latest_guard_report.md
