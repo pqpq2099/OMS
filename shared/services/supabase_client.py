@@ -77,8 +77,17 @@ def _get_client():
 
 
 def fetch_table(table_name: str):
-    res = _get_client().table(table_name).select("*").execute()
-    return res.data or []
+    _PAGE_SIZE = 1000
+    all_rows: list = []
+    start = 0
+    while True:
+        res = _get_client().table(table_name).select("*").range(start, start + _PAGE_SIZE - 1).execute()
+        batch = res.data or []
+        all_rows.extend(batch)
+        if len(batch) < _PAGE_SIZE:
+            break
+        start += _PAGE_SIZE
+    return all_rows
 
 
 def insert_rows(table_name: str, rows: list[dict]):
