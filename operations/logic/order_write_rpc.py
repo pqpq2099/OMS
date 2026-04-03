@@ -33,17 +33,20 @@ from shared.services.data_backend import read_table
 
 
 def _sanitize_payload(obj, _path: str = "") -> object:
-    """遞迴將 payload 內的 NaN / inf / -inf / pd.NA 轉為 0，並印出問題 key。"""
+    """遞迴將 payload 內的 NaN / inf / -inf / pd.NA 轉為 0。
+    注意：None 必須保留為 None（JSON null），不可轉 0，
+    否則 purchase_order=None 會變成 0，導致 SQL 誤判為非 null 而 INSERT 空 PO。
+    """
+    if obj is None:
+        return None  # 保留 None → JSON null，讓 SQL NULLIF 邏輯正常運作
     if isinstance(obj, dict):
         return {k: _sanitize_payload(v, f"{_path}.{k}") for k, v in obj.items()}
     if isinstance(obj, list):
         return [_sanitize_payload(item, f"{_path}[{i}]") for i, item in enumerate(obj)]
     if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
-        pass  # NaN/inf replaced with 0
         return 0
     try:
         if pd.isna(obj):
-            pass  # pd.NA replaced with 0
             return 0
     except (TypeError, ValueError):
         pass
