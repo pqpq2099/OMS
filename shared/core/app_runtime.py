@@ -351,6 +351,13 @@ def save_setting(setting_key: str, setting_value: str):
             )
 
     rows = settings_df.fillna("").astype(str).values.tolist()
+    # TIMESTAMP 欄不可傳入 ""（PostgreSQL 22007），改回 None → SQL NULL
+    _ts_cols = {i for i, c in enumerate(settings_df.columns) if c in ("updated_at", "created_at")}
+    if _ts_cols:
+        rows = [
+            [None if (ci in _ts_cols and v == "") else v for ci, v in enumerate(row)]
+            for row in rows
+        ]
     sheet_replace_table("settings", settings_df.columns.tolist(), rows)
 
 
