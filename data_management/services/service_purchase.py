@@ -144,12 +144,7 @@ def list_vendors() -> pd.DataFrame:
     df = read_table("vendors").copy()
     if df.empty:
         return df
-    sort_cols = []
-    if "vendor_name_zh" in df.columns:
-        sort_cols.append("vendor_name_zh")
-    elif "vendor_name" in df.columns:
-        sort_cols.append("vendor_name")
-    return _df_sorted(df, sort_cols or ["vendor_id"])
+    return _df_sorted(df, ["vendor_id"])
 
 
 def list_active_vendors() -> pd.DataFrame:
@@ -165,12 +160,7 @@ def list_units() -> pd.DataFrame:
     df = read_table("units").copy()
     if df.empty:
         return df
-    sort_cols = []
-    if "unit_name_zh" in df.columns:
-        sort_cols.append("unit_name_zh")
-    elif "unit_name" in df.columns:
-        sort_cols.append("unit_name")
-    return _df_sorted(df, sort_cols or ["unit_id"])
+    return _df_sorted(df, ["unit_id"])
 
 
 def list_active_units() -> pd.DataFrame:
@@ -186,12 +176,7 @@ def list_items() -> pd.DataFrame:
     df = read_table("items").copy()
     if df.empty:
         return df
-    sort_cols = []
-    if "item_name_zh" in df.columns:
-        sort_cols.append("item_name_zh")
-    elif "item_name" in df.columns:
-        sort_cols.append("item_name")
-    return _df_sorted(df, sort_cols or ["item_id"])
+    return _df_sorted(df, ["item_id"])
 
 
 def list_active_items() -> pd.DataFrame:
@@ -211,14 +196,7 @@ def list_prices(item_id: str = "") -> pd.DataFrame:
     if _norm(item_id) and "item_id" in df.columns:
         df = df[df["item_id"].astype(str) == _norm(item_id)]
 
-    sort_cols = []
-    if "effective_date" in df.columns:
-        sort_cols.append("effective_date")
-    df = _df_sorted(df, sort_cols or ["price_id"])
-
-    if "effective_date" in df.columns:
-        df = df.sort_values("effective_date", ascending=False).reset_index(drop=True)
-    return df
+    return _df_sorted(df, ["price_id"])
 
 
 def list_unit_conversions(item_id: str = "") -> pd.DataFrame:
@@ -229,12 +207,7 @@ def list_unit_conversions(item_id: str = "") -> pd.DataFrame:
     if _norm(item_id) and "item_id" in df.columns:
         df = df[df["item_id"].astype(str) == _norm(item_id)]
 
-    sort_cols = []
-    if "from_unit" in df.columns:
-        sort_cols.append("from_unit")
-    if "to_unit" in df.columns:
-        sort_cols.append("to_unit")
-    return _df_sorted(df, sort_cols or ["conversion_id"])
+    return _df_sorted(df, ["conversion_id"])
 
 
 # ============================================================

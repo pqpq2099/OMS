@@ -116,7 +116,7 @@ def build_store_admin_view(stores_df: pd.DataFrame, brands_df: pd.DataFrame) -> 
     )
     stores_view["status_text"] = stores_view["is_active"].map({1: "啟用", 0: "停用"}).fillna("未設定")
     stores_view = stores_view.sort_values(
-        by=["store_code", "store_id"], ascending=[True, True], na_position="last"
+        by=["store_id"], ascending=[True], na_position="last"
     ).reset_index(drop=True)
     return stores_view, brand_label_col
 

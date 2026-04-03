@@ -31,7 +31,7 @@ def build_user_list_table(users_view: pd.DataFrame) -> pd.DataFrame:
 def build_user_option_map(users_view: pd.DataFrame, store_id_to_name: dict[str, str]) -> dict[str, str]:
     if users_view.empty:
         return {}
-    work = users_view.sort_values(["display_name", "account_code"]).copy()
+    work = users_view.sort_values(["user_id"]).copy()
     return {user_display_label(row, store_id_to_name, ROLE_LABELS): row["user_id"] for _, row in work.iterrows()}
 
 
@@ -39,7 +39,7 @@ def build_role_filtered_option_map(users_view: pd.DataFrame, store_id_to_name: d
     work = users_view[users_view["role_id"].apply(role_filter)].copy()
     if work.empty:
         return {}
-    work = work.sort_values(["display_name", "account_code"])
+    work = work.sort_values(["user_id"])
     return {user_display_label(row, store_id_to_name, ROLE_LABELS): row["user_id"] for _, row in work.iterrows()}
 
 
@@ -188,7 +188,7 @@ def build_account_edit_create_state(ctx):
 
 
 def build_account_edit_user_options(ctx):
-    editable_users_df = ctx.users_view.sort_values(["display_name", "account_code"]).copy()
+    editable_users_df = ctx.users_view.sort_values(["user_id"]).copy()
     edit_user_option_map = build_user_option_map(editable_users_df, ctx.store_id_to_name)
     return {
         "editable_users_df": editable_users_df,
@@ -198,7 +198,7 @@ def build_account_edit_user_options(ctx):
 
 
 def build_account_edit_selected_state(ctx, selected_edit_user_id: str):
-    editable_users_df = ctx.users_view.sort_values(["display_name", "account_code"]).copy()
+    editable_users_df = ctx.users_view.sort_values(["user_id"]).copy()
     if editable_users_df.empty:
         return {
             "edit_row": pd.Series(dtype=object),
@@ -293,7 +293,7 @@ def build_store_permission_selected_state(ctx, filtered_df: pd.DataFrame, select
 
 
 def build_user_quick_manage_state(ctx, selected_user_id: str):
-    managed_target_df = ctx.users_view.sort_values(["display_name", "account_code"]).copy()
+    managed_target_df = ctx.users_view.sort_values(["user_id"]).copy()
     if managed_target_df.empty:
         return {"managed_target_df": managed_target_df, "user_option_map": {}}
     user_option_map = build_user_option_map(managed_target_df, ctx.store_id_to_name)
