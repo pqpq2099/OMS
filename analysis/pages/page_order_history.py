@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import streamlit as st
 
@@ -22,9 +22,9 @@ def page_order_history():
         unsafe_allow_html=True,
     )
     st.title(f"📜 {st.session_state.store_name} {t('title_view_history')}")
-    c_h_date1, c_h_date2 = st.columns(2)
-    h_start = c_h_date1.date_input(t("start_date"), value=date.today() - timedelta(days=30), key="hist_start_date")
-    h_end = c_h_date2.date_input(t("end_date"), value=date.today(), key="hist_end_date")
+    h_date = st.date_input("📅 作業日期", value=date.today(), key="hist_date")
+    h_start = h_date
+    h_end = h_date
     shared_tables = load_report_shared_tables()
     display_mode = DISPLAY_MODE_FULL
     base_model = build_history_page_view_model(st.session_state.store_id, h_start, h_end, ALL_VENDORS, ALL_ITEMS, display_mode, shared_tables)
@@ -71,7 +71,7 @@ def page_order_history():
         st.download_button(
             t("download_csv"),
             detail_section["csv_payload"],
-            file_name=f"歷史叫貨紀錄_{sel_v}_{h_start}_{h_end}.csv",
+            file_name=f"歷史叫貨紀錄_{sel_v}_{h_date}.csv",
             mime="text/csv",
             use_container_width=True,
             key="download_history_csv",

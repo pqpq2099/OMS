@@ -73,6 +73,7 @@ def page_inventory_analysis():
                     "日期": st.column_config.TextColumn(width="small"),
                     "廠商": st.column_config.TextColumn(width="medium"),
                     "進貨金額": st.column_config.NumberColumn(format="%.1f", width="small"),
+                    "庫存金額": st.column_config.NumberColumn(format="%.1f", width="small"),
                 },
             )
         if st.button(f"⬅️ {t('back_to_menu')}", use_container_width=True, key="back_from_analysis_all"):
@@ -90,9 +91,7 @@ def page_inventory_analysis():
             {
                 "日期": st.column_config.TextColumn(width="small"),
                 "品項": st.column_config.TextColumn(width="medium"),
-                "這次庫存": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "這次叫貨": st.column_config.NumberColumn(format="%.1f", width="small"),
-                "日平均": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "庫存金額": st.column_config.NumberColumn(format="%.1f", width="small"),
             }
             if display_mode == DISPLAY_MODE_MOBILE
             else {

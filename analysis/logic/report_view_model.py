@@ -137,15 +137,84 @@ def _build_vendor_summary_df(purchase_filt: pd.DataFrame):
     return vendor_summary.sort_values(["日期", "廠商"], ascending=[False, True]).reset_index(drop=True)
 
 
+def _build_vendor_stock_amount_df(hist_df: pd.DataFrame, shared_tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Compute 庫存金額 grouped by [日期(%m/%d), 廠商] from hist_df."""
+    if hist_df.empty or "item_id" not in hist_df.columns or "廠商" not in hist_df.columns:
+        return pd.DataFrame()
+    if "這次庫存_base_qty" not in hist_df.columns:
+        return pd.DataFrame()
+    work = hist_df[["日期", "廠商", "item_id", "這次庫存_base_qty", "這次庫存"]].copy()
+    work["item_id"] = work["item_id"].astype(str).str.strip()
+    work["target_date"] = pd.to_datetime(work["日期"], errors="coerce").dt.date
+    work["base_qty"] = pd.to_numeric(work["這次庫存_base_qty"], errors="coerce").fillna(0)
+    fallback_qty = pd.to_numeric(work["這次庫存"], errors="coerce").fillna(0)
+    work.loc[work["base_qty"] == 0, "base_qty"] = fallback_qty[work["base_qty"] == 0]
+    work = work[(work["item_id"] != "") & work["target_date"].notna()].copy()
+    if work.empty:
+        return pd.DataFrame()
+    base_cost_lookup = _build_base_unit_cost_lookup(
+        shared_tables.get("items", pd.DataFrame()),
+        shared_tables.get("prices", pd.DataFrame()),
+        get_active_df(shared_tables.get("unit_conversions", pd.DataFrame())),
+    )
+    if not base_cost_lookup:
+        return pd.DataFrame()
+    pair_df = work[["item_id", "target_date"]].drop_duplicates().reset_index(drop=True)
+    pair_df["base_unit_cost"] = [
+        _resolve_base_unit_cost(base_cost_lookup, row.item_id, row.target_date)
+        for row in pair_df.itertuples(index=False)
+    ]
+    pair_df["base_unit_cost"] = pd.to_numeric(pair_df["base_unit_cost"], errors="coerce").fillna(0)
+    work = work.merge(pair_df, on=["item_id", "target_date"], how="left")
+    work["item_stock_amount"] = (work["base_qty"] * work["base_unit_cost"].fillna(0)).round(1)
+    work["日期_fmt"] = pd.to_datetime(work["target_date"].astype(str), errors="coerce").dt.strftime("%m/%d")
+    result = work.groupby(["日期_fmt", "廠商"], as_index=False)["item_stock_amount"].sum()
+    result = result.rename(columns={"日期_fmt": "日期", "item_stock_amount": "庫存金額"})
+    return result
+
+
+def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Add 庫存金額 column to detail_df (per-row: 這次庫存_base_qty × base_unit_cost)."""
+    if detail_df.empty or "item_id" not in detail_df.columns:
+        return detail_df
+    if "這次庫存_base_qty" not in detail_df.columns:
+        return detail_df
+    work = detail_df.copy()
+    work["item_id"] = work["item_id"].astype(str).str.strip()
+    work["_target_date"] = pd.to_datetime(work["日期"], errors="coerce").dt.date
+    work["_base_qty"] = pd.to_numeric(work["這次庫存_base_qty"], errors="coerce").fillna(0)
+    base_cost_lookup = _build_base_unit_cost_lookup(
+        shared_tables.get("items", pd.DataFrame()),
+        shared_tables.get("prices", pd.DataFrame()),
+        get_active_df(shared_tables.get("unit_conversions", pd.DataFrame())),
+    )
+    if not base_cost_lookup:
+        work["庫存金額"] = 0.0
+        return work.drop(columns=["_target_date", "_base_qty"], errors="ignore")
+    pair_df = work[["item_id", "_target_date"]].drop_duplicates().reset_index(drop=True)
+    pair_df["_base_unit_cost"] = [
+        _resolve_base_unit_cost(base_cost_lookup, row.item_id, row._target_date)
+        for row in pair_df.itertuples(index=False)
+    ]
+    pair_df["_base_unit_cost"] = pd.to_numeric(pair_df["_base_unit_cost"], errors="coerce").fillna(0)
+    work = work.merge(pair_df, on=["item_id", "_target_date"], how="left")
+    work["庫存金額"] = (work["_base_qty"] * work["_base_unit_cost"].fillna(0)).round(1)
+    return work.drop(columns=["_target_date", "_base_qty", "_base_unit_cost"], errors="ignore")
+
+
 def _build_report_detail_frames(*, detail_df: pd.DataFrame, selected_vendor: str, display_mode: str, date_col: str, full_cols: list[str]):
     export_df = pd.DataFrame()
     show_df = pd.DataFrame()
     if detail_df.empty or selected_vendor == ALL_VENDORS:
         return export_df, show_df
-    export_df = detail_df[full_cols].copy().reset_index(drop=True)
+    available_cols = [c for c in full_cols if c in detail_df.columns]
+    export_df = detail_df[available_cols].copy().reset_index(drop=True)
     export_df = format_mmdd_column(export_df, date_col)
     if display_mode == DISPLAY_MODE_MOBILE:
-        show_df = export_df[[date_col, "品項", "這次庫存", "這次叫貨", "日平均"]].copy()
+        if "庫存金額" in export_df.columns:
+            show_df = export_df[[date_col, "品項", "庫存金額"]].copy()
+        else:
+            show_df = export_df[[date_col, "品項", "這次庫存", "這次叫貨", "日平均"]].copy()
         show_df["品項"] = show_df["品項"].apply(short_item_name)
     else:
         show_df = export_df.copy()
@@ -157,7 +226,7 @@ def _build_history_analysis_shared_upstream(store_id: str, start_date: date, end
         str(store_id).strip(),
         str(start_date),
         str(end_date),
-        get_table_versions(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors")),
+        get_table_versions(("stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines", "items", "vendors", "prices")),
     )
     cache = st.session_state.get("_history_analysis_upstream_cache")
     if isinstance(cache, dict) and cache.get("signature") == signature:
@@ -183,6 +252,13 @@ def _build_history_analysis_shared_upstream(store_id: str, start_date: date, end
     vendor_item_option_map = _build_vendor_item_option_maps(shared_tables)
     base_detail_df = _build_nonzero_detail_df(hist_df)
     vendor_summary = _build_vendor_summary_df(purchase_filt)
+    if not vendor_summary.empty:
+        stock_amount_df = _build_vendor_stock_amount_df(hist_df, shared_tables)
+        if not stock_amount_df.empty:
+            vendor_summary = vendor_summary.merge(stock_amount_df, on=["日期", "廠商"], how="left")
+            vendor_summary["庫存金額"] = vendor_summary["庫存金額"].fillna(0.0).round(1)
+        else:
+            vendor_summary["庫存金額"] = 0.0
     data = {
         "hist_df": hist_df.copy(),
         "purchase_filt": purchase_filt.copy(),
@@ -720,16 +796,24 @@ def _get_analysis_vendor_total_stock_amount(cache: dict, detail_df: pd.DataFrame
     return total_map[selected_vendor]
 
 
-def _get_analysis_detail_frames(cache: dict, detail_df: pd.DataFrame, selected_vendor: str, display_mode: str):
+def _get_analysis_detail_frames(cache: dict, detail_df: pd.DataFrame, selected_vendor: str, display_mode: str, shared_tables: dict[str, pd.DataFrame] | None = None):
     cache_key = (selected_vendor, display_mode)
     display_map = cache["detail_display_map"]
     if cache_key not in display_map:
+        enriched = (
+            _enrich_detail_df_with_stock_amount(detail_df, shared_tables)
+            if display_mode == DISPLAY_MODE_MOBILE and shared_tables is not None
+            else detail_df
+        )
+        full_cols = ["日期", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"]
+        if "庫存金額" in enriched.columns:
+            full_cols = full_cols + ["庫存金額"]
         display_map[cache_key] = _build_report_detail_frames(
-            detail_df=detail_df,
+            detail_df=enriched,
             selected_vendor=selected_vendor,
             display_mode=display_mode,
             date_col="日期",
-            full_cols=["日期", "品項", "上次庫存", "期間進貨", "庫存合計", "這次庫存", "期間消耗", "這次叫貨", "日平均"],
+            full_cols=full_cols,
         )
     export_df, show_df = display_map[cache_key]
     return export_df, show_df
@@ -751,14 +835,14 @@ def build_analysis_page_view_model(store_id: str, start: date, end: date, select
         detail_df = base_detail_df
         total_purchase_amount = cache["total_purchase_amount_all"]
         total_stock_amount = cache["total_stock_amount_all"]
-        export_df, show_df = _get_analysis_detail_frames(cache, detail_df, selected_vendor, display_mode)
+        export_df, show_df = _get_analysis_detail_frames(cache, detail_df, selected_vendor, display_mode, shared_tables)
     else:
         purchase_filt = _get_analysis_vendor_purchase_df(cache, purchase_filt, selected_vendor)
         detail_df = _get_analysis_vendor_detail_df(cache, base_detail_df, selected_vendor)
         total_purchase_amount = _get_analysis_vendor_purchase_total(cache, purchase_filt, selected_vendor)
         total_stock_amount = _get_analysis_vendor_total_stock_amount(cache, detail_df, selected_vendor, shared_tables)
         vendor_summary = _get_analysis_vendor_summary(cache, vendor_summary, selected_vendor)
-        export_df, show_df = _get_analysis_detail_frames(cache, detail_df, selected_vendor, display_mode)
+        export_df, show_df = _get_analysis_detail_frames(cache, detail_df, selected_vendor, display_mode, shared_tables)
 
     return {"hist_df": hist_df, "purchase_filt": purchase_filt, "vendor_options": vendor_options, "total_purchase_amount": total_purchase_amount, "total_stock_amount": total_stock_amount, "vendor_summary": vendor_summary, "detail_df": detail_df, "export_df": export_df, "show_df": show_df}
 
