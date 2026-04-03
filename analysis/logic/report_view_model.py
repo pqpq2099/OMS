@@ -903,6 +903,75 @@ def build_analysis_detail_section(model: dict):
     }
 
 
+# ─── 進銷存分析 新版 UI（雙模式）view model ───────────────────────────────────
+
+def build_analysis_upstream_data(store_id: str, start_date: date, end_date: date, shared_tables: dict[str, pd.DataFrame]) -> dict:
+    """Public wrapper for _build_history_analysis_shared_upstream. Used by new analysis UI."""
+    return _build_history_analysis_shared_upstream(store_id=store_id, start_date=start_date, end_date=end_date, shared_tables=shared_tables)
+
+
+def build_analysis_all_vendor_view(upstream: dict) -> dict:
+    """All-vendor aggregated view (used by both period and single-day modes).
+    Aggregates vendor_summary by 廠商 (sum 進貨金額 + 庫存金額, drop date dimension).
+    Returns: {table_df, total_purchase, total_stock, vendor_options}
+    """
+    vendor_summary = upstream.get("vendor_summary", pd.DataFrame())
+    vendor_options = upstream.get("vendor_options", [ALL_VENDORS])
+    if vendor_summary.empty or "廠商" not in vendor_summary.columns:
+        return {"table_df": pd.DataFrame(), "total_purchase": 0.0, "total_stock": 0.0, "vendor_options": vendor_options}
+    agg = vendor_summary.groupby("廠商", as_index=False)[["進貨金額", "庫存金額"]].sum()
+    agg = agg.sort_values("廠商").reset_index(drop=True)
+    return {
+        "table_df": agg,
+        "total_purchase": float(agg["進貨金額"].sum()),
+        "total_stock": float(agg["庫存金額"].sum()),
+        "vendor_options": vendor_options,
+    }
+
+
+def build_analysis_period_vendor_detail_view(upstream: dict, selected_vendor: str) -> dict:
+    """Period mode – selected vendor: per-date monetary detail from vendor_summary.
+    Columns: 日期 / 廠商 / 這次進貨金額 / 這次庫存金額
+    Returns: {table_df, total_purchase, total_stock}
+    """
+    vendor_summary = upstream.get("vendor_summary", pd.DataFrame())
+    if vendor_summary.empty or selected_vendor == ALL_VENDORS:
+        return {"table_df": pd.DataFrame(), "total_purchase": 0.0, "total_stock": 0.0}
+    mask = vendor_summary["廠商"].astype(str).str.strip() == str(selected_vendor).strip()
+    filtered = vendor_summary.loc[mask].copy().sort_values("日期", ascending=False).reset_index(drop=True)
+    if filtered.empty:
+        return {"table_df": pd.DataFrame(), "total_purchase": 0.0, "total_stock": 0.0}
+    table_df = filtered[["日期", "廠商", "進貨金額", "庫存金額"]].rename(
+        columns={"進貨金額": "這次進貨金額", "庫存金額": "這次庫存金額"}
+    )
+    return {
+        "table_df": table_df,
+        "total_purchase": float(filtered["進貨金額"].sum()),
+        "total_stock": float(filtered["庫存金額"].sum()),
+    }
+
+
+def build_analysis_single_day_vendor_detail_view(upstream: dict, selected_vendor: str) -> dict:
+    """Single-day mode – selected vendor: per-item quantity detail from base_detail_df.
+    Columns: 日期 / 品項 / 這次庫存 / 這次叫貨
+    Returns: {table_df}
+    """
+    base_detail_df = upstream.get("base_detail_df", pd.DataFrame())
+    if base_detail_df.empty or selected_vendor == ALL_VENDORS:
+        return {"table_df": pd.DataFrame()}
+    mask = base_detail_df["廠商"].astype(str).str.strip() == str(selected_vendor).strip()
+    filtered = base_detail_df.loc[mask].copy()
+    if filtered.empty:
+        return {"table_df": pd.DataFrame()}
+    date_col = "日期顯示" if "日期顯示" in filtered.columns else "日期"
+    keep_cols = [c for c in [date_col, "品項", "這次庫存", "這次叫貨"] if c in filtered.columns]
+    table_df = filtered[keep_cols].copy().reset_index(drop=True)
+    table_df = table_df.rename(columns={date_col: "日期"})
+    return {"table_df": table_df}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 def resolve_history_filter_state(*, selected_vendor: str, previous_vendor: str, current_item_filter: str, item_options: list[str], default_item: str):
     resolved_item_filter = current_item_filter
     resolved_previous_vendor = selected_vendor
