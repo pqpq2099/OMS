@@ -109,11 +109,11 @@ def render_item_row(item, units_df):
         )
 
     with col_stock_unit:
-
+        _stk_matched = units_df.index[units_df["name"] == stock_unit].tolist()
         stock_unit_id = st.selectbox(
             "庫單位",
             units_df["name"],
-            index=units_df.index[units_df["name"] == stock_unit][0],
+            index=_stk_matched[0] if _stk_matched else 0,
             key=f"stk_unit_{item_id}",
             label_visibility="collapsed",
         )
@@ -130,11 +130,11 @@ def render_item_row(item, units_df):
         )
 
     with col_order_unit:
-
+        _ord_matched = units_df.index[units_df["name"] == order_unit].tolist()
         order_unit_id = st.selectbox(
             "進單位",
             units_df["name"],
-            index=units_df.index[units_df["name"] == order_unit][0],
+            index=_ord_matched[0] if _ord_matched else 0,
             key=f"ord_unit_{item_id}",
             label_visibility="collapsed",
         )

@@ -180,7 +180,7 @@ def create_store(brand_id: str, store_name_zh: str, actor: str = "system") -> di
 
     header = sheet_get_header("stores")
     sheet_append("stores", header, [new_row])
-    sheet_bust_cache()
+    sheet_bust_cache("stores")
 
     audit_log(
         action="create_store",
@@ -210,7 +210,7 @@ def update_store_active(store_id: str, new_active: int, actor: str = "system"):
         updates["updated_by"] = actor
 
     sheet_update("stores", "store_id", target_store_id, updates)
-    sheet_bust_cache()
+    sheet_bust_cache("stores")
 
     stores_df_after, _ = load_store_admin_tables()
     after_mask = stores_df_after["store_id"].astype(str).str.strip() == target_store_id

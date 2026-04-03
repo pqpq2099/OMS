@@ -45,5 +45,5 @@ def _save_order_entry(
         is_initial_stock=is_initial_stock,
     )
     rpc_save_order_transaction(payload)
-    bust_cache()
+    bust_cache(["stocktakes", "stocktake_lines", "purchase_orders", "purchase_order_lines"])
     return payload["_meta"]["po_id"]

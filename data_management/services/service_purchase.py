@@ -256,7 +256,7 @@ def create_vendor(
 
     header = get_header("vendors")
     sheet_append("vendors", header, [row])
-    bust_cache()
+    bust_cache("vendors")
     return new_id
 
 
@@ -297,7 +297,7 @@ def create_unit(
 
     header = get_header("units")
     sheet_append("units", header, [row])
-    bust_cache()
+    bust_cache("units")
     return new_id
 
 
@@ -361,7 +361,7 @@ def create_item(
 
     header = get_header("items")
     sheet_append("items", header, [row])
-    bust_cache()
+    bust_cache("items")
     clear_unit_label_cache()
     return new_id
 
@@ -415,7 +415,7 @@ def create_price(
 
     header = get_header("prices")
     sheet_append("prices", header, [row])
-    bust_cache()
+    bust_cache("prices")
     # 新增後補全所有歷史缺漏的結束日期（含新插入的前一筆）
     _backfill_price_end_dates(item_id=item_id, now=now)
     return new_id
@@ -465,7 +465,7 @@ def create_unit_conversion(
 
     header = get_header("unit_conversions")
     sheet_append("unit_conversions", header, [row])
-    bust_cache()
+    bust_cache("unit_conversions")
     return new_id
 
 
@@ -500,7 +500,7 @@ def update_vendor(
         "updated_at": now,
     }
     sheet_update("vendors", "vendor_id", vendor_id, updates)
-    bust_cache()
+    bust_cache("vendors")
 
 
 def update_unit(
@@ -527,7 +527,7 @@ def update_unit(
         "updated_at": now,
     }
     sheet_update("units", "unit_id", unit_id, updates)
-    bust_cache()
+    bust_cache("units")
     clear_unit_label_cache()
 
 
@@ -578,7 +578,7 @@ def update_item(
         "updated_at": now,
     }
     sheet_update("items", "item_id", item_id, updates)
-    bust_cache()
+    bust_cache("items")
 
 
 def update_price(
@@ -614,7 +614,7 @@ def update_price(
         "updated_at": now,
     }
     sheet_update("prices", "price_id", price_id, updates)
-    bust_cache()
+    bust_cache("prices")
 
 
 def revert_latest_price(item_id: str) -> None:
@@ -632,7 +632,7 @@ def revert_latest_price(item_id: str) -> None:
     if len(df) > 1:
         prev_id = _norm(df.iloc[1].get("price_id"))
         sheet_update("prices", "price_id", prev_id, {"end_date": None, "updated_at": now})
-    bust_cache()
+    bust_cache("prices")
 
 
 def update_unit_conversion(
@@ -663,4 +663,4 @@ def update_unit_conversion(
         "updated_at": now,
     }
     sheet_update("unit_conversions", "conversion_id", conversion_id, updates)
-    bust_cache()
+    bust_cache("unit_conversions")
