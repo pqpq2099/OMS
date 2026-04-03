@@ -183,7 +183,7 @@ def update_user_fields(user_id: str, updates: dict):
     if not target_user_id:
         raise UserServiceError("缺少 user_id")
     sheet_update("users", "user_id", target_user_id, updates)
-    sheet_bust_cache()
+    sheet_bust_cache("users")
 
 
 def initialize_owner_password(user_id: str, new_password: str, confirm_password: str):
@@ -382,7 +382,7 @@ def create_user_account(data: dict, actor_user_id: str = "") -> str:
     }
     header = sheet_get_header("users")
     sheet_append("users", header, [new_row])
-    sheet_bust_cache()
+    sheet_bust_cache("users")
     audit_log(
         action="create_user",
         entity_id=new_user_id,

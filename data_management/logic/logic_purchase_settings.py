@@ -27,6 +27,7 @@ from data_management.services.service_purchase import (
     update_unit,
     update_unit_conversion,
     update_vendor,
+    revert_latest_price,
 )
 
 
@@ -52,6 +53,7 @@ __all__ = [
     "submit_update_price",
     "submit_create_unit_conversion",
     "submit_update_unit_conversion",
+    "submit_revert_latest_price",
 ]
 
 
@@ -515,6 +517,10 @@ def submit_create_price(**payload):
 def submit_update_price(**payload):
     validate_price_payload(payload)
     return update_price(**payload)
+
+
+def submit_revert_latest_price(item_id: str):
+    return revert_latest_price(item_id=item_id)
 
 
 def submit_create_unit_conversion(**payload):

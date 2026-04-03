@@ -759,6 +759,38 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         else:
             stock_work["display_order_num"] = 999999
 
+    # ── 全區間前處理（確保 prev_date 可穿越查詢起始邊界） ──────────────────────
+    if "stocktake_updated_at" not in stock_work.columns:
+        stock_work["stocktake_updated_at"] = ""
+    if "stocktake_created_at" not in stock_work.columns:
+        stock_work["stocktake_created_at"] = ""
+
+    stock_work["item_id"] = _normalize_key_series(stock_work["item_id"])
+    stock_work["vendor_id"] = _normalize_key_series(stock_work["vendor_id"])
+    _dv_col = stock_work["default_vendor_id"] if "default_vendor_id" in stock_work.columns else pd.Series("", index=stock_work.index, dtype="object")
+    stock_work["default_vendor_id"] = _normalize_key_series(_dv_col)
+    stock_work["__effective_vendor_id"] = stock_work["vendor_id"].where(stock_work["vendor_id"] != "", stock_work["default_vendor_id"])
+    stock_work["__sort_updated"] = pd.to_datetime(stock_work["stocktake_updated_at"], errors="coerce")
+    stock_work["__sort_created"] = pd.to_datetime(stock_work["stocktake_created_at"], errors="coerce")
+
+    stock_work = stock_work.sort_values(
+        ["stocktake_date_dt", "vendor_id", "item_id", "__sort_updated", "__sort_created", "stocktake_id"],
+        ascending=[True, True, True, True, True, True],
+        kind="mergesort",
+    ).drop_duplicates(
+        subset=["stocktake_date_dt", "vendor_id", "item_id"],
+        keep="last",
+    ).copy()
+
+    stock_work = stock_work.sort_values(
+        ["item_id", "__effective_vendor_id", "stocktake_date_dt", "display_order_num", "item_name_disp"],
+        ascending=[True, True, True, True, True],
+        kind="mergesort",
+    ).copy()
+
+    group_cols = ["item_id", "__effective_vendor_id"]
+
+    # 查詢範圍內的盤點資料
     target_stock = stock_work[
         stock_work["stocktake_date_dt"].between(start_date, end_date, inclusive="both")
     ].copy()
@@ -768,43 +800,34 @@ def _build_inventory_history_summary_df(store_id: str, start_date: date, end_dat
         _session_df_cache_set(cache_key, signature, out)
         return out
 
-    if "stocktake_updated_at" not in target_stock.columns:
-        target_stock["stocktake_updated_at"] = ""
-    if "stocktake_created_at" not in target_stock.columns:
-        target_stock["stocktake_created_at"] = ""
+    # 錨點：每個 (item, vendor) 在 start_date 之前最後一筆，使第一筆 prev_date 可正確計算
+    before_range = stock_work[stock_work["stocktake_date_dt"] < start_date]
+    if not before_range.empty:
+        anchor_rows = before_range.groupby(group_cols, sort=False).tail(1).copy()
+        anchor_rows["__is_anchor"] = True
+        target_stock["__is_anchor"] = False
+        combined = pd.concat([anchor_rows, target_stock], ignore_index=True)
+        combined = combined.sort_values(
+            ["item_id", "__effective_vendor_id", "stocktake_date_dt", "display_order_num", "item_name_disp"],
+            ascending=[True, True, True, True, True],
+            kind="mergesort",
+        ).copy()
+    else:
+        combined = target_stock.copy()
+        combined["__is_anchor"] = False
 
-    target_stock["item_id"] = _normalize_key_series(target_stock["item_id"])
-    target_stock["vendor_id"] = _normalize_key_series(target_stock["vendor_id"])
-    target_stock["default_vendor_id"] = _normalize_key_series(target_stock.get("default_vendor_id", pd.Series("", index=target_stock.index, dtype="object")))
-    target_stock["__effective_vendor_id"] = target_stock["vendor_id"].where(target_stock["vendor_id"] != "", target_stock["default_vendor_id"])
-    target_stock["__sort_updated"] = pd.to_datetime(target_stock["stocktake_updated_at"], errors="coerce")
-    target_stock["__sort_created"] = pd.to_datetime(target_stock["stocktake_created_at"], errors="coerce")
-
-    target_stock = target_stock.sort_values(
-        ["stocktake_date_dt", "vendor_id", "item_id", "__sort_updated", "__sort_created", "stocktake_id"],
-        ascending=[True, True, True, True, True, True],
-        kind="mergesort",
-    ).drop_duplicates(
-        subset=["stocktake_date_dt", "vendor_id", "item_id"],
-        keep="last",
-    ).copy()
-
-    target_stock = target_stock.sort_values(
-        ["item_id", "__effective_vendor_id", "stocktake_date_dt", "display_order_num", "item_name_disp"],
-        ascending=[True, True, True, True, True],
-        kind="mergesort",
-    ).copy()
-
-    group_cols = ["item_id", "__effective_vendor_id"]
-    target_stock["prev_date"] = target_stock.groupby(group_cols, sort=False)["stocktake_date_dt"].shift(1)
-    target_stock["prev_qty"] = pd.to_numeric(
-        target_stock.groupby(group_cols, sort=False)["display_stock_qty"].shift(1),
+    combined["prev_date"] = combined.groupby(group_cols, sort=False)["stocktake_date_dt"].shift(1)
+    combined["prev_qty"] = pd.to_numeric(
+        combined.groupby(group_cols, sort=False)["display_stock_qty"].shift(1),
         errors="coerce",
     ).fillna(0.0)
-    target_stock["prev_base_qty"] = pd.to_numeric(
-        target_stock.groupby(group_cols, sort=False)["base_qty_num"].shift(1),
+    combined["prev_base_qty"] = pd.to_numeric(
+        combined.groupby(group_cols, sort=False)["base_qty_num"].shift(1),
         errors="coerce",
     ).fillna(0.0)
+
+    # 還原為查詢範圍內的資料（過濾掉錨點列）
+    target_stock = combined[~combined["__is_anchor"]].copy()
 
     po_work = pd.DataFrame()
     po_date_field = "operation_date_dt" if "operation_date_dt" in po_df.columns else "order_date_dt"

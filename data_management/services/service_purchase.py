@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import pandas as pd
 
 from shared.utils.common_helpers import _norm, _now_ts, _safe_float
@@ -25,6 +25,7 @@ from shared.utils.utils_format import clear_unit_label_cache
 from shared.services.data_backend import (
     append_rows_by_header as sheet_append,
     bust_cache,
+    delete_row_by_match as sheet_delete,
     get_header,
     read_table,
     update_row_by_match as sheet_update,
@@ -365,6 +366,23 @@ def create_item(
     return new_id
 
 
+def _backfill_price_end_dates(item_id: str, now: str) -> None:
+    """補全同品項所有歷史價格的結束日期（依生效日期排序，相鄰兩筆自動補上缺漏的結束日期）。"""
+    df = list_prices(item_id=item_id)
+    if df.empty or "effective_date" not in df.columns:
+        return
+    df = df.copy()
+    df["_eff_dt"] = pd.to_datetime(df["effective_date"], errors="coerce")
+    df = df.dropna(subset=["_eff_dt"]).sort_values("_eff_dt", ascending=True).reset_index(drop=True)
+    for i in range(len(df) - 1):
+        curr_row = df.iloc[i]
+        next_row = df.iloc[i + 1]
+        curr_end = _norm(str(curr_row.get("end_date", "") or ""))
+        if not curr_end:
+            expected_end = (next_row["_eff_dt"] - timedelta(days=1)).strftime("%Y-%m-%d")
+            sheet_update("prices", "price_id", _norm(curr_row.get("price_id")), {"end_date": expected_end, "updated_at": now})
+
+
 def create_price(
     *,
     item_id: str,
@@ -398,6 +416,8 @@ def create_price(
     header = get_header("prices")
     sheet_append("prices", header, [row])
     bust_cache()
+    # 新增後補全所有歷史缺漏的結束日期（含新插入的前一筆）
+    _backfill_price_end_dates(item_id=item_id, now=now)
     return new_id
 
 
@@ -594,6 +614,24 @@ def update_price(
         "updated_at": now,
     }
     sheet_update("prices", "price_id", price_id, updates)
+    bust_cache()
+
+
+def revert_latest_price(item_id: str) -> None:
+    """刪除最新價格，並還原前一筆價格的結束日期。"""
+    _ensure_not_empty(item_id, "品項")
+    df = list_prices(item_id=item_id)
+    if df.empty:
+        raise PurchaseServiceError("此品項沒有價格資料")
+    df = df.copy()
+    df["_eff_dt"] = pd.to_datetime(df["effective_date"], errors="coerce")
+    df = df.sort_values("_eff_dt", ascending=False).reset_index(drop=True)
+    now = _now_ts()
+    latest_id = _norm(df.iloc[0].get("price_id"))
+    sheet_delete("prices", "price_id", latest_id)
+    if len(df) > 1:
+        prev_id = _norm(df.iloc[1].get("price_id"))
+        sheet_update("prices", "price_id", prev_id, {"end_date": None, "updated_at": now})
     bust_cache()
 
 

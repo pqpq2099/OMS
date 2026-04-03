@@ -300,8 +300,18 @@ def update_row_by_match(sheet_name: str, key_field: str, key_value: str, updates
                     f"[{sheet_name}] 更新失敗：primary_key「{_pk}」在 updates 中不可為空"
                 )
 
-    clean_updates = {field: ("" if value is None else value) for field, value in (updates or {}).items()}
+    # 保留 None（Supabase 接受 None 作為 NULL，空字串對 date/numeric 欄位會報錯）
+    clean_updates = dict(updates or {})
     update_rows(sheet_name, {key_field: key_value}, clean_updates)
+    bust_cache(sheet_name)
+
+
+def delete_row_by_match(sheet_name: str, key_field: str, key_value: str):
+    """依指定鍵值刪除單筆資料，寫入 Supabase。"""
+    key_value = _norm(key_value)
+    if not key_value:
+        raise ValueError(f"{sheet_name}.{key_field} 不可為空")
+    delete_rows(sheet_name, {key_field: key_value})
     bust_cache(sheet_name)
 
 
