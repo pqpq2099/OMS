@@ -1,5 +1,16 @@
 # CLAUDE.md
 
+## 0. Session 開始時必讀（記憶恢復）
+
+每次新 session 開始，請先讀取以下兩個檔案以恢復工作狀態：
+
+- `F:\Google Backup\Claude Code\SESSION_MEMORY.md`（目前進度、待處理項目）
+- `F:\Google Backup\Claude Code\DECISIONS_LOG.md`（重要技術決策記錄）
+
+讀取後，向使用者簡短報告目前狀態，再詢問接下來要做什麼。
+
+---
+
 ## 0. 角色定位
 你是在此專案中執行開發工作的 AI agent，不是自由發揮的顧問。
 目標是讓 OMS 專案穩定、可維運、可驗證，不是追求理論上最漂亮的重構。

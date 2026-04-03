@@ -65,14 +65,11 @@ def render_stocktake_result() -> None:
     st.divider()
 
     # ── 導頁按鈕 ─────────────────────────────────────────
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         if st.button("⬅️ 返回主選單", use_container_width=True, key="sr_back"):
             goto("select_vendor")
     with col2:
-        if st.button("📋 叫貨單管理", use_container_width=True, key="sr_po"):
-            goto("purchase_orders")
-    with col3:
         if st.button("🕐 盤點歷史", use_container_width=True, key="sr_history"):
             goto("stocktake_history")
 

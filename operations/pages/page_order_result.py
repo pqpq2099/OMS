@@ -38,6 +38,7 @@ def page_order_message_detail():
         return
 
     line_message = view_model.get("line_message", "")
+    draft_po_ids = view_model.get("draft_po_ids", [])
 
     st.markdown("### LINE 顯示內容")
     st.code(line_message, language="text")
@@ -50,6 +51,12 @@ def page_order_message_detail():
                 store_id=str(store_id).strip(),
             )
             if ok:
+                actor = str(st.session_state.get("login_user", "system")).strip()
+                logic_order_result.confirm_draft_pos(
+                    po_ids=draft_po_ids,
+                    actor=actor,
+                    delivery_date=selected_date,
+                )
                 st.success("✅ 已成功發送到 LINE")
             else:
                 st.error("❌ LINE 發送失敗，請檢查 line_bot / line_groups 設定")

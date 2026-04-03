@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 
 from operations.logic.order_query_common import load_order_page_tables
+from operations.logic.logic_purchase_orders import confirm_purchase_order
 from shared.services import service_order_core
 from shared.services.service_line import send_line_message as _send_line_message
 from shared.utils.utils_format import unit_label
@@ -166,7 +167,31 @@ def build_order_message_detail_view_model(*, store_id: str, store_name: str, sel
         lines.append(_fmt_arrival_text(delivery_dt))
         lines.append("")
 
-    return {"status": "ok", "line_message": "\n".join(lines).strip()}
+    # 計算本次顯示範圍中仍為 draft 的 PO（供發送 LINE 時一併確認用）
+    draft_po_ids: list[str] = []
+    if "status" in po_today.columns:
+        draft_mask = po_today["status"].astype(str).str.strip() == "draft"
+        draft_po_ids = (
+            po_today.loc[draft_mask, "po_id"].astype(str).str.strip().tolist()
+        )
+
+    return {
+        "status": "ok",
+        "line_message": "\n".join(lines).strip(),
+        "draft_po_ids": draft_po_ids,
+    }
+
+
+def confirm_draft_pos(
+    po_ids: list[str],
+    actor: str,
+    delivery_date: date,
+) -> None:
+    """發送 LINE 後，將本次顯示範圍中仍為 draft 的 PO 批次改為 confirmed。
+    delivery_date 已於叫貨時寫入，此處傳入相同值（不改變到貨日）。
+    """
+    for po_id in po_ids:
+        confirm_purchase_order(po_id, actor, delivery_date)
 
 
 def dispatch_line_message(*, line_message: str, store_id: str) -> bool:

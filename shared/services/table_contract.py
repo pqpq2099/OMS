@@ -60,7 +60,7 @@ TABLE_CONTRACT: dict[str, dict] = {
         "required_columns": ["stocktake_id", "store_id", "vendor_id"],
         "columns_order": [
             "stocktake_id", "store_id", "stocktake_date", "vendor_id",
-            "stocktake_type", "status", "note",
+            "status", "note",
             "created_at", "created_by", "updated_at", "updated_by",
         ],
     },
@@ -89,7 +89,7 @@ TABLE_CONTRACT: dict[str, dict] = {
         "required_columns": ["store_id"],
         "columns_order": [
             "store_id", "brand_id", "store_name", "store_name_zh", "store_code",
-            "is_active", "created_at", "updated_at",
+            "is_active", "created_at", "updated_at", "updated_by",
         ],
     },
     "line_groups": {

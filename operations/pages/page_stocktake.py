@@ -183,7 +183,7 @@ def render_page_stocktake(items_df, units_df):
 
         else:
             store_id = str(st.session_state.get("store_id", "")).strip()
-            actor = str(st.session_state.get("role", "")).strip()
+            actor = str(st.session_state.get("login_user", "system")).strip()
             result = submit_stocktake_results(results, items_df, store_id, actor)
 
             if result["ok"]:

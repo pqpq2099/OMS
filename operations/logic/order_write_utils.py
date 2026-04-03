@@ -79,7 +79,7 @@ def _write_audit_log(action: str, table_name: str, entity_id: str, note: str, be
         return
 
     now = now_ts()
-    login_user_id = norm(st.session_state.get("login_user_id", "")) or "SYSTEM"
+    login_user_id = norm(st.session_state.get("login_user", "")) or "SYSTEM"
     audit_id = f"AUDIT_{pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f')}"
     row = {c: "" for c in header}
     defaults = {

@@ -36,7 +36,7 @@ def page_system_maintenance():
             app_runtime.run_system_reset(
                 target_tables=target_tables,
                 target_sequence_keys=target_sequence_keys,
-                actor=st.session_state.get("role", "owner"),
+                actor=st.session_state.get("login_user", "system"),
             )
             st.success("✅ 初始化完成：庫存、叫貨、交易資料已清空，對應序號已重設。")
             st.rerun()

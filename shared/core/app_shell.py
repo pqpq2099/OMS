@@ -142,9 +142,6 @@ def router():
         "select_vendor": operations_pages.page_select_vendor,
         "order_entry": operations_pages.page_order,
         "order_message_detail": operations_pages.page_order_message_detail,
-        "purchase_orders": operations_pages.page_purchase_orders,
-        "stocktake_history": operations_pages.page_stocktake_history,
-        "stocktake_result": operations_pages.page_stocktake_result,
         "export": analysis_pages.page_export,
         "stock_order_compare": analysis_pages.page_stock_order_compare,
         "analysis": analysis_pages.page_analysis,
@@ -169,18 +166,4 @@ def run_app():
     apply_global_style()
     app_runtime.initialize_runtime()
     render_sidebar()
-    # [TEMP DEBUG] Supabase 連線診斷 — 確認後可移除此區塊
-    from shared.services.supabase_client import debug_connection_info as _dci
-    with st.sidebar.expander("🔍 連線診斷 [TEMP]", expanded=False):
-        _info = _dci()
-        st.caption(f"URL: `{_info['masked_url']}`")
-        st.caption(f"Key 已設定: `{_info['has_key']}`")
-        st.caption(f"id_sequences 可讀: {'✅' if _info['seq_exists'] else '❌'}")
-        st.caption(f"id_sequences 筆數: `{_info['seq_count']}`")
-        st.caption(f"stocktakes seq: {'✅' if _info['stocktake_seq'] else '❌'}")
-        st.caption(f"purchase_orders seq: {'✅' if _info['order_seq'] else '❌'}")
-        st.caption(f"stocktake_lines/pol seq: {'✅' if _info['stock_seq'] else '❌'}")
-        if _info['error_msg']:
-            st.error(f"❌ {_info['error_msg']}")
-    # [END TEMP DEBUG]
     router()

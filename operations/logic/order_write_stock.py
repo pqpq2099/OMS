@@ -82,7 +82,6 @@ def write_stocktake_section(
                 "store_id": store_id,
                 "vendor_id": vendor_id,
                 "stocktake_date": str(record_date),
-                "stocktake_type": "initial" if is_initial_stock else "regular",
                 "status": "done",
                 "note": "initial_stock" if is_initial_stock else f"vendor={vendor_id}",
                 "created_at": now,

@@ -76,7 +76,7 @@ def build_order_write_rpc_payload(
       _meta             - {stocktake_id, po_id}（供呼叫端取 ID）
     """
     now = now_ts()
-    user_id = norm(st.session_state.get("login_user_id", "")) or "SYSTEM"
+    user_id = norm(st.session_state.get("login_user", "")) or "SYSTEM"
 
     # ── Stocktake header ────────────────────────────────────────────
     stocktake_id = norm(existing_stocktake_id) or allocate_stocktake_id()
@@ -94,9 +94,6 @@ def build_order_write_rpc_payload(
         "created_at": now,
         "created_by": user_id,
     }
-    if is_new_stocktake:
-        stocktake_payload["stocktake_type"] = "initial" if is_initial_stock else "regular"
-
     # ── Stocktake lines ─────────────────────────────────────────────
     existing_stl_id_map = get_existing_stock_line_id_map(existing_stocktake_id)
 

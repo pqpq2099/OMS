@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -47,11 +47,17 @@ def load_po_list(
     if store_id and "store_id" in po_df.columns:
         po_df = po_df[po_df["store_id"].astype(str).str.strip() == store_id]
 
-    # 依 po_date 過濾（單日，字串前綴比對以相容 ISO timestamp）
+    # 依 po_date 過濾（當月範圍：filter_date 所在月份第一天至最後一天）
+    # ISO date 字串（YYYY-MM-DD）可直接字典序比對，無需轉型，格式異常行自動落在範圍外而非報錯
     if "po_date" in po_df.columns:
-        date_str = str(filter_date)
+        month_start = filter_date.replace(day=1)
+        if filter_date.month == 12:
+            month_end = filter_date.replace(year=filter_date.year + 1, month=1, day=1) - timedelta(days=1)
+        else:
+            month_end = filter_date.replace(month=filter_date.month + 1, day=1) - timedelta(days=1)
+        _po_date_str = po_df["po_date"].astype(str).str.strip().str[:10]
         po_df = po_df[
-            po_df["po_date"].astype(str).str.strip().str.startswith(date_str)
+            (_po_date_str >= str(month_start)) & (_po_date_str <= str(month_end))
         ]
 
     # 依 status 過濾
@@ -79,7 +85,10 @@ def load_po_list(
         if name_col:
             for _, vrow in vendors_df.iterrows():
                 vid = str(vrow.get("vendor_id", "")).strip()
-                vname = str(vrow.get(name_col, "")).strip()
+                vname = (
+                    str(vrow.get("vendor_name_zh", "")).strip()
+                    or str(vrow.get("vendor_name", "")).strip()
+                )
                 if vid:
                     vendor_map[vid] = vname or vid
 

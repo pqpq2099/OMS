@@ -222,7 +222,6 @@ def submit_stocktake(
             "store_id": store_id,
             "vendor_id": vendor_id,
             "stocktake_date": str(today),
-            "stocktake_type": "regular",
             "status": "submitted",
             "created_by": actor,
             "created_at": now,
