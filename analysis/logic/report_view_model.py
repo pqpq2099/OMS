@@ -181,8 +181,8 @@ def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: 
         return detail_df
     work = detail_df.copy()
     work["item_id"] = work["item_id"].astype(str).str.strip()
-    work["_target_date"] = pd.to_datetime(work["日期"], errors="coerce").dt.date
-    work["_base_qty"] = pd.to_numeric(work["這次庫存_base_qty"], errors="coerce").fillna(0)
+    work["enrich_date"] = pd.to_datetime(work["日期"], errors="coerce").dt.date
+    work["enrich_base_qty"] = pd.to_numeric(work["這次庫存_base_qty"], errors="coerce").fillna(0)
     base_cost_lookup = _build_base_unit_cost_lookup(
         shared_tables.get("items", pd.DataFrame()),
         shared_tables.get("prices", pd.DataFrame()),
@@ -190,16 +190,16 @@ def _enrich_detail_df_with_stock_amount(detail_df: pd.DataFrame, shared_tables: 
     )
     if not base_cost_lookup:
         work["庫存金額"] = 0.0
-        return work.drop(columns=["_target_date", "_base_qty"], errors="ignore")
-    pair_df = work[["item_id", "_target_date"]].drop_duplicates().reset_index(drop=True)
-    pair_df["_base_unit_cost"] = [
-        _resolve_base_unit_cost(base_cost_lookup, row.item_id, row._target_date)
+        return work.drop(columns=["enrich_date", "enrich_base_qty"], errors="ignore")
+    pair_df = work[["item_id", "enrich_date"]].drop_duplicates().reset_index(drop=True)
+    pair_df["enrich_cost"] = [
+        _resolve_base_unit_cost(base_cost_lookup, row.item_id, row.enrich_date)
         for row in pair_df.itertuples(index=False)
     ]
-    pair_df["_base_unit_cost"] = pd.to_numeric(pair_df["_base_unit_cost"], errors="coerce").fillna(0)
-    work = work.merge(pair_df, on=["item_id", "_target_date"], how="left")
-    work["庫存金額"] = (work["_base_qty"] * work["_base_unit_cost"].fillna(0)).round(1)
-    return work.drop(columns=["_target_date", "_base_qty", "_base_unit_cost"], errors="ignore")
+    pair_df["enrich_cost"] = pd.to_numeric(pair_df["enrich_cost"], errors="coerce").fillna(0)
+    work = work.merge(pair_df, on=["item_id", "enrich_date"], how="left")
+    work["庫存金額"] = (work["enrich_base_qty"] * work["enrich_cost"].fillna(0)).round(1)
+    return work.drop(columns=["enrich_date", "enrich_base_qty", "enrich_cost"], errors="ignore")
 
 
 def _build_report_detail_frames(*, detail_df: pd.DataFrame, selected_vendor: str, display_mode: str, date_col: str, full_cols: list[str]):
