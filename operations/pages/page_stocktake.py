@@ -75,11 +75,11 @@ def apply_compact_style():
 # ---------------------------------------------------------
 def render_item_row(item, units_df):
 
-    item_id = item["item_id"]
-    name = item["name"]
+    item_id = item.get("item_id", "")
+    name = item.get("name", "")
 
-    stock_unit = item["stock_unit_name"]
-    order_unit = item["order_unit_name"]
+    stock_unit = item.get("stock_unit_name", "")
+    order_unit = item.get("order_unit_name", "")
 
     price = item.get("price_today", 0)
     prev = item.get("prev_order", 0)
