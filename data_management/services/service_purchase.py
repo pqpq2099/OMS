@@ -617,7 +617,7 @@ def update_price(
         "price_unit": _norm(price_unit),
         "effective_date": _today_str(effective_date),
         "end_date": _norm(end_date),
-        "is_active": _to_bool_num(is_active),
+        "is_active": bool(is_active),
         "updated_at": now,
     }
     sheet_update("prices", "price_id", price_id, updates)

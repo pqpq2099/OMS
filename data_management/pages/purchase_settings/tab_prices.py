@@ -69,7 +69,7 @@ def _tab_prices():
                 edit_values = purchase_logic.get_price_edit_values(
                     item_context["prices_df"], price_id, context["unit_options"]
                 )
-                with st.form("form_update_price"):
+                with st.form(f"form_update_price_{price_id}"):
                     unit_price = st.number_input("單價 *", min_value=0.0, step=0.1, format="%.1f", value=edit_values["unit_price"])
                     price_unit_label = st.selectbox("價格單位 *", options=unit_keys, index=edit_values["price_unit_idx"])
                     effective_date = st.date_input("生效日期 *", value=edit_values["effective_date"])
@@ -79,6 +79,7 @@ def _tab_prices():
                     if submitted:
                         try:
                             purchase_logic.submit_update_price(
+                                item_id=item_id,
                                 price_id=price_id,
                                 unit_price=unit_price,
                                 price_unit=context["unit_options"].get(price_unit_label, ""),
