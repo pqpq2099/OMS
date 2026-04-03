@@ -910,17 +910,37 @@ def build_analysis_upstream_data(store_id: str, start_date: date, end_date: date
     return _build_history_analysis_shared_upstream(store_id=store_id, start_date=start_date, end_date=end_date, shared_tables=shared_tables)
 
 
-def build_analysis_all_vendor_view(upstream: dict) -> dict:
+def build_analysis_all_vendor_view(upstream: dict, shared_tables: dict[str, pd.DataFrame] | None = None) -> dict:
     """All-vendor aggregated view (used by both period and single-day modes).
-    Aggregates vendor_summary by 廠商 (sum 進貨金額 + 庫存金額, drop date dimension).
+    進貨金額: aggregated from vendor_summary (PO data).
+    庫存金額: computed from base_detail_df per vendor via _compute_total_stock_amount,
+             so vendors with stock but NO purchases are correctly included.
     Returns: {table_df, total_purchase, total_stock, vendor_options}
     """
     vendor_summary = upstream.get("vendor_summary", pd.DataFrame())
+    base_detail_df = upstream.get("base_detail_df", pd.DataFrame())
     vendor_options = upstream.get("vendor_options", [ALL_VENDORS])
-    if vendor_summary.empty or "廠商" not in vendor_summary.columns:
+
+    # 進貨金額 per vendor (from PO data; 0 if no purchases)
+    if not vendor_summary.empty and "廠商" in vendor_summary.columns and "進貨金額" in vendor_summary.columns:
+        purchase_agg = vendor_summary.groupby("廠商", as_index=False)["進貨金額"].sum()
+        purchase_map = dict(zip(purchase_agg["廠商"].astype(str), purchase_agg["進貨金額"]))
+    else:
+        purchase_map = {}
+
+    # 庫存金額 per vendor (from stocktake data; works even with no purchases)
+    stock_map: dict[str, float] = {}
+    if not base_detail_df.empty and "廠商" in base_detail_df.columns and shared_tables is not None:
+        for vendor, vdf in base_detail_df.groupby("廠商", sort=False):
+            stock_map[str(vendor)] = _compute_total_stock_amount(vdf, shared_tables)
+
+    # Build table for all vendors that appear in either source
+    all_vendors = sorted({str(v) for v in (list(purchase_map.keys()) + list(stock_map.keys())) if v not in ("", ALL_VENDORS)})
+    if not all_vendors:
         return {"table_df": pd.DataFrame(), "total_purchase": 0.0, "total_stock": 0.0, "vendor_options": vendor_options}
-    agg = vendor_summary.groupby("廠商", as_index=False)[["進貨金額", "庫存金額"]].sum()
-    agg = agg.sort_values("廠商").reset_index(drop=True)
+
+    rows = [{"廠商": v, "進貨金額": purchase_map.get(v, 0.0), "庫存金額": stock_map.get(v, 0.0)} for v in all_vendors]
+    agg = pd.DataFrame(rows)
     return {
         "table_df": agg,
         "total_purchase": float(agg["進貨金額"].sum()),

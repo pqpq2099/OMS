@@ -81,7 +81,7 @@ def _render_period_mode():
     shared_tables = load_report_shared_tables()
     upstream = build_analysis_upstream_data(st.session_state.store_id, start, end, shared_tables)
 
-    all_vendor_view = build_analysis_all_vendor_view(upstream)
+    all_vendor_view = build_analysis_all_vendor_view(upstream, shared_tables)
     vendor_options = all_vendor_view["vendor_options"]
 
     if not vendor_options or (upstream.get("hist_df") is None or upstream["hist_df"].empty) and all_vendor_view["table_df"].empty:
@@ -128,7 +128,7 @@ def _render_single_day_mode():
     shared_tables = load_report_shared_tables()
     upstream = build_analysis_upstream_data(st.session_state.store_id, selected_date, selected_date, shared_tables)
 
-    all_vendor_view = build_analysis_all_vendor_view(upstream)
+    all_vendor_view = build_analysis_all_vendor_view(upstream, shared_tables)
     vendor_options = all_vendor_view["vendor_options"]
 
     if not vendor_options and all_vendor_view["table_df"].empty:
