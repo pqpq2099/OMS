@@ -17,9 +17,12 @@ from analysis.pages.page_export import page_export_report
 from analysis.pages.page_inventory_analysis import page_inventory_analysis
 from analysis.pages.page_order_history import page_order_history
 from analysis.pages.shared import download_csv_block
+from shared.utils.permissions import require_permission
 
 
 def page_stock_order_compare():
+    if not require_permission("analysis.view"):
+        return
     st.title(f"📄 {t('title_stock_order_compare')}")
     store_id = str(st.session_state.get("store_id", "")).strip()
     store_name = str(st.session_state.get("store_name", "")).strip()
@@ -45,14 +48,20 @@ def page_stock_order_compare():
 
 
 def page_view_history():
+    if not require_permission("analysis.view"):
+        return
     page_order_history()
 
 
 def page_export():
+    if not require_permission("analysis.export"):
+        return
     page_export_report()
 
 
 def page_analysis():
+    if not require_permission("analysis.view"):
+        return
     page_inventory_analysis()
 
 

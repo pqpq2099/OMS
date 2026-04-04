@@ -6,10 +6,14 @@ import streamlit as st
 
 from shared.core.navigation import goto
 from operations.logic import logic_order_result
+from shared.utils.permissions import require_permission, has_permission
 
 
 def page_order_message_detail():
     st.title("🧾 叫貨明細")
+
+    if not require_permission("order.view"):
+        return
 
     store_id = st.session_state.get("store_id", "")
     store_name = st.session_state.get("store_name", "")
@@ -45,21 +49,24 @@ def page_order_message_detail():
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("📤 發送到 LINE", type="primary", use_container_width=True):
-            ok = logic_order_result.dispatch_line_message(
-                line_message=line_message,
-                store_id=str(store_id).strip(),
-            )
-            if ok:
-                actor = str(st.session_state.get("login_user", "system")).strip()
-                logic_order_result.confirm_draft_pos(
-                    po_ids=draft_po_ids,
-                    actor=actor,
-                    delivery_date=selected_date,
+        if has_permission("order.send_line"):
+            if st.button("📤 發送到 LINE", type="primary", use_container_width=True):
+                ok = logic_order_result.dispatch_line_message(
+                    line_message=line_message,
+                    store_id=str(store_id).strip(),
                 )
-                st.success("✅ 已成功發送到 LINE")
-            else:
-                st.error("❌ LINE 發送失敗，請檢查 line_bot / line_groups 設定")
+                if ok:
+                    actor = str(st.session_state.get("login_user", "system")).strip()
+                    logic_order_result.confirm_draft_pos(
+                        po_ids=draft_po_ids,
+                        actor=actor,
+                        delivery_date=selected_date,
+                    )
+                    st.success("✅ 已成功發送到 LINE")
+                else:
+                    st.error("❌ LINE 發送失敗，請檢查 line_bot / line_groups 設定")
+        else:
+            st.button("📤 發送到 LINE", disabled=True, use_container_width=True, help="您沒有發送 LINE 的權限")
 
     with c2:
         if st.button("⬅️ 返回功能選單", use_container_width=True, key="back_from_order_message_detail"):

@@ -8,6 +8,7 @@ from shared.core.navigation import goto
 from operations.logic import logic_order
 from operations.logic.order_errors import SystemProcessError, UserDisplayError
 from shared.utils.utils_format import _fmt_qty_with_unit, unit_label
+from shared.utils.permissions import filter_stores_by_scope, require_permission, has_permission
 
 
 WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
@@ -22,7 +23,7 @@ def page_select_store():
     st.title("🏠 選擇分店")
 
     view_model = logic_order.get_store_selection_view_model()
-    stores_df = view_model["stores_df"]
+    stores_df = filter_stores_by_scope(view_model["stores_df"])
 
     if view_model["error_message"]:
         st.error(view_model["error_message"])
@@ -109,6 +110,8 @@ def page_select_vendor():
 
 
 def page_order():
+    if not require_permission("order.create"):
+        return
     view_model = logic_order.build_order_entry_view_model(
         store_id=st.session_state.store_id,
         vendor_id=st.session_state.vendor_id,
@@ -361,6 +364,9 @@ def page_order():
         submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
         if submitted:
+            if not has_permission("order.submit"):
+                st.warning("⚠️ 您沒有提交叫貨的權限")
+                return
             try:
                 submit_result = logic_order.submit_order_entry(
                     submit_rows=submit_rows,

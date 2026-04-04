@@ -41,6 +41,7 @@ from users_permissions.logic.logic_login import (
     submit_login,
     submit_owner_initialize,
 )
+from users_permissions.services.service_role_permission import clear_permissions_session
 
 
 # ============================================================
@@ -63,6 +64,7 @@ def logout():
     ]:
         if key in st.session_state:
             del st.session_state[key]
+    clear_permissions_session()
 
 
 def _role_label_zh(role_id: str) -> str:
