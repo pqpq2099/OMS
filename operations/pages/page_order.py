@@ -287,7 +287,10 @@ def page_order():
                     f"<div class='order-meta'>{card['info_html']}</div>",
                     unsafe_allow_html=True,
                 )
-                st.write(card["coverage_text"])
+                st.markdown(
+                    f"<div class='order-meta'>{card['coverage_text']}</div>",
+                    unsafe_allow_html=True,
+                )
 
             with c2:
                 stock_input = st.number_input(
