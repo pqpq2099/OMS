@@ -143,6 +143,9 @@ def get_user_row(user_id: str) -> pd.Series:
 
 
 def build_login_session_payload(user_row: pd.Series) -> dict[str, object]:
+    # [SCOPE 唯一真實來源]
+    # login_store_scope 取自 users.store_scope 欄位（單一真實來源）。
+    # DB 中的 user_store_scope 表為孤立表，不作為執行來源，不可在此改讀該表。
     return {
         "login_user": norm_text(user_row.get("user_id")),
         "login_account_code": norm_text(user_row.get("account_code")),
