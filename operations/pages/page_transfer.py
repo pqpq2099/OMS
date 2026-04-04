@@ -88,26 +88,27 @@ def page_transfer():
     st.markdown("#### 品項調貨數量")
     st.caption("填寫調撥數量（0 = 不調貨）；調撥量不可超過出貨店現有庫存。")
 
-    # 固定右側數字欄位寬度（限縮至 .transfer-item-list 範圍，不影響頁面其他欄位）
+    # 固定右側數字欄位寬度：用 :has(stNumberInput) 精準選擇含輸入框的行
+    # 不影響頁面其他欄位（分店選擇等）
     st.markdown(
         """
         <style>
-        .transfer-item-list [data-testid='stHorizontalBlock'] {
+        [data-testid='stHorizontalBlock']:has([data-testid='stNumberInput']) {
             display: flex !important;
             flex-flow: row nowrap !important;
             align-items: flex-start !important;
             gap: 0.35rem !important;
         }
-        .transfer-item-list [data-testid='stHorizontalBlock'] > div:nth-child(1) {
+        [data-testid='stHorizontalBlock']:has([data-testid='stNumberInput']) > div:nth-child(1) {
             flex: 1 1 auto !important;
             min-width: 0px !important;
         }
-        .transfer-item-list [data-testid='stHorizontalBlock'] > div:nth-child(2) {
+        [data-testid='stHorizontalBlock']:has([data-testid='stNumberInput']) > div:nth-child(2) {
             flex: 0 0 110px !important;
             min-width: 110px !important;
             max-width: 110px !important;
         }
-        .transfer-item-list [data-testid='stNumberInput'] input {
+        [data-testid='stNumberInput'] input {
             text-align: center !important;
         }
         </style>
@@ -121,7 +122,6 @@ def page_transfer():
         st.session_state[qty_state_key] = {item["item_id"]: 0.0 for item in items}
     qty_map: dict = st.session_state[qty_state_key]
 
-    st.markdown('<div class="transfer-item-list">', unsafe_allow_html=True)
     for item in items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
@@ -142,8 +142,6 @@ def page_transfer():
                 label_visibility="collapsed",
             )
             qty_map[item_id] = qty_val
-    st.markdown('</div>', unsafe_allow_html=True)
-
     # ── 計算調貨清單 ──────────────────────────────────────────
     transfer_items = []
     conversions_df = read_table("unit_conversions")
