@@ -48,7 +48,7 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
         ids = [_make_id(prefix, width, next_value + i) for i in range(cnt)]
         result[key] = ids
 
-        df.at[idx, "next_value"] = str(next_value + cnt)
+        df.at[idx, "next_value"] = int(next_value + cnt)
         if "updated_at" in df.columns:
             df.at[idx, "updated_at"] = now
 
