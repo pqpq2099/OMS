@@ -10,6 +10,8 @@ from .page_select_vendor import page_select_vendor
 from .page_order import page_order
 from .page_order_result import page_order_message_detail
 from .page_order_result import page_order_message_detail as page_order_result
+from .page_stock_adjustment import page_stock_adjustment
+from .page_transfer import page_transfer
 
 __all__ = [
     "page_select_store",
@@ -17,4 +19,6 @@ __all__ = [
     "page_order",
     "page_order_result",
     "page_order_message_detail",
+    "page_stock_adjustment",
+    "page_transfer",
 ]

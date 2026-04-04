@@ -73,6 +73,18 @@ def allocate_audit_id() -> str:
     return allocate_single_id("audit_logs")
 
 
+def allocate_adjustment_id() -> str:
+    return allocate_single_id("stock_adjustments")
+
+
+def allocate_transfer_id() -> str:
+    return allocate_single_id("stock_transfers")
+
+
+def allocate_transfer_line_ids(count: int) -> list[str]:
+    return allocate_many_ids("stock_transfer_lines", count)
+
+
 __all__ = [
     "allocate_ids_map",
     "allocate_single_id",
@@ -89,4 +101,7 @@ __all__ = [
     "allocate_purchase_order_line_ids",
     "allocate_stocktake_id",
     "allocate_stocktake_line_ids",
+    "allocate_adjustment_id",
+    "allocate_transfer_id",
+    "allocate_transfer_line_ids",
 ]

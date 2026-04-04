@@ -37,6 +37,18 @@ def render_sidebar():
         {"label": "🏠 選擇分店", "step": "select_store", "key": "sb_select_store"},
         {"label": "🧾 叫貨明細", "step": "order_message_detail", "key": "sb_order_message_detail"},
         {"label": "📄 庫存＋叫貨對照表", "step": "stock_order_compare", "key": "sb_stock_order_compare"},
+        {
+            "label": "🔄 調貨",
+            "step": "transfer_entry",
+            "key": "sb_transfer_entry",
+            "visible": has_permission("operation.transfer.execute"),
+        },
+        {
+            "label": "🔧 庫存調整",
+            "step": "stock_adjust_entry",
+            "key": "sb_stock_adjust_entry",
+            "visible": has_permission("operation.stock.adjust"),
+        },
     ]
 
     analysis_items = [
@@ -171,6 +183,8 @@ def router():
         "store_admin": users_permissions_pages.page_store_admin,
         "system_maintenance": system_pages.page_system_maintenance,
         "system_tools": system_pages.page_system_tools,
+        "transfer_entry": operations_pages.page_transfer,
+        "stock_adjust_entry": operations_pages.page_stock_adjustment,
     }
 
     route_step(step, routes, operations_pages.page_select_store)
