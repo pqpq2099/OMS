@@ -79,6 +79,35 @@ def page_stock_adjustment():
     st.markdown("#### 品項庫存調整")
     st.caption("請輸入調整後的數量，與原數量相同的品項將不會寫入。")
 
+    # 固定右側數字欄位寬度（同叫貨頁做法）
+    st.markdown(
+        """
+        <style>
+        [data-testid='stHorizontalBlock'] {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            gap: 0.35rem !important;
+        }
+        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+            flex: 1 1 auto !important;
+            min-width: 0px !important;
+        }
+        div[data-testid='stHorizontalBlock'] > div:nth-child(2) {
+            flex: 0 0 84px !important;
+            min-width: 84px !important;
+            max-width: 84px !important;
+        }
+        div[data-testid='stNumberInput'] input {
+            text-align: center !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # ── 品項表格 ──────────────────────────────────────────────
     adj_state_key = f"_stock_adj_new_qty_{store_id}_{vendor_id_selected}_{adj_date.isoformat()}"
     if adj_state_key not in st.session_state:
