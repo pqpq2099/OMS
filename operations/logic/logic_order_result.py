@@ -146,7 +146,7 @@ def build_order_message_detail_view_model(*, store_id: str, store_name: str, sel
     lines.append("")
 
     merged = merged.sort_values(
-        by=["vendor_name", "delivery_date_dt", "item_name"],
+        by=["vendor_name", "delivery_date_dt", "item_id"],
         ascending=[True, True, True],
         na_position="last",
     ).reset_index(drop=True)
