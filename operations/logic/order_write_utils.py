@@ -70,33 +70,44 @@ def _update_row_by_id(sheet_name: str, id_field: str, entity_id: str, updates: d
 
 
 def _write_audit_log(action: str, table_name: str, entity_id: str, note: str, before_json: str = "{}", after_json: str = "{}"):
-    try:
-        header = sheet_get_header("audit_logs")
-    except Exception:
-        return
+    import json as _json
+    import traceback as _traceback
+    from shared.services.supabase_client import _get_client
 
-    if not header:
-        return
+    # --- actor fallback（不可空）---
+    login_user = norm(st.session_state.get("login_user", ""))
+    if login_user:
+        actor = login_user
+    else:
+        store_id = norm(st.session_state.get("store_id", ""))
+        actor = f"store_{store_id}" if store_id else "unknown"
 
-    now = now_ts()
-    login_user_id = norm(st.session_state.get("login_user", "")) or "SYSTEM"
+    # --- jsonb 欄位轉換（字串 "{}" 視為無資料 → None）---
+    def _to_jsonb(s: str):
+        if not s or s.strip() in ("{}", ""):
+            return None
+        try:
+            return _json.loads(s)
+        except Exception:
+            return None
+
     audit_id = f"AUDIT_{pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f')}"
-    row = {c: "" for c in header}
-    defaults = {
+    row = {
         "audit_id": audit_id,
-        "ts": now,
-        "user_id": login_user_id,
         "action": action,
+        "user_id": actor,
         "table_name": table_name,
-        "entity_id": entity_id,
-        "before_json": before_json,
-        "after_json": after_json,
-        "note": note,
+        "entity_id": str(entity_id) if entity_id else None,
+        "before_json": _to_jsonb(before_json),
+        "after_json": _to_jsonb(after_json),
+        "note": note or None,
     }
-    for k, v in defaults.items():
-        if k in row:
-            row[k] = v
-    sheet_append("audit_logs", header, [row])
+
+    try:
+        client = _get_client()
+        client.table("audit_logs").insert(row).execute()
+    except Exception as exc:
+        print(f"[audit_log] write failed: {exc}\n{_traceback.format_exc()}")
 
 
 
