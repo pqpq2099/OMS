@@ -7,9 +7,12 @@ import streamlit as st
 from operations.logic import logic_stock_record
 from shared.core.navigation import goto
 from shared.utils.utils_format import _fmt_qty_with_unit, unit_label
+from shared.utils.permissions import require_permission
 
 
 def page_daily_stock_order_record():
+    if not require_permission("order.view"):
+        return
     st.markdown(
         """
         <style>

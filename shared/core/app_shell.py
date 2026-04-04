@@ -10,10 +10,25 @@ import analysis.pages as analysis_pages
 import data_management.pages as data_management_pages
 import users_permissions.pages as users_permissions_pages
 import system.pages as system_pages
+from users_permissions.services.service_role_permission import (
+    has_permission,
+    load_user_permissions_to_session,
+)
 
+
+
+def _ensure_permissions_loaded() -> None:
+    """登入後首次渲染時，將 permission_key 清單載入 session_state。"""
+    if "login_user" not in st.session_state:
+        return
+    if "current_permissions" in st.session_state:
+        return
+    role_id = st.session_state.get("login_role_id", "")
+    load_user_permissions_to_session(role_id)
 
 
 def render_sidebar():
+    _ensure_permissions_loaded()
     role = st.session_state.get("login_role_id", "")
     system_name = app_runtime.get_system_name()
     logo_url = app_runtime.get_setting_value("logo_url", "").strip()
@@ -35,19 +50,19 @@ def render_sidebar():
             "label": "🛒 採購設定",
             "step": "purchase_settings",
             "key": "sb_purchase_settings",
-            "visible": role in ["owner", "admin"],
+            "visible": has_permission("manage_purchase_settings"),
         },
         {
             "label": "🧮 成本檢查",
             "step": "cost_debug",
             "key": "sb_cost_debug",
-            "visible": role in ["owner", "admin"],
+            "visible": has_permission("view_cost_debug"),
         },
         {
             "label": "🏬 分店管理",
             "step": "store_admin",
             "key": "sb_store_admin",
-            "visible": role in ["owner", "admin"],
+            "visible": has_permission("manage_store"),
         },
     ]
 
@@ -56,7 +71,7 @@ def render_sidebar():
             "label": "👥 使用者管理",
             "step": "user_admin",
             "key": "sb_user_admin",
-            "visible": role in ["owner", "admin"],
+            "visible": has_permission("manage_users"),
         },
         {"label": "🙍 個人帳號管理", "step": "account_settings", "key": "sb_account_settings"},
     ]
@@ -66,13 +81,13 @@ def render_sidebar():
             "label": "🎨 系統外觀",
             "step": "appearance_settings",
             "key": "sb_appearance_settings",
-            "visible": role in ["owner", "admin"],
+            "visible": has_permission("view_system_info"),
         },
         {
             "label": "ℹ️ 系統資訊",
             "step": "system_info",
             "key": "sb_system_info",
-            "visible": role in ["owner", "admin"],
+            "visible": has_permission("view_system_info"),
         },
     ]
 
@@ -103,11 +118,11 @@ def render_sidebar():
 
         users_permissions_pages.render_login_sidebar()
 
-        if role in ["owner", "admin"]:
+        if has_permission("view_system_info"):
             st.markdown("### 系統")
             render_step_buttons(system_items)
 
-            if role == "owner":
+            if has_permission("manage_system"):
                 if app_runtime.is_bypass_mode():
                     if app_runtime.has_locked_system_access():
                         verified_name = st.session_state.get("owner_gate_display_name", "")
