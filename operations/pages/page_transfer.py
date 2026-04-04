@@ -84,6 +84,36 @@ def page_transfer():
         st.info(f"出貨店【{from_name}】目前無可調撥庫存品項（庫存皆為 0）。")
         return
 
+    # ── 廠商篩選 ──────────────────────────────────────────────
+    vendors_df = read_table("vendors")
+    vendor_id_to_name: dict[str, str] = {}
+    if not vendors_df.empty:
+        for _, vrow in vendors_df.iterrows():
+            vid = str(vrow.get("vendor_id", "")).strip()
+            vname = str(vrow.get("vendor_name", vid)).strip() or vid
+            if vid:
+                vendor_id_to_name[vid] = vname
+
+    # 只列出本次品項有的廠商
+    seen_vendor_ids: list[str] = []
+    for item in items:
+        vid = item.get("vendor_id", "")
+        if vid and vid not in seen_vendor_ids:
+            seen_vendor_ids.append(vid)
+
+    vendor_options: dict[str, str] = {
+        vendor_id_to_name.get(vid, vid): vid for vid in seen_vendor_ids
+    }
+    vendor_names_sorted = sorted(vendor_options.keys())
+
+    selected_vendor_name = st.selectbox(
+        "🏭 選擇廠商",
+        options=vendor_names_sorted,
+        key=f"transfer_vendor_{from_store_id}",
+    )
+    selected_vendor_id = vendor_options.get(selected_vendor_name, "")
+    filtered_items = [i for i in items if i.get("vendor_id") == selected_vendor_id]
+
     st.markdown("---")
     st.markdown("#### 品項調貨數量")
     st.caption("填寫調撥數量（0 = 不調貨）；調撥量不可超過出貨店現有庫存。")
@@ -122,7 +152,7 @@ def page_transfer():
         st.session_state[qty_state_key] = {item["item_id"]: 0.0 for item in items}
     qty_map: dict = st.session_state[qty_state_key]
 
-    for item in items:
+    for item in filtered_items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
         col1, col2 = st.columns([6, 1])
