@@ -53,7 +53,7 @@ def allocate_ids(request_counts: dict[str, int], env: str = "prod") -> dict[str,
             df.at[idx, "updated_at"] = now
 
         try:
-            update_rows("id_sequences", {"key": str(key).strip(), "env": str(env).strip()}, {"next_value": str(next_value + cnt), "updated_at": now})
+            update_rows("id_sequences", {"key": str(key).strip(), "env": str(env).strip()}, {"next_value": int(next_value + cnt), "updated_at": now})
         except Exception:
             raise
 
