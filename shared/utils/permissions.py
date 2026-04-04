@@ -39,6 +39,12 @@ def has_store_access(store_id: str) -> bool:
     判斷目前登入者是否可存取指定 store_id。
     - store_scope == "ALL" 或為空 → 全部可存取
     - 否則僅允許 store_scope 對應的門市
+
+    # [SCOPE 唯一真實來源]
+    # session_state["login_store_scope"] 的值來自 users.store_scope 欄位
+    # 由 service_users.build_login_session_payload() 於登入時寫入。
+    # DB 中的 user_store_scope 表目前為孤立表（無任何程式碼讀取），
+    # 不可將此函數改為讀取 user_store_scope 表。
     """
     scope = str(st.session_state.get("login_store_scope", "")).strip()
     if not scope or scope.upper() == "ALL":
@@ -53,6 +59,9 @@ def filter_stores_by_scope(stores_df):
     - 特定 store_id → 僅回傳該門市的列
 
     不修改傳入的 DataFrame，回傳新的 copy。
+
+    # [SCOPE 唯一真實來源]
+    # 同 has_store_access：來源為 users.store_scope，非 user_store_scope 表。
     """
     if stores_df is None or stores_df.empty:
         return stores_df
