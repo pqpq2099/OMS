@@ -97,12 +97,11 @@ def page_transfer():
     for item in items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
-        col1, col2, col3 = st.columns([3, 2, 2])
+        col1, col2 = st.columns([3, 2])
         with col1:
-            st.write(f"**{item['item_name']}**")
+            st.markdown(f"**{item['item_name']}**")
+            st.caption(f"現有庫存：{item['current_display_qty']:g} {unit_name}")
         with col2:
-            st.metric("現有庫存", f"{item['current_display_qty']:g} {unit_name}")
-        with col3:
             max_val = float(item["current_display_qty"])
             qty_val = st.number_input(
                 f"調貨量（{unit_name}）",
