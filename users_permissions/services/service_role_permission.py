@@ -66,8 +66,8 @@ def _role_fallback_permissions(role_id: str) -> list[str]:
     owner_perms = admin_perms + ["manage_system"]
 
     staff_perms = base_ops + ["transfer.view"]
-    leader_perms = base_ops + ["order.submit", "analysis.export", "transfer.view"]
-    store_manager_perms = leader_perms + ["order.send_line", "transfer.create"]
+    leader_perms = base_ops + ["order.submit", "analysis.export", "transfer.view", "operation.transfer.execute"]
+    store_manager_perms = leader_perms + ["order.send_line", "transfer.create", "operation.stock.adjust"]
     admin_perms = store_manager_perms + [
         "manage_purchase_settings",
         "manage_store",
