@@ -466,12 +466,13 @@ def build_stock_order_compare_view_model(store_id: str, selected_date: date, sel
     work["這次庫存_顯示值"] = _convert_display_values(work["這次庫存"], work["庫存顯示單位"])
     work["這次叫貨_顯示值"] = _convert_display_values(work["這次叫貨"], work["叫貨顯示單位"])
 
+    work = work.sort_values(["廠商", "item_id"], ascending=[True, True])
     item_col = "品項" if "品項" in work.columns else "item_id"
     preview_all = work[["廠商", item_col, "這次庫存_顯示值", "庫存顯示單位", "這次叫貨_顯示值", "叫貨顯示單位"]].copy()
     preview_all = preview_all.rename(columns={item_col: "品項", "這次庫存_顯示值": "這次庫存", "這次叫貨_顯示值": "這次叫貨"})
     preview_all["這次庫存"] = preview_all["這次庫存"].map(lambda v: f"{safe_float(v):g}") + preview_all["庫存顯示單位"].map(lambda v: f" {unit_label(str(v).strip())}" if str(v).strip() else "")
     preview_all["這次叫貨"] = preview_all["這次叫貨"].map(lambda v: f"{safe_float(v):g}") + preview_all["叫貨顯示單位"].map(lambda v: f" {unit_label(str(v).strip())}" if str(v).strip() else "")
-    preview_all = preview_all.drop(columns=["庫存顯示單位", "叫貨顯示單位"]).sort_values(["廠商", "品項"], ascending=[True, True]).reset_index(drop=True)
+    preview_all = preview_all.drop(columns=["庫存顯示單位", "叫貨顯示單位"]).reset_index(drop=True)
     vendor_options = [ALL_VENDORS] + clean_option_list(preview_all["廠商"].dropna().tolist())
 
     st.session_state["_stock_order_compare_vm_cache"] = {
@@ -1022,7 +1023,7 @@ def build_cost_debug_selector_data(shared_tables: dict[str, pd.DataFrame]):
         return {"items_df": items_df, "work": pd.DataFrame(), "item_options": []}
     work = items_df.copy()
     work["item_label"] = work.apply(lambda r: f"{item_display_name(r)} ({norm(r.get('item_id', ''))})", axis=1)
-    work = work.sort_values("item_label")
+    work = work.sort_values("item_id")
     return {"items_df": items_df, "work": work, "item_options": work["item_id"].astype(str).tolist()}
 
 
