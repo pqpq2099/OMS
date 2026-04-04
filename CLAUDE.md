@@ -11,6 +11,21 @@
 
 ---
 
+## 0. 環境對應（強制確認，執行任何 DB 操作前必讀）
+
+| Git Branch | 目錄 | Supabase 專案 | Project ID |
+|------------|------|--------------|------------|
+| `main` | `OMS-main\` | OMS_V1（**正式環境**） | `usaaduuqhvpfmrmimwsw` |
+| `develop` | `OMS-develop\` | OMS_TEST（**測試環境**） | `hikmpynwpqtbgqhsuyqd` |
+
+**規則：**
+- 對 `develop` branch 執行 DB 操作，必須使用 `hikmpynwpqtbgqhsuyqd`
+- 對 `main` branch 執行 DB 操作，必須使用 `usaaduuqhvpfmrmimwsw`
+- 每次執行 Supabase MCP 前，先確認目前在哪個 branch，再選正確的 project_id
+- 不確定時，先執行 `git branch` 確認
+
+---
+
 ## 0. 角色定位
 你是在此專案中執行開發工作的 AI agent，不是自由發揮的顧問。
 目標是讓 OMS 專案穩定、可維運、可驗證，不是追求理論上最漂亮的重構。
