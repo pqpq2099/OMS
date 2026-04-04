@@ -14,6 +14,7 @@ import streamlit as st
 
 from shared.utils.permissions import require_permission
 from shared.utils.utils_units import convert_to_base
+from shared.utils.utils_format import unit_label
 from shared.services.data_backend import read_table, bust_cache
 from operations.logic.logic_stock_adjustment import (
     load_vendors_for_store,
@@ -71,7 +72,7 @@ def page_stock_adjustment():
     items = st.session_state[cache_key]
 
     if not items:
-        st.info(f"【{vendor_name_selected}】在此分店目前無可調整庫存品項（base_qty > 0）。")
+        st.info(f"【{vendor_name_selected}】在此分店目前無可調整庫存品項（庫存皆為 0）。")
         return
 
     st.markdown("---")
@@ -88,18 +89,19 @@ def page_stock_adjustment():
 
     for item in items:
         item_id = item["item_id"]
+        unit_name = unit_label(item["display_unit"])
         col1, col2, col3 = st.columns([3, 2, 2])
         with col1:
             st.write(f"**{item['item_name']}**")
-            st.caption(item_id)
         with col2:
-            st.metric("目前庫存", f"{item['current_display_qty']} {item['display_unit']}")
+            st.metric("目前庫存", f"{item['current_display_qty']:g} {unit_name}")
         with col3:
             new_val = st.number_input(
-                f"調整後數量（{item['display_unit']}）",
+                f"調整後數量（{unit_name}）",
                 min_value=0.0,
                 value=float(new_qty_map.get(item_id, item["current_display_qty"])),
-                step=1.0,
+                step=0.1,
+                format="%g",
                 key=f"adj_qty_{item_id}",
                 label_visibility="collapsed",
             )
@@ -169,10 +171,11 @@ def _show_confirm_dialog(store_id: str, adj_date: date, changed_items: list[dict
 
     for item in changed_items:
         delta = round(item["after_display_qty"] - item["before_display_qty"], 4)
-        delta_str = f"+{delta}" if delta > 0 else str(delta)
+        delta_str = f"+{delta:g}" if delta > 0 else f"{delta:g}"
+        uname = unit_label(item["display_unit"])
         st.write(
-            f"• {item['item_name']}：{item['before_display_qty']} → {item['after_display_qty']} "
-            f"{item['display_unit']}（{delta_str}）"
+            f"• {item['item_name']}：{item['before_display_qty']:g} → {item['after_display_qty']:g} "
+            f"{uname}（{delta_str}）"
         )
 
     st.markdown("---")

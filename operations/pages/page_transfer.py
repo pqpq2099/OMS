@@ -15,6 +15,7 @@ import streamlit as st
 
 from shared.utils.permissions import require_permission, has_store_access
 from shared.utils.utils_units import convert_to_base
+from shared.utils.utils_format import unit_label
 from shared.services.data_backend import read_table, bust_cache
 from operations.logic.logic_transfer import (
     load_stores_for_transfer,
@@ -80,7 +81,7 @@ def page_transfer():
     items = st.session_state[cache_key]
 
     if not items:
-        st.info(f"出貨店【{from_name}】目前無可調撥庫存品項（base_qty > 0）。")
+        st.info(f"出貨店【{from_name}】目前無可調撥庫存品項（庫存皆為 0）。")
         return
 
     st.markdown("---")
@@ -95,20 +96,21 @@ def page_transfer():
 
     for item in items:
         item_id = item["item_id"]
+        unit_name = unit_label(item["display_unit"])
         col1, col2, col3 = st.columns([3, 2, 2])
         with col1:
             st.write(f"**{item['item_name']}**")
-            st.caption(item_id)
         with col2:
-            st.metric("現有庫存", f"{item['current_display_qty']} {item['display_unit']}")
+            st.metric("現有庫存", f"{item['current_display_qty']:g} {unit_name}")
         with col3:
             max_val = float(item["current_display_qty"])
             qty_val = st.number_input(
-                f"調貨量（{item['display_unit']}）",
+                f"調貨量（{unit_name}）",
                 min_value=0.0,
                 max_value=max_val,
                 value=float(qty_map.get(item_id, 0.0)),
-                step=1.0,
+                step=0.1,
+                format="%g",
                 key=f"transfer_qty_{item_id}",
                 label_visibility="collapsed",
             )
@@ -183,8 +185,9 @@ def _show_confirm_dialog(
     st.markdown("---")
 
     for item in transfer_items:
+        uname = unit_label(item["display_unit"])
         st.write(
-            f"• {item['item_name']}：{item['transfer_display_qty']} {item['display_unit']}"
+            f"• {item['item_name']}：{item['transfer_display_qty']:g} {uname}"
         )
 
     st.markdown("---")
