@@ -227,6 +227,7 @@ def build_item_decision_data(
         if last_order_ref > 0 or period_usage > 0 or current_stock_qty > 0:
             ref_rows.append(
                 {
+                    "item_id": item_id,
                     "item_name": item_name,
                     "last_order_display": round(last_order_display, 1),
                     "last_order_unit": order_unit,
@@ -237,7 +238,7 @@ def build_item_decision_data(
 
     ref_df = pd.DataFrame(ref_rows) if ref_rows else pd.DataFrame()
     if not ref_df.empty:
-        ref_df = ref_df.sort_values(["item_name"]).reset_index(drop=True)
+        ref_df = ref_df.sort_values(["item_id"]).reset_index(drop=True)
 
     return {
         "item_meta": item_meta,
