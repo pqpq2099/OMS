@@ -141,7 +141,7 @@ def build_order_item_cards_view_model(vendor_items: pd.DataFrame, item_meta: dic
             "item_name": meta["item_name"],
             "priority_class": priority_class,
             "info_html": "　".join(info_parts),
-            "coverage_text": f"可撐：{coverage_days_display} ｜ {coverage_status}",
+            "coverage_text": f"庫存合計：{fmt_qty_with_unit(meta['total_stock_display'], meta['stock_unit'])}",
             "stock_unit": meta["stock_unit"],
             "current_stock_qty": float(meta["current_stock_qty"]),
             "existing_order_qty": float(meta["existing_order_qty"]),
