@@ -88,6 +88,18 @@ def page_transfer():
     st.markdown("#### 品項調貨數量")
     st.caption("填寫調撥數量（0 = 不調貨）；調撥量不可超過出貨店現有庫存。")
 
+    # 限制數字輸入欄位寬度（手機優化）
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stNumberInputContainer"] {
+            max-width: 120px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # ── 調貨數量輸入 ──────────────────────────────────────────
     qty_state_key = f"_transfer_qty_{from_store_id}_{to_store_id}_{transfer_date.isoformat()}"
     if qty_state_key not in st.session_state:
@@ -97,7 +109,7 @@ def page_transfer():
     for item in items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
-        col1, col2 = st.columns([3, 2])
+        col1, col2 = st.columns([4, 1])
         with col1:
             st.markdown(f"**{item['item_name']}**")
             st.caption(f"現有庫存：{item['current_display_qty']:g} {unit_name}")
