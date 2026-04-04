@@ -79,24 +79,6 @@ def page_stock_adjustment():
     st.markdown("#### 品項庫存調整")
     st.caption("請輸入調整後的數量，與原數量相同的品項將不會寫入。")
 
-    # 限制數字輸入欄位寬度（手機優化）
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stNumberInputContainer"] {
-            max-width: 120px !important;
-            min-width: 100px !important;
-        }
-        div[data-testid="column"]:last-child {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: flex-end !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     # ── 品項表格 ──────────────────────────────────────────────
     adj_state_key = f"_stock_adj_new_qty_{store_id}_{vendor_id_selected}_{adj_date.isoformat()}"
     if adj_state_key not in st.session_state:
@@ -108,7 +90,7 @@ def page_stock_adjustment():
     for item in items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
-        col1, col2 = st.columns([3, 2])
+        col1, col2 = st.columns([6, 1])
         with col1:
             st.markdown(f"**{item['item_name']}**")
             st.caption(f"目前庫存：{item['current_display_qty']:g} {unit_name}")
