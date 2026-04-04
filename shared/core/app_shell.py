@@ -147,6 +147,9 @@ def render_sidebar():
                         if st.button("🧰 系統工具", width="stretch", key="sb_system_tools"):
                             goto("system_tools")
 
+                        if st.button("📦 備份交易紀錄", width="stretch", key="sb_backup_history"):
+                            goto("backup_history")
+
                         if st.button("🔓 登出系統管理", width="stretch", key="sb_owner_gate_logout"):
                             app_runtime.clear_locked_system_access()
                             goto("select_store")
@@ -159,6 +162,9 @@ def render_sidebar():
 
                     if st.button("🧰 系統工具", width="stretch", key="sb_system_tools"):
                         goto("system_tools")
+
+                    if st.button("📦 備份交易紀錄", width="stretch", key="sb_backup_history"):
+                        goto("backup_history")
 
 
 def router():
@@ -183,6 +189,7 @@ def router():
         "store_admin": users_permissions_pages.page_store_admin,
         "system_maintenance": system_pages.page_system_maintenance,
         "system_tools": system_pages.page_system_tools,
+        "backup_history": system_pages.page_backup,
         "transfer_entry": operations_pages.page_transfer,
         "stock_adjust_entry": operations_pages.page_stock_adjustment,
     }
