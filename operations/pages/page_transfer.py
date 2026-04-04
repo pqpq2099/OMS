@@ -94,6 +94,12 @@ def page_transfer():
         <style>
         div[data-testid="stNumberInputContainer"] {
             max-width: 120px !important;
+            min-width: 100px !important;
+        }
+        div[data-testid="column"]:last-child {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
         }
         </style>
         """,
@@ -109,7 +115,7 @@ def page_transfer():
     for item in items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
-        col1, col2 = st.columns([4, 1])
+        col1, col2 = st.columns([3, 2])
         with col1:
             st.markdown(f"**{item['item_name']}**")
             st.caption(f"現有庫存：{item['current_display_qty']:g} {unit_name}")
