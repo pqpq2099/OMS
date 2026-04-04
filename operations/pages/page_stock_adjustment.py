@@ -79,29 +79,27 @@ def page_stock_adjustment():
     st.markdown("#### 品項庫存調整")
     st.caption("請輸入調整後的數量，與原數量相同的品項將不會寫入。")
 
-    # 固定右側數字欄位寬度（同叫貨頁做法）
+    # 固定右側數字欄位寬度（限縮至 .adj-item-list 範圍，不影響頁面其他欄位）
     st.markdown(
         """
         <style>
-        [data-testid='stHorizontalBlock'] {
+        .adj-item-list [data-testid='stHorizontalBlock'] {
             display: flex !important;
             flex-flow: row nowrap !important;
             align-items: flex-start !important;
             gap: 0.35rem !important;
         }
-        div[data-testid='stHorizontalBlock'] > div:nth-child(1) {
+        .adj-item-list [data-testid='stHorizontalBlock'] > div:nth-child(1) {
             flex: 1 1 auto !important;
             min-width: 0px !important;
         }
-        div[data-testid='stHorizontalBlock'] > div:nth-child(2) {
-            flex: 0 0 84px !important;
-            min-width: 84px !important;
-            max-width: 84px !important;
+        .adj-item-list [data-testid='stHorizontalBlock'] > div:nth-child(2) {
+            flex: 0 0 110px !important;
+            min-width: 110px !important;
+            max-width: 110px !important;
         }
-        div[data-testid='stNumberInput'] input {
+        .adj-item-list [data-testid='stNumberInput'] input {
             text-align: center !important;
-            padding-left: 0.4rem !important;
-            padding-right: 0.4rem !important;
         }
         </style>
         """,
@@ -116,6 +114,7 @@ def page_stock_adjustment():
         }
     new_qty_map: dict = st.session_state[adj_state_key]
 
+    st.markdown('<div class="adj-item-list">', unsafe_allow_html=True)
     for item in items:
         item_id = item["item_id"]
         unit_name = unit_label(item["display_unit"])
@@ -134,6 +133,7 @@ def page_stock_adjustment():
                 label_visibility="collapsed",
             )
             new_qty_map[item_id] = new_val
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── 計算差異品項 ──────────────────────────────────────────
     changed_items = []
