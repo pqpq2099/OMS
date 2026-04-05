@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from users_permissions.pages.user_admin.shared import ensure_user_admin_access
+from shared.utils.permissions import require_permission
+from users_permissions.pages.user_admin.shared import build_user_admin_context
 from users_permissions.pages.user_admin.tab_account_edit import render_tab_account_edit
 from users_permissions.pages.user_admin.tab_promotion import render_tab_promotion
 from users_permissions.pages.user_admin.tab_role_permission import render_tab_role_permission
@@ -14,9 +15,9 @@ from ui_text import t
 def page_user_admin():
     st.title(f"👥 {t('title_user_admin')}")
 
-    ctx = ensure_user_admin_access()
-    if ctx is None:
+    if not require_permission("user.account.manage"):
         return
+    ctx = build_user_admin_context()
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         t("tab_user_list"),

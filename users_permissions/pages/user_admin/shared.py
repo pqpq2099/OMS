@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from users_permissions.logic.user_permission import (
-    ROLE_LABELS,
-    can_access_user_admin,
-)
+from users_permissions.logic.user_permission import ROLE_LABELS
 from users_permissions.logic.user_query import UserAdminContext, build_user_admin_context as build_user_admin_context_logic
 from ui_text import t
 
@@ -24,9 +21,3 @@ def build_user_admin_context() -> UserAdminContext:
     )
 
 
-def ensure_user_admin_access() -> UserAdminContext | None:
-    ctx = build_user_admin_context()
-    if not can_access_user_admin(ctx.current_user["role_id"]):
-        st.error(t("no_access_user_admin"))
-        return None
-    return ctx
