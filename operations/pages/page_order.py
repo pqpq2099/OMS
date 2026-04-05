@@ -111,7 +111,7 @@ def page_select_vendor():
 
 
 def page_order():
-    if not require_permission("order.create"):
+    if not require_permission("operation.order.create"):
         return
     with st.spinner("載入中..."):
         view_model = logic_order.build_order_entry_view_model(
@@ -369,7 +369,7 @@ def page_order():
         submitted = st.form_submit_button("💾 儲存並同步", use_container_width=True)
 
         if submitted:
-            if not has_permission("order.submit"):
+            if not has_permission("operation.order.edit"):
                 st.warning("⚠️ 您沒有提交叫貨的權限")
                 return
             try:

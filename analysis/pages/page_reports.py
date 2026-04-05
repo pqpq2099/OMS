@@ -21,7 +21,7 @@ from shared.utils.permissions import require_permission
 
 
 def page_stock_order_compare():
-    if not require_permission("analysis.view"):
+    if not require_permission("analysis.dashboard.view"):
         return
     st.title(f"📄 {t('title_stock_order_compare')}")
     store_id = str(st.session_state.get("store_id", "")).strip()
@@ -48,19 +48,19 @@ def page_stock_order_compare():
 
 
 def page_view_history():
-    if not require_permission("analysis.view"):
+    if not require_permission("analysis.dashboard.view"):
         return
     page_order_history()
 
 
 def page_export():
-    if not require_permission("analysis.export"):
+    if not require_permission("analysis.export.execute"):
         return
     page_export_report()
 
 
 def page_analysis():
-    if not require_permission("analysis.view"):
+    if not require_permission("analysis.dashboard.view"):
         return
     page_inventory_analysis()
 

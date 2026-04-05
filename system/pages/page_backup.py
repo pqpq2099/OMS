@@ -4,7 +4,7 @@ from __future__ import annotations
 # ORIVIA OMS
 # 檔案：system/pages/page_backup.py
 # 說明：備份歷史交易紀錄 — 產生 Excel 供下載，供系統初始化後還原用
-# 權限：manage_system（owner 限定）
+# 權限：system.manage（owner 限定）
 # ============================================================
 
 import io
@@ -63,7 +63,7 @@ def page_backup():
     st.title("📦 備份歷史交易紀錄")
 
     # ── 權限守衛 ──────────────────────────────────────────────
-    if not has_permission("manage_system"):
+    if not has_permission("system.manage"):
         st.error("此功能限系統管理員使用。")
         return
 

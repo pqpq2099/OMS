@@ -62,19 +62,19 @@ def render_sidebar():
             "label": "🛒 採購設定",
             "step": "purchase_settings",
             "key": "sb_purchase_settings",
-            "visible": has_permission("manage_purchase_settings"),
+            "visible": has_permission("data.purchase.manage"),
         },
         {
             "label": "🧮 成本檢查",
             "step": "cost_debug",
             "key": "sb_cost_debug",
-            "visible": has_permission("view_cost_debug"),
+            "visible": has_permission("analysis.cost.view"),
         },
         {
             "label": "🏬 分店管理",
             "step": "store_admin",
             "key": "sb_store_admin",
-            "visible": has_permission("manage_store"),
+            "visible": has_permission("system.store.manage"),
         },
     ]
 
@@ -83,7 +83,7 @@ def render_sidebar():
             "label": "👥 使用者管理",
             "step": "user_admin",
             "key": "sb_user_admin",
-            "visible": has_permission("manage_users"),
+            "visible": has_permission("user.account.manage"),
         },
         {"label": "🙍 個人帳號管理", "step": "account_settings", "key": "sb_account_settings"},
     ]
@@ -93,13 +93,13 @@ def render_sidebar():
             "label": "🎨 系統外觀",
             "step": "appearance_settings",
             "key": "sb_appearance_settings",
-            "visible": has_permission("view_system_info"),
+            "visible": has_permission("system.info.view"),
         },
         {
             "label": "ℹ️ 系統資訊",
             "step": "system_info",
             "key": "sb_system_info",
-            "visible": has_permission("view_system_info"),
+            "visible": has_permission("system.info.view"),
         },
     ]
 
@@ -130,11 +130,11 @@ def render_sidebar():
 
         users_permissions_pages.render_login_sidebar()
 
-        if has_permission("view_system_info"):
+        if has_permission("system.info.view"):
             st.markdown("### 系統")
             render_step_buttons(system_items)
 
-            if has_permission("manage_system"):
+            if has_permission("system.manage"):
                 if app_runtime.is_bypass_mode():
                     if app_runtime.has_locked_system_access():
                         verified_name = st.session_state.get("owner_gate_display_name", "")
