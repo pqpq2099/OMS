@@ -11,7 +11,7 @@ from shared.utils.permissions import require_permission
 
 
 def page_daily_stock_order_record():
-    if not require_permission("order.view"):
+    if not require_permission("operation.order.view"):
         return
     st.markdown(
         """

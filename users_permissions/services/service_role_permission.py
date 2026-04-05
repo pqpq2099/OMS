@@ -53,33 +53,33 @@ def _role_fallback_permissions(role_id: str) -> list[str]:
     DB 查詢失敗時的備援：依 role_id 回傳預設 permission_key 清單。
     確保系統在 permissions 表不可用時仍可正常運作。
     """
-    base_ops = ["order.view", "order.create", "analysis.view"]
-    store_manager_perms = base_ops + ["order.submit", "order.send_line"]
+    base_ops = ["operation.order.view", "operation.order.create", "analysis.dashboard.view"]
+    store_manager_perms = base_ops + ["operation.order.edit", "operation.order.execute"]
     admin_perms = store_manager_perms + [
-        "manage_purchase_settings",
-        "manage_store",
-        "manage_users",
+        "data.purchase.manage",
+        "system.store.manage",
+        "user.account.manage",
         "user.manage",
-        "view_system_info",
-        "view_cost_debug",
+        "system.info.view",
+        "analysis.cost.view",
     ]
-    owner_perms = admin_perms + ["manage_system"]
+    owner_perms = admin_perms + ["system.manage"]
 
     staff_perms = base_ops + ["transfer.view"]
-    leader_perms = base_ops + ["order.submit", "analysis.export", "transfer.view", "operation.transfer.execute"]
-    store_manager_perms = leader_perms + ["order.send_line", "transfer.create", "operation.stock.adjust"]
+    leader_perms = base_ops + ["operation.order.edit", "analysis.export.execute", "transfer.view", "operation.transfer.execute"]
+    store_manager_perms = leader_perms + ["operation.order.execute", "transfer.create", "operation.stock.adjust"]
     admin_perms = store_manager_perms + [
-        "manage_purchase_settings",
-        "manage_store",
-        "manage_users",
+        "data.purchase.manage",
+        "system.store.manage",
+        "user.account.manage",
         "user.manage",
         "users.manage",
-        "view_system_info",
-        "view_cost_debug",
-        "analysis.export",
+        "system.info.view",
+        "analysis.cost.view",
+        "analysis.export.execute",
         "transfer.create",
     ]
-    owner_perms = admin_perms + ["manage_system", "system.manage"]
+    owner_perms = admin_perms + ["system.manage"]
 
     role = (role_id or "").lower()
     if role == "owner":
@@ -93,7 +93,7 @@ def _role_fallback_permissions(role_id: str) -> list[str]:
     if role == "staff":
         return staff_perms
     if role == "pt":
-        return ["order.view"]
+        return ["operation.order.view"]
     return []
 
 

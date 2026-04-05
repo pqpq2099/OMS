@@ -12,7 +12,7 @@ from shared.utils.permissions import require_permission, has_permission
 def page_order_message_detail():
     st.title("🧾 叫貨明細")
 
-    if not require_permission("order.view"):
+    if not require_permission("operation.order.view"):
         return
 
     store_id = st.session_state.get("store_id", "")
@@ -49,7 +49,7 @@ def page_order_message_detail():
 
     c1, c2 = st.columns(2)
     with c1:
-        if has_permission("order.send_line"):
+        if has_permission("operation.order.execute"):
             if st.button("📤 發送到 LINE", type="primary", use_container_width=True):
                 ok = logic_order_result.dispatch_line_message(
                     line_message=line_message,
