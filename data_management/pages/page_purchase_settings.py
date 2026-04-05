@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from shared.utils.permissions import require_permission
 from data_management.pages.purchase_settings.tab_items import _tab_items
 from data_management.pages.purchase_settings.tab_prices import _tab_prices
 from data_management.pages.purchase_settings.tab_unit_conversions import _tab_unit_conversions
@@ -31,6 +32,8 @@ from data_management.pages.purchase_settings.tab_vendors import _tab_vendors
 
 
 def page_purchase_settings():
+    if not require_permission("data.purchase.manage"):
+        return
     st.title("🛒 採購設定")
     st.caption("目前先以 item-only 模型管理主資料：廠商、品項、價格、單位、單位換算。")
 
