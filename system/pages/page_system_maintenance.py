@@ -3,13 +3,13 @@ from __future__ import annotations
 import streamlit as st
 
 import shared.core.app_runtime as app_runtime
+from shared.utils.permissions import require_permission
 
 
 def page_system_maintenance():
     st.title("🛠️ 系統維護")
 
-    if st.session_state.role != "owner":
-        st.error("你沒有權限進入此頁。")
+    if not require_permission("system.manage"):
         return
 
     if not app_runtime.require_locked_system_page("系統維護"):

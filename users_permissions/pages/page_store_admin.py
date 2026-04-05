@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import streamlit as st
 
+from shared.utils.permissions import require_permission
 from users_permissions.services.service_stores import StoreServiceError
 from users_permissions.logic.store_admin import (
     build_store_admin_page_data,
     build_store_list_display_df,
     build_store_toggle_state,
-    ensure_store_admin_access,
     resolve_store_toggle_state,
     submit_create_store,
     submit_update_store_active,
@@ -25,11 +25,7 @@ from users_permissions.logic.store_admin import (
 def page_store_admin():
     st.title("🏬 分店管理")
 
-    role = str(st.session_state.get("login_role_id", "")).strip().lower()
-    try:
-        ensure_store_admin_access(role)
-    except StoreServiceError as e:
-        st.error(str(e))
+    if not require_permission("system.store.manage"):
         return
 
     page_data = build_store_admin_page_data()

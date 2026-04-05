@@ -3,13 +3,13 @@ from __future__ import annotations
 import streamlit as st
 
 from shared.core.app_runtime import get_settings_dict, save_system_appearance
+from shared.utils.permissions import require_permission
 
 
 def page_appearance_settings():
     st.title("🎨 系統外觀")
 
-    if st.session_state.role not in ["owner", "admin"]:
-        st.error("你沒有權限進入此頁。")
+    if not require_permission("system.info.view"):
         return
 
     settings_map = get_settings_dict()

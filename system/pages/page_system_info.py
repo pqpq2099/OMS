@@ -4,13 +4,13 @@ import pandas as pd
 import streamlit as st
 
 from shared.core.app_runtime import get_settings_dict
+from shared.utils.permissions import require_permission
 
 
 def page_system_info():
     st.title("ℹ️ 系統資訊")
 
-    if st.session_state.role not in ["owner", "admin"]:
-        st.error("你沒有權限進入此頁。")
+    if not require_permission("system.info.view"):
         return
 
     settings_map = get_settings_dict()
