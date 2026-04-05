@@ -76,7 +76,8 @@ def page_transfer():
     # ── 載入出貨店品項 ────────────────────────────────────────
     cache_key = f"_transfer_items_{from_store_id}_{transfer_date.isoformat()}"
     if cache_key not in st.session_state:
-        st.session_state[cache_key] = load_items_for_transfer(from_store_id, transfer_date)
+        with st.spinner("載入中..."):
+            st.session_state[cache_key] = load_items_for_transfer(from_store_id, transfer_date)
 
     items = st.session_state[cache_key]
 

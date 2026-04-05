@@ -51,9 +51,10 @@ def page_stock_adjustment():
     )
 
     # ── 廠商選擇 ──────────────────────────────────────────────
-    vendors = load_vendors_for_store(store_id, adj_date)
+    with st.spinner("載入中..."):
+        vendors = load_vendors_for_store(store_id, adj_date)
     if not vendors:
-        st.info("此分店目前無廠商庫存記錄。")
+        st.info("此分店目前無廠商庫存記錄。請先完成盤點作業，再進行庫存調整。")
         return
 
     vendor_options = {v["vendor_name"]: v["vendor_id"] for v in vendors}
@@ -67,7 +68,8 @@ def page_stock_adjustment():
     # ── 載入品項（廠商 + 日期 + 分店 任一變動時重載）──────────
     cache_key = f"_stock_adj_items_{store_id}_{vendor_id_selected}_{adj_date.isoformat()}"
     if cache_key not in st.session_state:
-        st.session_state[cache_key] = load_items_for_adjustment(store_id, vendor_id_selected, adj_date)
+        with st.spinner("載入中..."):
+            st.session_state[cache_key] = load_items_for_adjustment(store_id, vendor_id_selected, adj_date)
 
     items = st.session_state[cache_key]
 

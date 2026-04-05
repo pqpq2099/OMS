@@ -58,20 +58,21 @@ def page_select_vendor():
     )
     st.session_state.record_date = selected_record_date
 
-    view_model = logic_order.get_vendor_selection_view_model(
-        record_date=selected_record_date,
-        store_id=st.session_state.get("store_id", ""),
-    )
+    with st.spinner("載入中..."):
+        view_model = logic_order.get_vendor_selection_view_model(
+            record_date=selected_record_date,
+            store_id=st.session_state.get("store_id", ""),
+        )
     vendors_df = view_model["vendors_df"]
     items_df = view_model["items_df"]
     vendors = view_model["vendors"]
 
     if vendors_df.empty or items_df.empty:
-        st.warning("目前缺少廠商或品項資料。")
+        st.warning("目前缺少廠商或品項資料。請確認品項與廠商資料已建立。")
         return
 
     if vendors.empty:
-        st.warning("目前沒有可選廠商。")
+        st.warning("此日期查無可叫貨廠商。請確認品項已設定預設廠商，或嘗試其他日期。")
         return
 
     for i in range(0, len(vendors), 2):
@@ -112,12 +113,13 @@ def page_select_vendor():
 def page_order():
     if not require_permission("order.create"):
         return
-    view_model = logic_order.build_order_entry_view_model(
-        store_id=st.session_state.store_id,
-        vendor_id=st.session_state.vendor_id,
-        record_date=st.session_state.record_date,
-        weekday_options=WEEKDAY_OPTIONS,
-    )
+    with st.spinner("載入中..."):
+        view_model = logic_order.build_order_entry_view_model(
+            store_id=st.session_state.store_id,
+            vendor_id=st.session_state.vendor_id,
+            record_date=st.session_state.record_date,
+            weekday_options=WEEKDAY_OPTIONS,
+        )
 
     if view_model["is_initial_stock"]:
         st.warning(
@@ -251,7 +253,7 @@ def page_order():
 
     existing_ids = view_model["existing_ids"]
     if view_model["is_edit_mode"]:
-        st.info("這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
+        st.warning("這一天此廠商已有紀錄，畫面已自動帶入，按下儲存會直接覆寫更新。")
         st.caption(logic_order.build_order_edit_caption(existing_ids, st.session_state.record_date))
 
     st.markdown("<div class='order-divider'></div>", unsafe_allow_html=True)
