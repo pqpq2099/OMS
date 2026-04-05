@@ -66,6 +66,8 @@ def page_analysis():
 
 
 def page_cost_debug():
+    if not require_permission("analysis.cost.view"):
+        return
     st.title(f"🧮 {t('title_cost_debug')}")
     shared_tables = load_report_shared_tables()
     preloaded_debug = build_cost_debug_display_model(shared_tables, "", st.session_state.record_date)
