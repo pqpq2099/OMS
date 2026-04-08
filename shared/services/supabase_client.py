@@ -76,12 +76,23 @@ def _get_client():
     return _supabase_client
 
 
+# 需要穩定排序的 table：key=table_name, value=排序欄位（ASC）
+# 理由：PostgreSQL UPDATE 會改變 row 實體位置，無 ORDER BY 時回傳順序不穩定。
+_DEFAULT_TABLE_ORDER: dict[str, str] = {
+    "items": "item_id",
+}
+
+
 def fetch_table(table_name: str):
     _PAGE_SIZE = 1000
     all_rows: list = []
     start = 0
+    order_col = _DEFAULT_TABLE_ORDER.get(table_name)
     while True:
-        res = _get_client().table(table_name).select("*").range(start, start + _PAGE_SIZE - 1).execute()
+        query = _get_client().table(table_name).select("*")
+        if order_col:
+            query = query.order(order_col)
+        res = query.range(start, start + _PAGE_SIZE - 1).execute()
         batch = res.data or []
         all_rows.extend(batch)
         if len(batch) < _PAGE_SIZE:

@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from shared.services.service_order_core import get_active_df, label_store, label_vendor, read_order_table
+from shared.utils.common_helpers import _sort_items_for_operation
 from operations.logic.order_decision import build_item_decision_data
 from operations.logic.order_query import (
     find_existing_operation_ids,
@@ -63,6 +64,7 @@ def get_active_vendor_items(items_df: pd.DataFrame, vendor_id: str) -> pd.DataFr
     vendor_items = items_df[
         items_df["default_vendor_id"].astype(str).str.strip() == str(vendor_id).strip()
     ].copy()
+    vendor_items = _sort_items_for_operation(vendor_items)  # 二次保護：確保 item_id ASC
     return vendor_items.reset_index(drop=True)
 
 
