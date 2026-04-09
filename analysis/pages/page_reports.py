@@ -16,6 +16,7 @@ from ui_text import t
 from analysis.pages.page_export import page_export_report
 from analysis.pages.page_inventory_analysis import page_inventory_analysis
 from analysis.pages.page_order_history import page_order_history
+from analysis.pages.page_usage_conversion import page_usage_conversion as _page_usage_conversion_impl
 from analysis.pages.shared import download_csv_block
 from shared.utils.permissions import require_permission
 
@@ -107,3 +108,9 @@ def page_cost_debug():
     if st.button(f"⬅️ {t('back_to_menu')}", use_container_width=True, key="back_from_cost_debug"):
         st.session_state.step = "select_vendor"
         st.rerun()
+
+
+def page_usage_conversion():
+    if not require_permission("analysis.dashboard.view"):
+        return
+    _page_usage_conversion_impl()

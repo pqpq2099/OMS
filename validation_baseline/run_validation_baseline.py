@@ -110,6 +110,7 @@ _EXPECTED_ROUTES: dict[str, str] = {
     "account_settings":    "users_permissions.pages.page_account_settings",
     "purchase_settings":   "data_management.pages.page_purchase_settings",
     "store_admin":         "users_permissions.pages.page_store_admin",
+    "usage_conversion":    "analysis.pages.page_usage_conversion",
 }
 
 
@@ -185,6 +186,7 @@ _PAGE_EXPORTS: dict[str, list[str]] = {
         "page_cost_debug",
         "page_export",
         "page_stock_order_compare",
+        "page_usage_conversion",
         "page_view_history",
     ],
     "users_permissions.pages": [

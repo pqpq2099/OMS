@@ -55,6 +55,12 @@ def render_sidebar():
         {"label": "📊 進銷存分析", "step": "analysis", "key": "sb_analysis"},
         {"label": "📦 歷史叫貨紀錄", "step": "view_history", "key": "sb_view_history"},
         {"label": "📤 資料匯出", "step": "export", "key": "sb_export"},
+        {
+            "label": "📋 使用量換算",
+            "step": "usage_conversion",
+            "key": "sb_usage_conversion",
+            "visible": has_permission("analysis.dashboard.view"),
+        },
     ]
 
     data_items = [
@@ -192,6 +198,7 @@ def router():
         "backup_history": system_pages.page_backup,
         "transfer_entry": operations_pages.page_transfer,
         "stock_adjust_entry": operations_pages.page_stock_adjustment,
+        "usage_conversion": analysis_pages.page_usage_conversion,
     }
 
     route_step(step, routes, operations_pages.page_select_store)

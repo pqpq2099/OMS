@@ -13,6 +13,7 @@ from .page_reports import (
     page_cost_debug,
     page_export,
     page_stock_order_compare,
+    page_usage_conversion,
     page_view_history,
 )
 
@@ -24,5 +25,6 @@ __all__ = [
     "page_cost_debug",
     "page_export",
     "page_stock_order_compare",
+    "page_usage_conversion",
     "page_view_history",
 ]
