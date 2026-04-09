@@ -23,7 +23,11 @@ def page_usage_conversion():
         st.caption("請上傳 report_UberEats_YYYYMMDD_YYYYMMDD.xlsx 或 report_foodpanda_YYYYMMDD_YYYYMMDD.xlsx")
         return
 
-    result = process_report(uploaded)
+    try:
+        result = process_report(uploaded)
+    except Exception as e:
+        st.error(f"處理報表時發生錯誤：{e}")
+        return
 
     if result.get("error"):
         st.error(result["error"])
