@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import streamlit as st
 
 _DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 _RECIPE_FILE = _DATA_DIR / "recipe_table.xlsx"
@@ -21,10 +22,9 @@ _FILENAME_RE = re.compile(r"^report_(UberEats|foodpanda)_(\d{8})_(\d{8})\.xlsx$"
 # 1. 報表解析
 # ---------------------------------------------------------------------------
 
-def parse_report_file(uploaded_file) -> dict[str, Any]:
+def parse_report_file(file_bytes: bytes, filename: str) -> dict[str, Any]:
     """解析上傳的外送平台報表，回傳 platform / date_range / items_df / error。"""
-    name = uploaded_file.name
-    m = _FILENAME_RE.match(name)
+    m = _FILENAME_RE.match(filename)
     if not m:
         return {"error": "檔名格式不符，請上傳 report_UberEats_xxx.xlsx 或 report_foodpanda_xxx.xlsx"}
 
@@ -33,7 +33,12 @@ def parse_report_file(uploaded_file) -> dict[str, Any]:
     date_end = f"{m.group(3)[:4]}/{m.group(3)[4:6]}/{m.group(3)[6:]}"
     date_range = f"{date_start} ~ {date_end}"
 
-    df = pd.read_excel(uploaded_file, sheet_name=0, header=None)
+    import io
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, header=None)
+    except Exception as e:
+        return {"error": f"無法讀取 Excel 檔案：{e}"}
+
     # Row 8+ = 品項資料
     if len(df) <= 8:
         return {"error": "報表內容不足，無法解析品項資料"}
@@ -54,8 +59,9 @@ def parse_report_file(uploaded_file) -> dict[str, Any]:
 # 2. 配方表讀取
 # ---------------------------------------------------------------------------
 
+@st.cache_data(show_spinner=False)
 def load_recipe_data() -> dict[str, pd.DataFrame] | None:
-    """讀取配方表 Excel 的 4 個 sheet。找不到檔案或讀取失敗回傳 None。"""
+    """讀取配方表 Excel 的 4 個 sheet。找不到檔案或讀取失敗回傳 None。結果會被 cache。"""
     if not _RECIPE_FILE.exists():
         return None
 
@@ -464,16 +470,21 @@ def convert_to_display(
 # ---------------------------------------------------------------------------
 
 def process_report(uploaded_file) -> dict[str, Any]:
-    """完整換算流程，回傳 page 層需要的所有資料。"""
+    """完整換算流程，回傳 page 層需要的所有資料。
+
+    先取 bytes 再處理，避免 Streamlit rerun 時 file pointer 問題。
+    """
     try:
-        return _process_report_inner(uploaded_file)
+        file_bytes = uploaded_file.getvalue()
+        filename = uploaded_file.name
+        return _process_report_inner(file_bytes, filename)
     except Exception as e:
         return {"error": f"換算過程發生錯誤：{e}"}
 
 
-def _process_report_inner(uploaded_file) -> dict[str, Any]:
+def _process_report_inner(file_bytes: bytes, filename: str) -> dict[str, Any]:
     # 1. 解析報表
-    parsed = parse_report_file(uploaded_file)
+    parsed = parse_report_file(file_bytes, filename)
     if parsed.get("error"):
         return {"error": parsed["error"]}
 
