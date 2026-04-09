@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 
 _DATA_DIR = Path(__file__).resolve().parents[2] / "data"
-_RECIPE_FILE = _DATA_DIR / "OMS_配方表_Migration027.xlsx"
+_RECIPE_FILE = _DATA_DIR / "recipe_table.xlsx"
 
 _SKIP_KEYWORDS = ["環保袋", "特色描述", "歡迎評價", "折價券", "官方會員", "註冊禮", "總計"]
 _FILENAME_RE = re.compile(r"^report_(UberEats|foodpanda)_(\d{8})_(\d{8})\.xlsx$")
@@ -54,12 +54,18 @@ def parse_report_file(uploaded_file) -> dict[str, Any]:
 # 2. 配方表讀取
 # ---------------------------------------------------------------------------
 
-def load_recipe_data() -> dict[str, pd.DataFrame]:
-    """讀取配方表 Excel 的 4 個 sheet。"""
-    menu_items = pd.read_excel(_RECIPE_FILE, sheet_name="menu_items")
-    aliases = pd.read_excel(_RECIPE_FILE, sheet_name="menu_item_aliases")
-    recipes = pd.read_excel(_RECIPE_FILE, sheet_name="recipes")
-    checklist = pd.read_excel(_RECIPE_FILE, sheet_name="items_checklist（需確認）", header=None)
+def load_recipe_data() -> dict[str, pd.DataFrame] | None:
+    """讀取配方表 Excel 的 4 個 sheet。找不到檔案或讀取失敗回傳 None。"""
+    if not _RECIPE_FILE.exists():
+        return None
+
+    try:
+        menu_items = pd.read_excel(_RECIPE_FILE, sheet_name="menu_items")
+        aliases = pd.read_excel(_RECIPE_FILE, sheet_name="menu_item_aliases")
+        recipes = pd.read_excel(_RECIPE_FILE, sheet_name="recipes")
+        checklist = pd.read_excel(_RECIPE_FILE, sheet_name="items_checklist（需確認）", header=None)
+    except Exception:
+        return None
 
     # checklist 欄位對齊
     cl_headers = ["ingredient_name", "note", "confirm", "item_name", "pack_spec", "semi_recipe"]
@@ -459,6 +465,13 @@ def convert_to_display(
 
 def process_report(uploaded_file) -> dict[str, Any]:
     """完整換算流程，回傳 page 層需要的所有資料。"""
+    try:
+        return _process_report_inner(uploaded_file)
+    except Exception as e:
+        return {"error": f"換算過程發生錯誤：{e}"}
+
+
+def _process_report_inner(uploaded_file) -> dict[str, Any]:
     # 1. 解析報表
     parsed = parse_report_file(uploaded_file)
     if parsed.get("error"):
@@ -466,6 +479,8 @@ def process_report(uploaded_file) -> dict[str, Any]:
 
     # 2. 讀取配方表
     recipe_data = load_recipe_data()
+    if recipe_data is None:
+        return {"error": "無法讀取配方表，請確認 data/recipe_table.xlsx 存在"}
 
     # 3. 品名比對
     matched, unmatched = match_items(
