@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,85 @@ OUTPUT_DIR = PROJECT_ROOT / 'dev_guard'
 REPORT_JSON = OUTPUT_DIR / 'latest_guard_report.json'
 REPORT_MD = OUTPUT_DIR / 'latest_guard_report.md'
 
+ACTIVE_CODE_DIRS = (
+    'analysis',
+    'data_management',
+    'operations',
+    'shared',
+    'system',
+    'users_permissions',
+)
+
+
+@dataclass
+class PolicyViolation:
+    kind: str
+    file: str
+    line: int
+    detail: str
+
+
+def _iter_active_python_files() -> list[Path]:
+    files: list[Path] = []
+    for dirname in ACTIVE_CODE_DIRS:
+        root = PROJECT_ROOT / dirname
+        if not root.exists():
+            continue
+        for path in root.rglob('*.py'):
+            if '__pycache__' in path.parts:
+                continue
+            files.append(path)
+
+    for filename in ('app.py', 'oms_core.py', 'ui_text.py'):
+        path = PROJECT_ROOT / filename
+        if path.exists():
+            files.append(path)
+    return sorted(files)
+
+
+def scan_policy_violations() -> list[PolicyViolation]:
+    checks: tuple[tuple[str, re.Pattern[str]], ...] = (
+        (
+            'forbid_manage_system',
+            re.compile(r"['\"]manage_system['\"]"),
+        ),
+        (
+            'forbid_role_guard',
+            re.compile(r"\b(if|elif)\b.*(st\.session_state\.role|session_state\[['\"]role['\"]\])"),
+        ),
+        (
+            'actor_user_id_check',
+            re.compile(r"(created_by|updated_by|user_id)\s*[:=]\s*.*\brole\b"),
+        ),
+    )
+    violations: list[PolicyViolation] = []
+    for path in _iter_active_python_files():
+        rel = str(path.relative_to(PROJECT_ROOT))
+        try:
+            lines = path.read_text(encoding='utf-8', errors='ignore').splitlines()
+        except OSError as exc:
+            violations.append(PolicyViolation(
+                kind='read_error',
+                file=rel,
+                line=0,
+                detail=str(exc),
+            ))
+            continue
+
+        for line_no, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            for kind, pattern in checks:
+                if pattern.search(line):
+                    violations.append(PolicyViolation(
+                        kind=kind,
+                        file=rel,
+                        line=line_no,
+                        detail=stripped,
+                    ))
+    return violations
+
 
 def build_results() -> dict[str, Any]:
     results: dict[str, Any] = {}
@@ -38,7 +118,9 @@ def build_results() -> dict[str, Any]:
     results['router_smoke'] = run_router_smoke()
     results['page_exports'] = [asdict(item) for item in run_export_checks()]
     results['page_layer_violations'] = [asdict(item) for item in scan_page_layer_violations()]
+    results['policy_violations'] = [asdict(item) for item in scan_policy_violations()]
     results['summary'] = summarize(results)
+    results['summary']['policy_violation_total'] = len(results['policy_violations'])
     results['guard_ok'] = is_guard_ok(results)
     return results
 
@@ -51,6 +133,7 @@ def is_guard_ok(results: dict[str, Any]) -> bool:
         and summary['router_ok']
         and summary['page_export_failed'] == 0
         and summary['page_violation_total'] == 0
+        and summary['policy_violation_total'] == 0
     )
 
 
@@ -80,6 +163,7 @@ def build_markdown_report(results: dict[str, Any]) -> str:
         f"- router smoke：{'PASS' if summary['router_ok'] else 'FAIL'}（{summary['router_route_count']} routes）",
         f"- pages __init__ 匯出：{'PASS' if summary['page_export_failed'] == 0 else 'FAIL'}（{summary['page_export_total'] - summary['page_export_failed']}/{summary['page_export_total']}）",
         f"- page 邊界違規：{'PASS' if summary['page_violation_total'] == 0 else 'FAIL'}（共 {summary['page_violation_total']} 筆）",
+        f"- policy 規則違規：{'PASS' if summary['policy_violation_total'] == 0 else 'FAIL'}（共 {summary['policy_violation_total']} 筆）",
         '',
         '## 三、失敗項目',
         '',
@@ -89,8 +173,9 @@ def build_markdown_report(results: dict[str, Any]) -> str:
     failed_routes = [item for item in results['router_smoke']['checks'] if not item['ok']]
     failed_exports = [item for item in results['page_exports'] if not item['ok']]
     violations = results['page_layer_violations']
+    policy_violations = results['policy_violations']
 
-    if not any([failed_imports, failed_routes, failed_exports, violations, results['router_smoke']['extra_keys'], results['router_smoke']['missing_keys']]):
+    if not any([failed_imports, failed_routes, failed_exports, violations, policy_violations, results['router_smoke']['extra_keys'], results['router_smoke']['missing_keys']]):
         lines.append('- 無失敗')
     else:
         for item in failed_imports:
@@ -106,6 +191,8 @@ def build_markdown_report(results: dict[str, Any]) -> str:
             lines.append(f"- export_fail | {item['package']}::{item['export_name']}{detail}")
         for item in violations:
             lines.append(f"- page_violation | {item['kind']} | {item['file']}:{item['line']} | {item['symbol']}")
+        for item in policy_violations:
+            lines.append(f"- policy_violation | {item['kind']} | {item['file']}:{item['line']} | {item['detail']}")
 
     lines.extend([
         '',
@@ -128,6 +215,7 @@ def print_console_summary(results: dict[str, Any]) -> None:
         'router_smoke': 'PASS' if summary['router_ok'] else 'FAIL',
         'page_exports': 'PASS' if summary['page_export_failed'] == 0 else 'FAIL',
         'page_boundary': 'PASS' if summary['page_violation_total'] == 0 else 'FAIL',
+        'policy_rules': 'PASS' if summary['policy_violation_total'] == 0 else 'FAIL',
         'report_json': str(REPORT_JSON.relative_to(PROJECT_ROOT)),
         'report_md': str(REPORT_MD.relative_to(PROJECT_ROOT)),
     }
