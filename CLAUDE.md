@@ -16,7 +16,9 @@
 | Git Branch | 目錄 | Supabase 專案 | Project ID |
 |------------|------|--------------|------------|
 | `main` | `OMS-main\` | OMS_V1（**正式環境**） | `usaaduuqhvpfmrmimwsw` |
-| `develop` | `OMS-develop\` | OMS_TEST（**測試環境**） | `hikmpynwpqtbgqhsuyqd` |
+| `develop` | `OMS-main\` | OMS_TEST（**測試環境**） | `hikmpynwpqtbgqhsuyqd` |
+
+> 2026-04-25 起兩條 branch 共用同一 working tree（`OMS-main\`），以 `git checkout` 切換對應環境
 
 **規則：**
 - 對 `develop` branch 執行 DB 操作，必須使用 `hikmpynwpqtbgqhsuyqd`
