@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from shared.services.data_backend import read_table
+from system.logic.logic_restore import execute_restore, preview_restore
 from users_permissions.services.service_role_permission import has_permission
 
 # ── 備份資料表清單 ─────────────────────────────────────────────
@@ -115,3 +116,74 @@ def page_backup():
             use_container_width=True,
             key="backup_download",
         )
+
+    # ── 還原歷史交易 ─────────────────────────────────────────────
+    st.markdown("---")
+    st.title("📥 還原歷史交易")
+    st.warning("此操作會以備份檔內容覆蓋現有資料（依主鍵比對），請確認檔案來源正確。", icon="⚠️")
+
+    uploaded = st.file_uploader(
+        "上傳備份檔案（.xlsx）",
+        type=["xlsx"],
+        key="restore_upload",
+    )
+
+    if uploaded is not None:
+        file_bytes = uploaded.getvalue()
+
+        # 預覽
+        if "_restore_preview" not in st.session_state:
+            with st.spinner("正在分析備份檔案…"):
+                st.session_state["_restore_preview"] = preview_restore(
+                    file_bytes, _BACKUP_TABLES
+                )
+                st.session_state["_restore_file_bytes"] = file_bytes
+
+        preview = st.session_state.get("_restore_preview", [])
+
+        # 顯示預覽結果
+        ok_count = 0
+        for item in preview:
+            sheet = item["sheet"] or "(unknown)"
+            if item["status"] == "ok":
+                st.caption(f"✅ {sheet}：{item['count']} 筆")
+                ok_count += 1
+            elif item["status"] == "skip":
+                st.caption(f"⏭️ {sheet}：跳過 — {item['msg']}")
+            else:
+                st.caption(f"❌ {sheet}：{item['msg']}")
+
+        if ok_count == 0:
+            st.error("備份檔中沒有可還原的資料。")
+        else:
+            st.info(f"共 {ok_count} 張表可還原。", icon="ℹ️")
+
+            if st.button("✅ 確認還原", use_container_width=True, key="restore_confirm"):
+                with st.spinner("正在還原資料…"):
+                    results = execute_restore(
+                        st.session_state["_restore_file_bytes"],
+                        _BACKUP_TABLES,
+                    )
+
+                # 顯示結果
+                done = [r for r in results if r["status"] == "done"]
+                fail = [r for r in results if r["status"] == "fail"]
+                skip = [r for r in results if r["status"] == "skip"]
+
+                if done:
+                    total_rows = sum(r["count"] for r in done)
+                    st.success(f"還原完成：{len(done)} 張表，共 {total_rows} 筆。")
+                if skip:
+                    st.info(f"跳過 {len(skip)} 張表。")
+                if fail:
+                    for r in fail:
+                        st.error(f"❌ {r['sheet']}：{r['msg']}")
+
+                # 清除預覽狀態
+                st.session_state.pop("_restore_preview", None)
+                st.session_state.pop("_restore_file_bytes", None)
+
+    else:
+        # 使用者清除上傳檔案時，重置預覽狀態
+        st.session_state.pop("_restore_preview", None)
+        st.session_state.pop("_restore_file_bytes", None)
